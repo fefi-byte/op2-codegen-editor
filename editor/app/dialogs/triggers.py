@@ -11,7 +11,7 @@ class TriggersDialog(QDialog):
         initial_action_index=-1,
     ):
         super().__init__(parent)
-        self.setWindowTitle("Trigger")
+        self.setWindowTitle(tr("triggers.title"))
         self.resize(900, 620)
         self.triggers = [self._copy(t) for t in triggers]
         self.building_groups = list(building_groups or [])
@@ -37,18 +37,18 @@ class TriggersDialog(QDialog):
         # --- Trigger-Liste ---
         self.tlist = QListWidget()
         self.tlist.currentRowChanged.connect(self._on_select)
-        add = QPushButton("Trigger hinzufügen"); add.clicked.connect(self._add)
-        rm = QPushButton("Trigger entfernen"); rm.clicked.connect(self._remove)
+        add = QPushButton(tr("triggers.btn_add_trigger")); add.clicked.connect(self._add)
+        rm = QPushButton(tr("triggers.btn_remove_trigger")); rm.clicked.connect(self._remove)
         left = QVBoxLayout()
-        left.addWidget(QLabel("Trigger:")); left.addWidget(self.tlist, 1)
+        left.addWidget(QLabel(tr("triggers.lbl_trigger_list"))); left.addWidget(self.tlist, 1)
         left.addWidget(add); left.addWidget(rm)
 
         # --- Trigger-Eigenschaften ---
         self.name = QLineEdit()
-        self.at_start = QCheckBox("Beim Start aktiv (sonst nur per Laufzeit-Erstellung)")
-        self.one_shot = QCheckBox("Nur einmal auslösen")
-        self.cond = QComboBox(); self.cond.addItems(TRIGGER_CONDITIONS.keys())
-        self.cond.currentTextChanged.connect(self._update_cond_fields)
+        self.at_start = QCheckBox(tr("triggers.chk_at_start"))
+        self.one_shot = QCheckBox(tr("triggers.chk_one_shot"))
+        self.cond = QComboBox(); fill_combo(self.cond, TRIGGER_CONDITIONS, "trigger_conditions")
+        self.cond.currentIndexChanged.connect(self._update_cond_fields)
         self.player = QSpinBox(); self.player.setRange(0, 5)
         self.marks = QSpinBox(); self.marks.setRange(0, 200000); self.marks.setValue(100)
         self.count = QSpinBox(); self.count.setRange(0, 1000); self.count.setValue(1)
@@ -65,20 +65,23 @@ class TriggersDialog(QDialog):
         self.height = QSpinBox(); self.height.setRange(1, 256); self.height.setValue(4)
 
         self.form = QFormLayout()
-        self.form.addRow("Name:", self.name)
+        self.form.addRow(tr("triggers.lbl_name"), self.name)
         self.form.addRow(self.at_start)
         self.form.addRow(self.one_shot)
-        self.form.addRow("Bedingung:", self.cond)
+        self.form.addRow(tr("triggers.lbl_condition"), self.cond)
         self._cond_rows = {
             "player": self.player, "marks": self.marks, "count": self.count,
             "compare": self.compare, "tech_id": self.tech_id, "resource": self.resource,
             "amount": self.amount, "building": self.building,
             "x": self.x, "y": self.y, "width": self.width, "height": self.height,
         }
-        clabels = {"player": "Spieler:", "marks": "Marks:", "count": "Anzahl:",
-                   "compare": "Vergleich:", "tech_id": "Tech-ID:", "resource": "Ressource:",
-                   "amount": "Menge:", "building": "Gebäude:", "x": "X:", "y": "Y:",
-                   "width": "Breite:", "height": "Höhe:"}
+        clabels = {"player": tr("triggers.lbl_player"), "marks": tr("triggers.lbl_marks"),
+                   "count": tr("triggers.lbl_count"),
+                   "compare": tr("triggers.lbl_compare"), "tech_id": tr("triggers.lbl_tech_id"),
+                   "resource": tr("triggers.lbl_resource"),
+                   "amount": tr("triggers.lbl_amount"), "building": tr("triggers.lbl_building"),
+                   "x": tr("triggers.lbl_x"), "y": tr("triggers.lbl_y"),
+                   "width": tr("triggers.lbl_width"), "height": tr("triggers.lbl_height")}
         for key, w in self._cond_rows.items():
             self.form.addRow(clabels[key], w)
 
@@ -94,9 +97,9 @@ class TriggersDialog(QDialog):
         # --- Aktionen ---
         self.alist = QListWidget(); self.alist.setMaximumHeight(120)
         self.alist.currentRowChanged.connect(self._on_action_select)
-        self.act_kind = QComboBox(); self.act_kind.addItems(ACTION_KINDS.keys())
-        self.act_kind.currentTextChanged.connect(self._update_action_fields)
-        self.act_text = QLineEdit("Nachricht…")
+        self.act_kind = QComboBox(); fill_combo(self.act_kind, ACTION_KINDS, "action_kinds")
+        self.act_kind.currentIndexChanged.connect(self._update_action_fields)
+        self.act_text = QLineEdit(tr("triggers.act_text_default"))
         self.act_unit = QComboBox()
         for d, m in ALL_UNITS:
             self.act_unit.addItem(d, m)
@@ -109,7 +112,7 @@ class TriggersDialog(QDialog):
         self.act_target_count = QSpinBox(); self.act_target_count.setRange(0, 1000); self.act_target_count.setValue(1)
         self.act_priority = QSpinBox(); self.act_priority.setRange(1, 65535); self.act_priority.setValue(1000)
         self.act_ore = QComboBox()
-        self.act_ore.addItems(MINING_OPERATION_ORES.keys())
+        fill_combo(self.act_ore, MINING_OPERATION_ORES, "mining_ores")
         self.act_rect_x = QSpinBox(); self.act_rect_x.setRange(0, 1023)
         self.act_rect_y = QSpinBox(); self.act_rect_y.setRange(0, 1023)
         self.act_rect_w = QSpinBox(); self.act_rect_w.setRange(1, 256); self.act_rect_w.setValue(8)
@@ -151,7 +154,7 @@ class TriggersDialog(QDialog):
             if m != "mapTube":
                 self.act_wall.addItem(d, m)
         self.act_form = QFormLayout()
-        self.act_form.addRow("Aktionstyp:", self.act_kind)
+        self.act_form.addRow(tr("triggers.lbl_action_kind"), self.act_kind)
         self._act_rows = {"text": self.act_text, "unit": self.act_unit,
                           "vehicle": self.act_vehicle, "weapon": self.act_weapon,
                           "target_count": self.act_target_count, "priority": self.act_priority,
@@ -168,44 +171,46 @@ class TriggersDialog(QDialog):
                           "assign_group": self.act_assign_group,
                           "group": self.act_group, "building": self.act_building,
                           "wall": self.act_wall}
-        alabels = {"text": "Text:", "unit": "Einheit:", "vehicle": "Fahrzeug:",
-                   "weapon": "Waffe/Cargo:", "target_count": "Zielanzahl:",
-                   "priority": "Prioritaet:",
-                   "ore": "Erz:", "rect_x": "Smelter-Rect X:",
-                   "rect_y": "Smelter-Rect Y:", "rect_w": "Smelter-Rect Breite:",
-                   "rect_h": "Smelter-Rect Hoehe:", "truck_count": "Transporter (Zielanzahl):",
+        alabels = {"text": tr("triggers.lbl_text"), "unit": tr("triggers.lbl_unit"),
+                   "vehicle": tr("triggers.lbl_vehicle"),
+                   "weapon": tr("triggers.lbl_weapon_cargo"), "target_count": tr("triggers.lbl_target_count"),
+                   "priority": tr("triggers.lbl_priority"),
+                   "ore": tr("triggers.lbl_ore"), "rect_x": tr("triggers.lbl_smelter_rect_x"),
+                   "rect_y": tr("triggers.lbl_smelter_rect_y"), "rect_w": tr("triggers.lbl_smelter_rect_w"),
+                   "rect_h": tr("triggers.lbl_smelter_rect_h"), "truck_count": tr("triggers.lbl_truck_count"),
                    "mining_group": "MiningGroup:",
-                   "x": "X / Mine X:", "y": "Y / Mine Y:",
-                   "x2": "X2 / Smelter X:", "y2": "Y2 / Smelter Y:", "player": "Spieler:",
-                   "target": "Ziel-Trigger:", "group": "BuildingGroup:",
-                   "target_group": "Zielgruppe:", "source_group": "ReinforceGroup:",
-                   "assign_group": "Zielgruppe:",
-                   "building": "Gebaeude:", "wall": "Wall/Tube:"}
+                   "x": tr("triggers.lbl_x_mine_x"), "y": tr("triggers.lbl_y_mine_y"),
+                   "x2": tr("triggers.lbl_x2_smelter_x"), "y2": tr("triggers.lbl_y2_smelter_y"),
+                   "player": tr("triggers.lbl_player"),
+                   "target": tr("triggers.lbl_target_trigger"), "group": "BuildingGroup:",
+                   "target_group": tr("triggers.lbl_target_group"), "source_group": "ReinforceGroup:",
+                   "assign_group": tr("triggers.lbl_target_group"),
+                   "building": tr("triggers.lbl_building"), "wall": tr("triggers.lbl_wall_tube")}
         for key, w in self._act_rows.items():
             self.act_form.addRow(alabels[key], w)
-        add_act = QPushButton("Aktion hinzufügen"); add_act.clicked.connect(self._add_action)
-        self.pick_on_map = QPushButton("Aktion auf Karte setzen")
+        add_act = QPushButton(tr("triggers.btn_add_action")); add_act.clicked.connect(self._add_action)
+        self.pick_on_map = QPushButton(tr("triggers.btn_pick_action_on_map"))
         self.pick_on_map.clicked.connect(self._pick_action_on_map)
         self.act_form.addRow("", self.pick_on_map)
-        self.pick_mining_mine = QPushButton("Mine auf Karte setzen")
+        self.pick_mining_mine = QPushButton(tr("triggers.btn_pick_mine_on_map"))
         self.pick_mining_mine.clicked.connect(lambda: self._pick_mining_operation_on_map("mine"))
         self.act_form.addRow("", self.pick_mining_mine)
-        self.pick_mining_smelter = QPushButton("Smelter auf Karte setzen")
+        self.pick_mining_smelter = QPushButton(tr("triggers.btn_pick_smelter_on_map"))
         self.pick_mining_smelter.clicked.connect(lambda: self._pick_mining_operation_on_map("smelter"))
         self.act_form.addRow("", self.pick_mining_smelter)
-        self.pick_mining_rect = QPushButton("Smelter-Rect auf Karte ziehen")
+        self.pick_mining_rect = QPushButton(tr("triggers.btn_pick_smelter_rect_on_map"))
         self.pick_mining_rect.clicked.connect(lambda: self._pick_mining_operation_on_map("rect"))
         self.act_form.addRow("", self.pick_mining_rect)
-        update_act = QPushButton("Aktion aktualisieren"); update_act.clicked.connect(self._update_action)
-        rm_act = QPushButton("Aktion entfernen"); rm_act.clicked.connect(self._remove_action)
+        update_act = QPushButton(tr("triggers.btn_update_action")); update_act.clicked.connect(self._update_action)
+        rm_act = QPushButton(tr("triggers.btn_remove_action")); rm_act.clicked.connect(self._remove_action)
         act_btns = QHBoxLayout(); act_btns.addWidget(add_act); act_btns.addWidget(update_act); act_btns.addWidget(rm_act)
 
         # --- IF-Bedingungen pro Aktion ---
         self._act_conditions = []
-        self.cond_logic = QComboBox(); self.cond_logic.addItems(["UND (alle)", "ODER (eine)"])
+        self.cond_logic = QComboBox(); self.cond_logic.addItems([tr("triggers.logic_and"), tr("triggers.logic_or")])
         self.cond_list = QListWidget(); self.cond_list.setMaximumHeight(90)
-        self.cc_kind = QComboBox(); self.cc_kind.addItems(ACTION_CONDITION_KINDS.keys())
-        self.cc_kind.currentTextChanged.connect(self._update_cc_fields)
+        self.cc_kind = QComboBox(); fill_combo(self.cc_kind, ACTION_CONDITION_KINDS, "action_conditions")
+        self.cc_kind.currentIndexChanged.connect(self._update_cc_fields)
         self.cc_player = QSpinBox(); self.cc_player.setRange(0, 5)
         self.cc_building = QComboBox()
         for d, m, _ in STRUCTURES:
@@ -216,20 +221,22 @@ class TriggersDialog(QDialog):
         self.cc_value = QSpinBox(); self.cc_value.setRange(0, 1000000)
         self.cc_resource = QComboBox(); self.cc_resource.addItems(RESOURCES.keys())
         self.cc_tech = QSpinBox(); self.cc_tech.setRange(0, 20000)
-        self.cc_negate = QCheckBox("negieren (NICHT)")
+        self.cc_negate = QCheckBox(tr("triggers.chk_negate"))
         self.cc_form = QFormLayout()
-        self.cc_form.addRow("Bedingungstyp:", self.cc_kind)
+        self.cc_form.addRow(tr("triggers.lbl_cond_kind"), self.cc_kind)
         self._cc_rows = {"player": self.cc_player, "building": self.cc_building,
                          "x": self.cc_x, "y": self.cc_y, "compare": self.cc_compare,
                          "value": self.cc_value, "resource": self.cc_resource, "tech_id": self.cc_tech}
-        cclabels = {"player": "Spieler:", "building": "Gebäude:", "x": "X:", "y": "Y:",
-                    "compare": "Vergleich:", "value": "Wert:", "resource": "Ressource:",
-                    "tech_id": "Tech-ID:"}
+        cclabels = {"player": tr("triggers.lbl_player"), "building": tr("triggers.lbl_building"),
+                    "x": tr("triggers.lbl_x"), "y": tr("triggers.lbl_y"),
+                    "compare": tr("triggers.lbl_compare"), "value": tr("triggers.lbl_value"),
+                    "resource": tr("triggers.lbl_resource"),
+                    "tech_id": tr("triggers.lbl_tech_id")}
         for k, w in self._cc_rows.items():
             self.cc_form.addRow(cclabels[k], w)
         self.cc_form.addRow("", self.cc_negate)
-        add_cond = QPushButton("Bedingung +"); add_cond.clicked.connect(self._add_act_condition)
-        rm_cond = QPushButton("Bedingung entfernen"); rm_cond.clicked.connect(self._remove_act_condition)
+        add_cond = QPushButton(tr("triggers.btn_add_cond")); add_cond.clicked.connect(self._add_act_condition)
+        rm_cond = QPushButton(tr("triggers.btn_remove_cond")); rm_cond.clicked.connect(self._remove_act_condition)
         cond_btns = QHBoxLayout(); cond_btns.addWidget(add_cond); cond_btns.addWidget(rm_cond)
 
         # Reiter "Bedingung": Trigger-Identitaet + Bedingung + deren Parameter
@@ -241,13 +248,13 @@ class TriggersDialog(QDialog):
         # Reiter "Aktionen": verschachtelter Karten-Editor (Wenn/Dann/Sonst)
         act_tab = QWidget()
         act_layout = QVBoxLayout(act_tab)
-        act_layout.addWidget(QLabel("Aktionen (laufen beim Auslösen) — „+ Aktion\" → „Wenn/Dann/Sonst\" für IF-Blöcke:"))
+        act_layout.addWidget(QLabel(tr("triggers.lbl_actions_hint")))
         self.act_scroll = QScrollArea(); self.act_scroll.setWidgetResizable(True)
         act_layout.addWidget(self.act_scroll, 1)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(cond_tab, "Bedingung")
-        self.tabs.addTab(act_tab, "Aktionen")
+        self.tabs.addTab(cond_tab, tr("triggers.tab_condition"))
+        self.tabs.addTab(act_tab, tr("triggers.tab_actions"))
 
         body = QHBoxLayout()
         body.addLayout(left, 1)
@@ -333,8 +340,8 @@ class TriggersDialog(QDialog):
         self.name.setText(t.name)
         self.at_start.setChecked(t.enabled_at_start)
         self.one_shot.setChecked(t.one_shot)
-        disp = {v: k for k, (v, _) in TRIGGER_CONDITIONS.items()}.get(t.condition, "Zeit (Marks)")
-        self.cond.setCurrentText(disp)
+        label = {v[0]: k for k, v in TRIGGER_CONDITIONS.items()}.get(t.condition, "Zeit (Marks)")
+        self.cond.setCurrentIndex(self.cond.findData(label))
         self.player.setValue(t.player); self.marks.setValue(t.marks)
         self.count.setValue(t.count)
         self.compare.setCurrentText({v: k for k, v in COMPARE.items()}.get(t.compare, "≥"))
@@ -357,7 +364,7 @@ class TriggersDialog(QDialog):
         t.name = self.name.text() or f"Trigger{self._idx + 1}"
         t.enabled_at_start = self.at_start.isChecked()
         t.one_shot = self.one_shot.isChecked()
-        t.condition = TRIGGER_CONDITIONS[self.cond.currentText()][0]
+        t.condition = TRIGGER_CONDITIONS[self.cond.currentData()][0]
         t.player = self.player.value(); t.marks = self.marks.value()
         t.count = self.count.value(); t.compare = COMPARE[self.compare.currentText()]
         t.tech_id = self.tech_id.value()
@@ -370,7 +377,7 @@ class TriggersDialog(QDialog):
             item.setText(trigger_summary(t))
 
     def _update_cond_fields(self):
-        fields = TRIGGER_CONDITIONS[self.cond.currentText()][1]
+        fields = TRIGGER_CONDITIONS[self.cond.currentData()][1]
         for key, w in self._cond_rows.items():
             self.form.setRowVisible(w, key in fields)
 
@@ -395,7 +402,7 @@ class TriggersDialog(QDialog):
     def _set_action_kind(self, kind):
         for label, value in ACTION_KINDS.items():
             if value == kind:
-                self.act_kind.setCurrentText(label)
+                self.act_kind.setCurrentIndex(self.act_kind.findData(label))
                 return
 
     def _on_action_select(self, row):
@@ -434,7 +441,7 @@ class TriggersDialog(QDialog):
         self._set_combo_data(self.act_wall, action.wall_type)
         ore_label = {value: label for label, value in MINING_OPERATION_ORES.items()}.get(action.ore_type)
         if ore_label:
-            self.act_ore.setCurrentText(ore_label)
+            self.act_ore.setCurrentIndex(self.act_ore.findData(ore_label))
         # IF-Bedingungen der Aktion laden
         self._act_conditions = [ActionCondition(**asdict(c)) for c in getattr(action, "conditions", [])]
         self.cond_logic.setCurrentIndex(1 if getattr(action, "condition_logic", "and") == "or" else 0)
@@ -443,7 +450,7 @@ class TriggersDialog(QDialog):
         self._update_cond_fields()
 
     def _update_action_fields(self):
-        kind = ACTION_KINDS[self.act_kind.currentText()]
+        kind = ACTION_KINDS[self.act_kind.currentData()]
         vis = {"text": kind == "message",
                "unit": kind == "createUnit",
                "x": kind in ("createUnit", "startMiningOperation"),
@@ -484,9 +491,9 @@ class TriggersDialog(QDialog):
             self.act_form.setRowVisible(w, vis[key])
         # X/Y-Beschriftung kontextabhaengig
         xlbl, ylbl = {
-            "startMiningOperation": ("Mine X:", "Mine Y:"),
-            "assignToGroup": ("Gebäude X:", "Gebäude Y:"),
-        }.get(kind, ("X:", "Y:"))
+            "startMiningOperation": (tr("triggers.lbl_mine_x"), tr("triggers.lbl_mine_y")),
+            "assignToGroup": (tr("triggers.lbl_building_x"), tr("triggers.lbl_building_y")),
+        }.get(kind, (tr("triggers.lbl_x"), tr("triggers.lbl_y")))
         lx = self.act_form.labelForField(self.act_x)
         ly = self.act_form.labelForField(self.act_y)
         if lx:
@@ -521,42 +528,42 @@ class TriggersDialog(QDialog):
     def _selected_building_group(self):
         group_name = self.act_group.currentData()
         if not group_name:
-            QMessageBox.information(self, "Keine BuildingGroup", "Lege zuerst eine BuildingGroup an.")
+            QMessageBox.information(self, tr("triggers.msg_no_buildinggroup_title"), tr("triggers.msg_no_buildinggroup_text"))
             return None
         return group_name
 
     def _selected_set_targ_groups(self):
         target_group_name = self.act_target_group.currentData()
         if not target_group_name:
-            QMessageBox.information(self, "Keine Zielgruppe", "Lege zuerst eine MiningGroup oder BuildingGroup an.")
+            QMessageBox.information(self, tr("triggers.msg_no_targetgroup_title"), tr("triggers.msg_no_targetgroup_settarg_text"))
             return None, None
         source_group_name = self.act_source_group.currentData()
         if not source_group_name:
-            QMessageBox.information(self, "Keine ReinforceGroup", "Lege zuerst eine ReinforceGroup mit Vehicle Factories an.")
+            QMessageBox.information(self, tr("triggers.msg_no_reinforcegroup_title"), tr("triggers.msg_no_reinforcegroup_text"))
             return None, None
         if self.act_vehicle.currentData() is None:
             group_type = self.target_group_types.get(target_group_name, "BuildingGroup")
             QMessageBox.information(
-                self, "Kein erlaubtes Fahrzeug",
-                f"Fuer {group_type} ist aktuell kein passender Fahrzeugtyp verfuegbar.")
+                self, tr("triggers.msg_no_vehicle_title"),
+                tr("triggers.msg_no_vehicle_text", group_type=group_type))
             return None, None
         return target_group_name, source_group_name
 
     def _selected_mining_group(self):
         group_name = self.act_mining_group.currentData()
         if not group_name:
-            QMessageBox.information(self, "Keine MiningGroup", "Lege zuerst eine MiningGroup an.")
+            QMessageBox.information(self, tr("triggers.msg_no_mininggroup_title"), tr("triggers.msg_no_mininggroup_text"))
             return None
         return group_name
 
     def _pick_action_on_map(self):
         if not (0 <= self._idx < len(self.triggers)):
             return
-        kind = ACTION_KINDS[self.act_kind.currentText()]
+        kind = ACTION_KINDS[self.act_kind.currentData()]
         if kind == "assignToGroup":
             group_name = self.act_assign_group.currentData()
             if not group_name:
-                QMessageBox.information(self, "Keine Zielgruppe", "Lege zuerst eine Gruppe an.")
+                QMessageBox.information(self, tr("triggers.msg_no_targetgroup_title"), tr("triggers.msg_no_group_text"))
                 return
             self.map_pick_request = {
                 "trigger_index": self._idx,
@@ -588,7 +595,7 @@ class TriggersDialog(QDialog):
     def _pick_mining_operation_on_map(self, mode):
         if not (0 <= self._idx < len(self.triggers)):
             return
-        if ACTION_KINDS[self.act_kind.currentText()] != "startMiningOperation":
+        if ACTION_KINDS[self.act_kind.currentData()] != "startMiningOperation":
             return
         group_name = self._selected_building_group()
         if not group_name:
@@ -608,7 +615,7 @@ class TriggersDialog(QDialog):
             "mode": mode,
             "group_name": group_name,
             "mining_group_name": mining_group_name,
-            "ore_type": MINING_OPERATION_ORES[self.act_ore.currentText()],
+            "ore_type": MINING_OPERATION_ORES[self.act_ore.currentData()],
             "truck_count": self.act_truck_count.value(),
             "x": self.act_x.value(),
             "y": self.act_y.value(),
@@ -625,7 +632,7 @@ class TriggersDialog(QDialog):
 
     # --- Pro-Aktion-Bedingungen ---
     def _update_cc_fields(self):  # obsolet (alte Pro-Aktion-Bedingungs-UI; durch if-Block ersetzt)
-        fields = ACTION_CONDITION_KINDS[self.cc_kind.currentText()][1]
+        fields = ACTION_CONDITION_KINDS[self.cc_kind.currentData()][1]
         for k, w in self._cc_rows.items():
             self.cc_form.setRowVisible(w, k in fields)
 
@@ -635,7 +642,7 @@ class TriggersDialog(QDialog):
             self.cond_list.addItem(action_condition_summary(c))
 
     def _cond_from_form(self):
-        kind = ACTION_CONDITION_KINDS[self.cc_kind.currentText()][0]
+        kind = ACTION_CONDITION_KINDS[self.cc_kind.currentData()][0]
         return ActionCondition(
             kind=kind, negate=self.cc_negate.isChecked(), player=self.cc_player.value(),
             building_type=self.cc_building.currentData(), x=self.cc_x.value(), y=self.cc_y.value(),
@@ -660,7 +667,7 @@ class TriggersDialog(QDialog):
         return a
 
     def _base_action_from_form(self):
-        kind = ACTION_KINDS[self.act_kind.currentText()]
+        kind = ACTION_KINDS[self.act_kind.currentData()]
         if kind == "noop":
             return TriggerAction(kind="noop")
         if kind == "message":
@@ -672,13 +679,13 @@ class TriggersDialog(QDialog):
         if kind == "createTrigger":
             target = self.act_target.currentData()
             if not target:
-                QMessageBox.information(self, "Kein Ziel", "Es gibt keinen anderen Trigger als Ziel.")
+                QMessageBox.information(self, tr("triggers.msg_no_target_title"), tr("triggers.msg_no_target_text"))
                 return None
             return TriggerAction(kind="createTrigger", target=target)
         if kind == "assignToGroup":
             group_name = self.act_assign_group.currentData()
             if not group_name:
-                QMessageBox.information(self, "Keine Zielgruppe", "Lege zuerst eine Gruppe an.")
+                QMessageBox.information(self, tr("triggers.msg_no_targetgroup_title"), tr("triggers.msg_no_group_text"))
                 return None
             return TriggerAction(
                 kind="assignToGroup", group_name=group_name,
@@ -712,7 +719,7 @@ class TriggersDialog(QDialog):
                 kind="startMiningOperation",
                 group_name=group_name,
                 mining_group_name=mining_group_name,
-                ore_type=MINING_OPERATION_ORES[self.act_ore.currentText()],
+                ore_type=MINING_OPERATION_ORES[self.act_ore.currentData()],
                 truck_count=self.act_truck_count.value(),
                 x=self.act_x.value(), y=self.act_y.value(),
                 x2=self.act_x2.value(), y2=self.act_y2.value(),

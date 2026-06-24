@@ -6,9 +6,9 @@ class OutputDialog(QDialog):
     """Ausgabeort und Dateiname der erzeugten Mission-DLL."""
     def __init__(self, parent, out_dir, dll_name):
         super().__init__(parent)
-        self.setWindowTitle("Ausgabeort der DLL")
+        self.setWindowTitle(tr("output_dialog.title"))
         self.dir_edit = QLineEdit(out_dir)
-        browse = QPushButton("Durchsuchen…")
+        browse = QPushButton(tr("output_dialog.browse"))
         browse.clicked.connect(self._browse)
         dir_row = QWidget(); dr = QHBoxLayout(dir_row); dr.setContentsMargins(0, 0, 0, 0)
         dr.addWidget(self.dir_edit, 1); dr.addWidget(browse)
@@ -16,10 +16,9 @@ class OutputDialog(QDialog):
         self.name_edit = QLineEdit(dll_name)
 
         form = QFormLayout()
-        form.addRow("Ordner:", dir_row)
-        form.addRow("Dateiname:", self.name_edit)
-        hint = QLabel("Hinweis: Colony-Missionen müssen mit „c“ beginnen,\n"
-                      "z.B. cMeineMission.dll – sonst zeigt OP2 sie nicht an.")
+        form.addRow(tr("output_dialog.folder"), dir_row)
+        form.addRow(tr("output_dialog.filename"), self.name_edit)
+        hint = QLabel(tr("output_dialog.hint"))
         hint.setStyleSheet("color: gray;")
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
@@ -28,7 +27,7 @@ class OutputDialog(QDialog):
         lay.addLayout(form); lay.addWidget(hint); lay.addWidget(btns)
 
     def _browse(self):
-        d = QFileDialog.getExistingDirectory(self, "Ausgabeordner wählen", self.dir_edit.text())
+        d = QFileDialog.getExistingDirectory(self, tr("output_dialog.choose_folder"), self.dir_edit.text())
         if d:
             self.dir_edit.setText(d)
 

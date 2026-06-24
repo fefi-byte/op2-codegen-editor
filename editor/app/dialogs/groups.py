@@ -6,7 +6,7 @@ class GroupsDialog(QDialog):
     """Gruppen verwalten: MiningGroup, BuildingGroup und ReinforceGroup."""
     def __init__(self, parent, mining_groups, building_groups, reinforce_groups, objects, player_count):
         super().__init__(parent)
-        self.setWindowTitle("Gruppen")
+        self.setWindowTitle(tr("groups.window_title"))
         self.resize(880, 560)
         self.groups = (
             [MiningGroupSpec(**asdict(g)) for g in mining_groups] +
@@ -40,12 +40,12 @@ class GroupsDialog(QDialog):
 
         self.glist = QListWidget()
         self.glist.currentRowChanged.connect(self._on_select)
-        add_mining = QPushButton("MiningGroup hinzufuegen"); add_mining.clicked.connect(self._add_mining)
-        add_building = QPushButton("BuildingGroup hinzufuegen"); add_building.clicked.connect(self._add_building)
-        add_reinforce = QPushButton("ReinforceGroup hinzufuegen"); add_reinforce.clicked.connect(self._add_reinforce)
-        rm = QPushButton("Gruppe entfernen"); rm.clicked.connect(self._remove)
+        add_mining = QPushButton(tr("groups.add_mining")); add_mining.clicked.connect(self._add_mining)
+        add_building = QPushButton(tr("groups.add_building")); add_building.clicked.connect(self._add_building)
+        add_reinforce = QPushButton(tr("groups.add_reinforce")); add_reinforce.clicked.connect(self._add_reinforce)
+        rm = QPushButton(tr("groups.remove")); rm.clicked.connect(self._remove)
         left = QVBoxLayout()
-        left.addWidget(QLabel("Gruppen:")); left.addWidget(self.glist, 1)
+        left.addWidget(QLabel(tr("groups.groups_label"))); left.addWidget(self.glist, 1)
         left.addWidget(add_mining); left.addWidget(add_building); left.addWidget(add_reinforce); left.addWidget(rm)
 
         self.name = QLineEdit()
@@ -57,30 +57,30 @@ class GroupsDialog(QDialog):
         self.rect_y = QSpinBox(); self.rect_y.setRange(0, 1023)
         self.rect_w = QSpinBox(); self.rect_w.setRange(1, 256); self.rect_w.setValue(8)
         self.rect_h = QSpinBox(); self.rect_h.setRange(1, 256); self.rect_h.setValue(8)
-        pick_rect = QPushButton("SetRect auf Karte ziehen")
+        pick_rect = QPushButton(tr("groups.pick_rect"))
         pick_rect.clicked.connect(self._pick_rect)
         self.pick_rect = pick_rect
         self.unit_list = QListWidget()
         self.target_text = QPlainTextEdit()
-        self.target_text.setPlaceholderText("Eine Zielgruppe pro Zeile, z.B.\nCommonMining1=1500\nConstruction=1000")
+        self.target_text.setPlaceholderText(tr("groups.target_placeholder"))
         self.target_text.setMaximumHeight(120)
 
         self._fill_object_combo(self.mine, self.mines)
         self._fill_object_combo(self.smelter, self.smelters)
 
         self.form = QFormLayout()
-        self.form.addRow("Name:", self.name)
-        self.form.addRow("Typ:", self.gtype)
-        self.form.addRow("Spieler:", self.player)
-        self.form.addRow("Mine:", self.mine)
-        self.form.addRow("Smelter:", self.smelter)
-        self.form.addRow("Rect X:", self.rect_x)
-        self.form.addRow("Rect Y:", self.rect_y)
-        self.form.addRow("Rect Breite:", self.rect_w)
-        self.form.addRow("Rect Hoehe:", self.rect_h)
+        self.form.addRow(tr("groups.row_name"), self.name)
+        self.form.addRow(tr("groups.row_type"), self.gtype)
+        self.form.addRow(tr("groups.row_player"), self.player)
+        self.form.addRow(tr("groups.row_mine"), self.mine)
+        self.form.addRow(tr("groups.row_smelter"), self.smelter)
+        self.form.addRow(tr("groups.row_rect_x"), self.rect_x)
+        self.form.addRow(tr("groups.row_rect_y"), self.rect_y)
+        self.form.addRow(tr("groups.row_rect_width"), self.rect_w)
+        self.form.addRow(tr("groups.row_rect_height"), self.rect_h)
         self.form.addRow("", pick_rect)
-        self.form.addRow("Einheiten:", self.unit_list)
-        self.form.addRow("Reinforce-Ziele:", self.target_text)
+        self.form.addRow(tr("groups.row_units"), self.unit_list)
+        self.form.addRow(tr("groups.row_targets"), self.target_text)
 
         self.name.textChanged.connect(self._store_current)
         for w in (self.player, self.rect_x, self.rect_y, self.rect_w, self.rect_h):
@@ -112,7 +112,7 @@ class GroupsDialog(QDialog):
 
     def _fill_object_combo(self, combo, objects):
         combo.clear()
-        combo.addItem("Leer / spaeter per Trigger", "")
+        combo.addItem(tr("groups.combo_empty"), "")
         for o in objects:
             combo.addItem(self._object_label(o), o.uid)
 

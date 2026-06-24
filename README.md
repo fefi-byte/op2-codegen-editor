@@ -33,9 +33,9 @@ LevelTemplate/  C++ mission template + bundled OP2 SDK sources
 ### Requirements
 
 - Python 3.11+
-- PySide6 (`pip install PySide6`)
+- PySide6, numpy, Pillow (`pip install PySide6 numpy Pillow`)
 - Visual Studio Build Tools 2019+ with the **C++ x86/x64 Build Tools** component (for `msbuild`)
-- Outpost 2 installed (OPU version recommended)
+- Outpost 2 installed (OPU 1.4.1 recommended)
 
 ### Editor config
 
@@ -51,6 +51,9 @@ msvs_path = C:\Program Files\Microsoft Visual Studio\18\Community
 [output]
 output_dir =
 dll_name = cEditorMission.dll
+
+[ui]
+language = auto
 ```
 
 - `game_path` — Outpost 2 install folder. The editor reads the **extracted OPU
@@ -59,8 +62,31 @@ dll_name = cEditorMission.dll
   `game_path` itself is treated as the content root.
 - `msvs_path` — Visual Studio install folder (must contain `Common7\Tools\VsDevCmd.bat`).
 - `output_dir` — where the built DLL is copied (empty = `game_path`).
+- `language` — UI language (see [Language](#language) below).
+
+A `[build]` section can override the MSBuild toolset on newer Visual Studio
+versions (e.g. `platform_toolset = v143` for VS2022, `v145` for VS2026, when the
+v142/VS2019 toolset isn't installed).
 
 `config.ini` is git-ignored (machine-specific paths).
+
+### Language
+
+The UI ships in **German and English**. The active language comes from
+`config.ini [ui] language`:
+
+```ini
+[ui]
+language = auto    # auto = follow the OS language; or a fixed code: de, en
+```
+
+- `auto` detects the system language on startup and uses the matching
+  `lang.<code>.ini` if one exists, otherwise falls back to German.
+- Switch at runtime via the **Language** menu (applies on restart). Picking a
+  language pins it; "Automatic (system)" sets it back to `auto`.
+- To add a language, copy `lang.en.ini` to `lang.<code>.ini`, translate the
+  values (keys and `{placeholders}` stay unchanged), and select it — no code
+  changes needed.
 
 ### Start the editor
 
@@ -78,7 +104,7 @@ cd LevelTemplate
 msbuild OP2Script.vcxproj /p:Configuration=Release /p:Platform=Win32
 ```
 
-The compiled DLL is written to the path set in `config.json`.
+The compiled DLL is written to the path set in `config.ini`.
 
 ## SDK sources
 

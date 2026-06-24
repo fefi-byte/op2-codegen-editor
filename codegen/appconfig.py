@@ -10,6 +10,7 @@ Abschnitte:
                           (enthaelt Common7\\Tools\\VsDevCmd.bat)
   [output]  output_dir -> Zielordner der Mission-DLL (leer = game_path)
             dll_name   -> Dateiname der Mission-DLL
+  [ui]      language   -> Sprache der Oberflaeche: auto (Systemsprache), de, en, ...
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from pathlib import Path
 DEFAULT_GAME_PATH = r"D:\Outpost 2"
 DEFAULT_MSVS_PATH = r"C:\Program Files\Microsoft Visual Studio\18\Community"
 DEFAULT_DLL_NAME = "cEditorMission.dll"
+DEFAULT_LANGUAGE = "auto"  # "auto" = Systemsprache erkennen (sonst de/en/...)
 
 
 def base_dir() -> Path:
@@ -83,6 +85,20 @@ def dll_name() -> str:
     return _load().get("output", "dll_name", fallback=DEFAULT_DLL_NAME).strip() or DEFAULT_DLL_NAME
 
 
+def language() -> str:
+    """UI-Sprachkuerzel aus [ui] language (Vorgabe: de)."""
+    return _load().get("ui", "language", fallback=DEFAULT_LANGUAGE).strip() or DEFAULT_LANGUAGE
+
+
+def set_language(code: str) -> None:
+    """Speichert das UI-Sprachkuerzel zurueck in die config.ini."""
+    cp = _load()
+    if not cp.has_section("ui"):
+        cp.add_section("ui")
+    cp.set("ui", "language", code)
+    _save(cp)
+
+
 def set_output(out_dir: str, name: str) -> None:
     """Speichert Ausgabeordner + DLL-Name zurueck in die config.ini."""
     cp = _load()
@@ -101,6 +117,7 @@ def ensure_default_file() -> None:
     cp["paths"] = {"game_path": DEFAULT_GAME_PATH, "msvs_path": DEFAULT_MSVS_PATH}
     cp["build"] = {"platform_toolset": "", "windows_sdk": ""}
     cp["output"] = {"output_dir": "", "dll_name": DEFAULT_DLL_NAME}
+    cp["ui"] = {"language": DEFAULT_LANGUAGE}
     try:
         _save(cp)
     except OSError:

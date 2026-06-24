@@ -9,6 +9,14 @@ This project does not yet use versioned releases; changes accumulate under
 ## [Unreleased]
 
 ### Added
+- Multi-language UI (German/English) via INI string tables (`lang.de.ini`,
+  `lang.en.ini`) and a small `tr()` lookup layer (`editor/app/i18n.py`). The
+  language is set in `config.ini [ui] language`; `auto` detects the OS language
+  on startup (falling back to German). A **Language** menu switches at runtime
+  (applies on restart). Adding a language needs only a new `lang.<code>.ini`.
+- Standard Windows-BMP tileset decoding, so the editor renders the extracted
+  OPU 1.4.1 tilesets (`base/tilesets/well####.bmp`), which are plain BMP rather
+  than the `.vol` `PBMP` format. (`mapview/tileset.py`, `mapview/render.py`)
 - `config.ini` (next to the executable, or the project root when running
   `python -m app`) for machine-specific settings — `game_path`, `msvs_path`,
   optional build overrides, and DLL output. Auto-created on first run;
@@ -38,6 +46,8 @@ This project does not yet use versioned releases; changes accumulate under
 - Hardcoded GOG game path and hardcoded Visual Studio install path.
 
 ### Fixed
+- Map rendering in OPU folder mode: the extracted OPU tilesets are standard BMP,
+  which the previous `PBMP`-only decoder rejected (every map failed to render).
 - The mission DLL build now succeeds on machines without the VS2019 (v142) build
   tools by retargeting through the configurable `platform_toolset` / `windows_sdk`
   (verified producing `ctest.dll` with v145 + Windows SDK 10.0.26100.0).
