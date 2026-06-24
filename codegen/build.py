@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import appconfig
 from codegen import generate_levelmain
 from demo_mission import build_demo
 
@@ -18,9 +19,6 @@ HERE = Path(__file__).resolve().parent
 TEMPLATE = HERE.parent / "LevelTemplate"
 LEVELMAIN = TEMPLATE / "LevelMain.cpp"
 VCXPROJ = TEMPLATE / "OP2Script.vcxproj"
-VSDEVCMD = Path(
-    r"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat"
-)
 
 
 def write_levelmain(cpp: str) -> None:
@@ -33,10 +31,19 @@ def write_levelmain(cpp: str) -> None:
 
 
 def build() -> Path:
+    vsdevcmd = appconfig.vsdevcmd()
+    if not vsdevcmd.exists():
+        raise SystemExit(
+            f"[FEHLER] VsDevCmd.bat nicht gefunden:\n{vsdevcmd}\n"
+            f"Bitte 'msvs_path' in der config.ini anpassen:\n{appconfig.CONFIG_PATH}")
+    props = "/p:Configuration=Release /p:Platform=Win32"
+    if appconfig.platform_toolset():
+        props += f" /p:PlatformToolset={appconfig.platform_toolset()}"
+    if appconfig.windows_sdk():
+        props += f" /p:WindowsTargetPlatformVersion={appconfig.windows_sdk()}"
     cmd = (
-        f'"{VSDEVCMD}" -arch=x86 >nul 2>&1 && '
-        f'msbuild "{VCXPROJ}" /p:Configuration=Release /p:Platform=Win32 '
-        f"/v:minimal /nologo"
+        f'"{vsdevcmd}" -arch=x86 >nul 2>&1 && '
+        f'msbuild "{VCXPROJ}" {props} /v:minimal /nologo'
     )
     print("[..] msbuild laeuft ...")
     # Outpost2Path aus der Umgebung entfernen, damit der Post-Build-Schritt des
