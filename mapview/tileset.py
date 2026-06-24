@@ -1,12 +1,17 @@
-"""Decoder fuer OP2 Custom-Tilesets (well####.bmp im "PBMP"-Format).
+"""Decoder fuer OP2-Tilesets (well####.bmp) in beiden Varianten:
 
-Nachgebaut aus OP2Utility/src/Sprite/TilesetLoader.cpp + TilesetHeaders.h.
-Aufbau:
-  SectionHeader "PBMP" (8B)
-  TilesetHeader: "head"(8B) + tagCount,pixelWidth,pixelHeight,bitDepth,flags (5*u32=20B)
-  PpalHeader:    "PPAL"(8B) + "head"(8B) + tagCount(u32=4B)
-  paletteHeader: "data"(8B) + 256*4B Palette  (R/B getauscht ggue. Standard-BMP)
-  pixelHeader:   "data"(8B) + width*height B   (8bpp Indizes, top-down)
+* OP2-"PBMP" (in den .vol-Archiven), nachgebaut aus
+  OP2Utility/src/Sprite/TilesetLoader.cpp + TilesetHeaders.h:
+    SectionHeader "PBMP" (8B)
+    TilesetHeader: "head"(8B) + tagCount,pixelWidth,pixelHeight,bitDepth,flags (5*u32=20B)
+    PpalHeader:    "PPAL"(8B) + "head"(8B) + tagCount(u32=4B)
+    paletteHeader: "data"(8B) + 256*4B Palette  (R/B getauscht ggue. Standard-BMP)
+    pixelHeader:   "data"(8B) + width*height B   (8bpp Indizes, top-down)
+* Standard-Windows-BMP (entpacktes OPU 1.4.1, base/tilesets/well####.bmp):
+  gleiches Layout (32px breiter Streifen aus 32x32-Tiles, 8bpp-Palette), aber
+  als gewoehnliche .bmp-Datei -> per PIL gelesen.
+
+`load_tileset()` waehlt anhand der Magic-Bytes automatisch den passenden Decoder.
 Tiles sind 32x32 und vertikal gestapelt (Tile t = Zeilen t*32 .. t*32+31).
 """
 from __future__ import annotations
@@ -66,6 +71,36 @@ def decode_tileset(data: bytes) -> Tileset:
     pixels = np.frombuffer(data, dtype=np.uint8, count=px_len, offset=pos).reshape(ph, pw)
 
     return Tileset(num_tiles=ph // TILE, palette=palette, pixels=pixels)
+
+
+def decode_bmp_tileset(data: bytes) -> Tileset:
+    """Decodes a standard Windows BMP tileset (OPU 1.4.1 well####.bmp).
+
+    Gleiches Tile-Layout wie PBMP (32px breiter, vertikaler Streifen aus
+    32x32-Tiles, 8bpp-Palettenbild); per PIL gelesen (Lazy-Import, damit die
+    reine PBMP-/.vol-Nutzung ohne Pillow auskommt).
+    """
+    import io
+    from PIL import Image
+
+    im = Image.open(io.BytesIO(data))
+    if im.mode != "P":
+        im = im.convert("P")
+    pixels = np.asarray(im, dtype=np.uint8)            # (H, 32) Indizes (top-down)
+    raw = bytes(im.getpalette() or b"")
+    palette = np.zeros((256, 3), dtype=np.uint8)
+    rgb = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 3)[:256]
+    palette[: len(rgb)] = rgb
+    return Tileset(num_tiles=pixels.shape[0] // TILE, palette=palette, pixels=pixels)
+
+
+def load_tileset(data: bytes) -> Tileset:
+    """Laedt ein Tileset unabhaengig vom Format (OP2-PBMP oder Standard-BMP)."""
+    if data[:4] == b"PBMP":
+        return decode_tileset(data)
+    if data[:2] == b"BM":
+        return decode_bmp_tileset(data)
+    raise ValueError(f"Unbekanntes Tileset-Format: {data[:8]!r}")
 
 
 def get_tile_rgb(ts: Tileset, graphic_index: int) -> np.ndarray:
