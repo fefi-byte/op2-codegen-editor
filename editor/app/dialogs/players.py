@@ -6,59 +6,59 @@ class PlayersDialog(QDialog):
     """Spieler verwalten: Kolonie, Mensch/KI, Tech-Level, Kolonisten, Forschungen."""
     def __init__(self, parent, players):
         super().__init__(parent)
-        self.setWindowTitle("Spieler")
+        self.setWindowTitle(tr("players.title"))
         self.resize(640, 480)
         self.players = [PlayerSpec(**asdict(p)) for p in players] or [PlayerSpec()]
         self._idx = 0
         self._loading = False
-        self.all_techs = load_techs(OP2_DIR / "multitek.txt")  # (id, name), sortiert
+        self.all_techs = load_techs(TECHS_DIR / "multitek.txt")  # (id, name), sortiert
         self.tech_names = {tid: name for tid, name in self.all_techs}
 
         self.plist = QListWidget()
-        add = QPushButton("Spieler hinzufügen"); add.clicked.connect(self._add)
-        rm = QPushButton("Entfernen"); rm.clicked.connect(self._remove)
+        add = QPushButton(tr("players.add_player")); add.clicked.connect(self._add)
+        rm = QPushButton(tr("players.remove")); rm.clicked.connect(self._remove)
         left = QVBoxLayout()
         left.addWidget(self.plist, 1); left.addWidget(add); left.addWidget(rm)
 
         self.colony = QComboBox(); self.colony.addItems(["Eden", "Plymouth"])
-        self.ptype = QComboBox(); self.ptype.addItems(["Mensch", "KI"])
+        self.ptype = QComboBox(); self.ptype.addItems([tr("players.human"), tr("players.ai")])
         self.tech = QSpinBox(); self.tech.setRange(0, 12)
-        self.init_res = QCheckBox("Startressourcen setzen")
-        self.set_pop = QCheckBox("Kolonisten explizit setzen")
+        self.init_res = QCheckBox(tr("players.init_resources"))
+        self.set_pop = QCheckBox(tr("players.set_population"))
         self.workers = QSpinBox(); self.workers.setRange(0, 5000)
         self.scientists = QSpinBox(); self.scientists.setRange(0, 5000)
         self.kids = QSpinBox(); self.kids.setRange(0, 5000)
-        self.set_res = QCheckBox("Ressourcen explizit setzen")
+        self.set_res = QCheckBox(tr("players.set_resources"))
         self.common = QSpinBox(); self.common.setRange(0, 1000000)
         self.rare = QSpinBox(); self.rare.setRange(0, 1000000)
         self.food = QSpinBox(); self.food.setRange(0, 1000000)
 
         # Forschungen: Auswahl per Name + "Tech hinzufügen" + Liste
         self.tech_avail = QComboBox()
-        add_tech = QPushButton("Tech hinzufügen")
+        add_tech = QPushButton(tr("players.add_tech"))
         add_tech.clicked.connect(self._add_tech)
         tech_add_row = QWidget(); tar = QHBoxLayout(tech_add_row); tar.setContentsMargins(0, 0, 0, 0)
         tar.addWidget(self.tech_avail, 1); tar.addWidget(add_tech)
         self.research_list = QListWidget()
         self.research_list.setMaximumHeight(110)
-        rm_tech = QPushButton("Forschung entfernen")
+        rm_tech = QPushButton(tr("players.remove_research"))
         rm_tech.clicked.connect(self._remove_tech)
 
         form = QFormLayout()
-        form.addRow("Kolonie:", self.colony)
-        form.addRow("Typ:", self.ptype)
-        form.addRow("Tech-Level:", self.tech)
+        form.addRow(tr("players.colony"), self.colony)
+        form.addRow(tr("players.type"), self.ptype)
+        form.addRow(tr("players.tech_level"), self.tech)
         form.addRow(self.init_res)
         form.addRow(self.set_pop)
-        form.addRow("Arbeiter:", self.workers)
-        form.addRow("Wissenschaftler:", self.scientists)
-        form.addRow("Kinder:", self.kids)
+        form.addRow(tr("players.workers"), self.workers)
+        form.addRow(tr("players.scientists"), self.scientists)
+        form.addRow(tr("players.kids"), self.kids)
         form.addRow(self.set_res)
-        form.addRow("Common Ore:", self.common)
-        form.addRow("Rare Ore:", self.rare)
-        form.addRow("Nahrung:", self.food)
-        form.addRow("Forschung:", tech_add_row)
-        form.addRow("Vorab erforscht:", self.research_list)
+        form.addRow(tr("players.common_ore"), self.common)
+        form.addRow(tr("players.rare_ore"), self.rare)
+        form.addRow(tr("players.food"), self.food)
+        form.addRow(tr("players.research"), tech_add_row)
+        form.addRow(tr("players.pre_researched"), self.research_list)
         form.addRow("", rm_tech)
 
         # bei jeder Aenderung in den aktuellen Spieler schreiben
@@ -83,8 +83,11 @@ class PlayersDialog(QDialog):
         self.plist.setCurrentRow(0)
 
     def _label(self, i, p):
-        return f"Spieler {i} — {'Eden' if p.colony == Colony.Eden else 'Plymouth'}, " \
-               f"{'Mensch' if p.is_human else 'KI'}, Tech {p.tech_level}"
+        return tr("players.list_label",
+                  i=i,
+                  colony=("Eden" if p.colony == Colony.Eden else "Plymouth"),
+                  type=(tr("players.human") if p.is_human else tr("players.ai")),
+                  tech=p.tech_level)
 
     def _refresh_list(self):
         self.plist.blockSignals(True)
@@ -105,7 +108,7 @@ class PlayersDialog(QDialog):
         p = self.players[i]
         self._loading = True
         self.colony.setCurrentText("Eden" if p.colony == Colony.Eden else "Plymouth")
-        self.ptype.setCurrentText("Mensch" if p.is_human else "KI")
+        self.ptype.setCurrentIndex(0 if p.is_human else 1)
         self.tech.setValue(p.tech_level)
         self.init_res.setChecked(p.init_resources)
         self.set_pop.setChecked(p.workers is not None or p.scientists is not None or p.kids is not None)
@@ -127,7 +130,7 @@ class PlayersDialog(QDialog):
         researches = list(self.players[self._idx].researches)
         p = PlayerSpec(
             colony=Colony.Eden if self.colony.currentText() == "Eden" else Colony.Plymouth,
-            is_human=(self.ptype.currentText() == "Mensch"),
+            is_human=(self.ptype.currentIndex() == 0),
             tech_level=self.tech.value(),
             init_resources=self.init_res.isChecked(),
             workers=self.workers.value() if self.set_pop.isChecked() else None,

@@ -31,10 +31,13 @@ from PySide6.QtGui import QFont, QPainterPath, QPolygonF, QCursor
 from PySide6.QtCore import QPointF
 
 from op2map import Op2Map
+from op2res import FolderResources, content_root
 from render import render_array
 from tileset import TILE
 from vol import VolFile
 
+import appconfig
+from . import i18n
 import build as build_mod
 from codegen import generate_levelmain
 from mission_model import (
@@ -44,14 +47,34 @@ from mission_model import (
 )
 from techs import load_techs
 
-OP2_DIR = Path(r"C:\Program Files (x86)\GOG Galaxy\Games\Outpost 2")
-MAPS_VOL = OP2_DIR / "maps.vol"
-CONFIG_PATH = EDITOR_DIR / "config.json"
+# Pfade kommen aus config.ini (neben der EXE bzw. im Projekt-Root).
+appconfig.ensure_default_file()
+OP2_DIR = appconfig.game_path()
+# OPU 1.4.1: Karten/Tilesets/Techs liegen entpackt unter <game>/OPU (kein .vol).
+CONTENT_ROOT = content_root(OP2_DIR)
+TECHS_DIR = CONTENT_ROOT / "base" / "techs"
 SCENE_TILE = TILE  # native 32px -> scharf
 
 # Standard-Ausgabeort der Mission-DLL. Colony-Missionen brauchen den Praefix "c".
-DEFAULT_OUTPUT_DIR = str(OP2_DIR)
-DEFAULT_DLL_NAME = "cEditorMission.dll"
+DEFAULT_OUTPUT_DIR = appconfig.output_dir()
+DEFAULT_DLL_NAME = appconfig.dll_name()
+
+# --- Mehrsprachigkeit ---
+i18n.init(appconfig.language())
+tr = i18n.tr
+
+
+def fill_combo(combo, mapping, section):
+    """Befuellt eine QComboBox aus einem {label: value|tuple}-Dict sprachneutral.
+
+    Anzeige = uebersetzt via tr(f"{section}.{interner_wert}"); itemData = das
+    urspruengliche (deutsche) Label, damit bestehende `DICT[combo.currentData()]`-
+    Lookups unveraendert funktionieren. Zum Setzen: combo.setCurrentIndex(
+    combo.findData(label)).
+    """
+    for label, val in mapping.items():
+        internal = val[0] if isinstance(val, tuple) else val
+        combo.addItem(tr(f"{section}.{internal}"), label)
 
 # Gebaeude (Anzeige, map_id, Footprint aus building.txt)
 STRUCTURES = [
@@ -210,49 +233,53 @@ ACTION_CONDITION_KINDS = {
 }
 
 
+def _cmp_sym(compare):
+    return {v: k for k, v in COMPARE.items()}.get(compare, compare)
+
+
 def action_condition_summary(c) -> str:
-    cmp = {v: k for k, v in COMPARE.items()}.get(c.compare, c.compare)
-    neg = "NICHT " if c.negate else ""
+    cmp = _cmp_sym(c.compare)
+    neg = (tr("sum.not") + " ") if c.negate else ""
     if c.kind == "buildingAtLocation":
-        return f"{neg}{c.building_type} @ ({c.x},{c.y}) vorhanden (P{c.player})"
+        return tr("sum.cond_building_at", neg=neg, b=c.building_type, x=c.x, y=c.y, p=c.player)
     if c.kind == "unitDamage":
-        return f"{neg}Schaden {c.building_type} @ ({c.x},{c.y}) {cmp} {c.value} (P{c.player})"
+        return tr("sum.cond_damage", neg=neg, b=c.building_type, x=c.x, y=c.y, cmp=cmp, v=c.value, p=c.player)
     if c.kind == "playerResource":
-        return f"{neg}{c.resource} {cmp} {c.value} (P{c.player})"
+        return tr("sum.cond_resource", neg=neg, res=c.resource, cmp=cmp, v=c.value, p=c.player)
     if c.kind == "buildingCount":
-        return f"{neg}Anzahl {c.building_type} {cmp} {c.value} (P{c.player})"
+        return tr("sum.cond_count", neg=neg, b=c.building_type, cmp=cmp, v=c.value, p=c.player)
     if c.kind == "hasTech":
-        return f"{neg}Tech {c.tech_id} erforscht (P{c.player})"
+        return tr("sum.cond_tech", neg=neg, tech=c.tech_id, p=c.player)
     return c.kind
 
 
 def trigger_summary(t) -> str:
-    cond = {v: k for k, (v, _) in TRIGGER_CONDITIONS.items()}.get(t.condition, t.condition)
-    start = "Start" if t.enabled_at_start else "Laufzeit"
-    return f"{t.name} [{start}] — {cond}, {len(t.actions)} Aktion(en)"
+    cond = tr(f"trigger_conditions.{t.condition}")
+    start = tr("sum.trig_start") if t.enabled_at_start else tr("sum.trig_runtime")
+    return tr("sum.trigger", name=t.name, start=start, cond=cond, n=len(t.actions))
 
 
 def action_summary(a) -> str:
-    prefix = f"[IF×{len(a.conditions)}] " if getattr(a, "conditions", None) else ""
+    prefix = (tr("sum.if_prefix", n=len(a.conditions)) + " ") if getattr(a, "conditions", None) else ""
     return prefix + _action_summary_core(a)
 
 
 def _action_summary_core(a) -> str:
     if a.kind == "noop":
-        return "Leere Aktion (Platzhalter)"
+        return tr("action_kinds.noop")
     if a.kind == "if":
-        logic = "ODER" if getattr(a, "condition_logic", "and") == "or" else "UND"
-        return (f"Wenn ({len(getattr(a, 'conditions', []))} Bed., {logic}) → "
-                f"Dann {len(getattr(a, 'then_actions', []))} / Sonst {len(getattr(a, 'else_actions', []))}")
+        logic = tr("sum.or") if getattr(a, "condition_logic", "and") == "or" else tr("sum.and")
+        return tr("sum.act_if", n=len(getattr(a, "conditions", [])), logic=logic,
+                  then=len(getattr(a, "then_actions", [])), els=len(getattr(a, "else_actions", [])))
     if a.kind == "message":
-        return f"Nachricht: \"{a.text}\""
+        return tr("sum.act_message", text=a.text)
     if a.kind == "createUnit":
         weapon = "" if a.weapon_type == "mapNone" else f" / {a.weapon_type}"
-        return f"Einheit: {a.unit_type}{weapon} @ ({a.x},{a.y}) P{a.player}"
+        return tr("sum.act_createunit", unit=a.unit_type, weapon=weapon, x=a.x, y=a.y, p=a.player)
     if a.kind == "createTrigger":
-        return f"Trigger erstellen: {a.target}"
+        return tr("sum.act_createtrigger", target=a.target)
     if a.kind == "recordBuilding":
-        return f"{a.group_name}.RecordBuilding({a.building_type} Mitte ({a.x},{a.y}))"
+        return tr("sum.act_recordbuilding", g=a.group_name, b=a.building_type, x=a.x, y=a.y)
     if a.kind == "recordTube":
         return f"{a.group_name}.RecordTubeLine(({a.x},{a.y}) -> ({a.x2},{a.y2}))"
     if a.kind == "recordWall":
@@ -268,39 +295,47 @@ def _action_summary_core(a) -> str:
                 f"Mine ({a.x},{a.y}) -> Smelter ({a.x2},{a.y2}), "
                 f"Rect ({a.rect_x},{a.rect_y}) {a.rect_width}x{a.rect_height}")
     if a.kind == "assignToGroup":
-        return f"Wenn {a.building_type} @ ({a.x},{a.y}) gebaut -> {a.group_name}.TakeUnit (P{a.player})"
+        return tr("sum.act_assign", b=a.building_type, x=a.x, y=a.y, g=a.group_name, p=a.player)
     return a.kind
 
 
 def condition_summary(c: Condition) -> str:
     """Kurzbeschreibung einer Bedingung fuer die Liste."""
-    cmp = {v: k for k, v in COMPARE.items()}.get(c.compare, c.compare)
-    return {
-        "time": f"Zeit überstehen: {c.marks} Marks",
-        "lastStanding": "Letzter Überlebender",
-        "starship": "Raumschiff bauen",
-        "noCC": f"Kein Command Center (P{c.player})",
-        "buildingCount": f"Gebäude {cmp} {c.count} (P{c.player})",
-        "vehicleCount": f"Fahrzeuge {cmp} {c.count} (P{c.player})",
-        "research": f"Tech {c.tech_id} erforscht (P{c.player})",
-        "resource": f"{c.resource} {cmp} {c.amount} (P{c.player})",
-        "operational": f"{c.building} operativ {cmp} {c.count} (P{c.player})",
-    }.get(c.kind, c.kind)
+    cmp = _cmp_sym(c.compare)
+    k = c.kind
+    if k == "time":
+        return tr("sum.win_time", marks=c.marks)
+    if k == "lastStanding":
+        return tr("conditions.lastStanding")
+    if k == "starship":
+        return tr("conditions.starship")
+    if k == "noCC":
+        return tr("sum.win_nocc", p=c.player)
+    if k == "buildingCount":
+        return tr("sum.win_buildingcount", cmp=cmp, n=c.count, p=c.player)
+    if k == "vehicleCount":
+        return tr("sum.win_vehiclecount", cmp=cmp, n=c.count, p=c.player)
+    if k == "research":
+        return tr("sum.win_research", tech=c.tech_id, p=c.player)
+    if k == "resource":
+        return tr("sum.win_resource", res=c.resource, cmp=cmp, amt=c.amount, p=c.player)
+    if k == "operational":
+        return tr("sum.win_operational", b=c.building, cmp=cmp, n=c.count, p=c.player)
+    return k
 
 
 def mining_group_summary(g: MiningGroupSpec) -> str:
     if not getattr(g, "has_setup", True):
-        return f"{g.name} [MiningGroup] P{g.player}  leer, {len(g.truck_ids)} Truck(s)"
-    return (f"{g.name} [MiningGroup] P{g.player}  Mine ({g.mine_x},{g.mine_y}) "
-            f"-> Smelter ({g.smelter_x},{g.smelter_y}), {len(g.truck_ids)} Truck(s)")
+        return tr("sum.group_mining_empty", name=g.name, p=g.player, n=len(g.truck_ids))
+    return tr("sum.group_mining", name=g.name, p=g.player, mx=g.mine_x, my=g.mine_y,
+              sx=g.smelter_x, sy=g.smelter_y, n=len(g.truck_ids))
 
 
 def building_group_summary(g: BuildingGroupSpec) -> str:
-    return (f"{g.name} [BuildingGroup] P{g.player}  Rect ({g.rect_x},{g.rect_y}) "
-            f"{g.rect_width}x{g.rect_height}, {len(g.unit_ids)} Unit(s)")
+    return tr("sum.group_building", name=g.name, p=g.player, rx=g.rect_x, ry=g.rect_y,
+              rw=g.rect_width, rh=g.rect_height, n=len(g.unit_ids))
 
 
 def reinforce_group_summary(g: ReinforceGroupSpec) -> str:
-    return (f"{g.name} [ReinforceGroup] P{g.player}  "
-            f"{len(g.unit_ids)} Fabrik(en), {len(g.targets)} Zielgruppe(n)")
+    return tr("sum.group_reinforce", name=g.name, p=g.player, f=len(g.unit_ids), t=len(g.targets))
 

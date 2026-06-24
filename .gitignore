@@ -39,8 +39,9 @@ obj/
 *.tlog
 *.lastbuildstate
 
-# Project-local generated artifacts
+# Project-local generated artifacts (machine-specific paths)
 editor/config.json
+config.ini
 
 # LevelTemplate: old submodule metadata (SDK sources are bundled directly)
 LevelTemplate/**/.gitmodules

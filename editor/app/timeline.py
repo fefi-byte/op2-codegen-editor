@@ -153,8 +153,8 @@ class TimelineView(QGraphicsView):
         for row, ti in enumerate(order):
             t = triggers[ti]
             node_kind = "trigger_start" if t.enabled_at_start else "trigger"
-            cond = {v: k for k, (v, _) in TRIGGER_CONDITIONS.items()}.get(t.condition, t.condition)
-            sub = f"{cond} · {len(t.actions)} Aktion(en)"
+            cond = tr(f"trigger_conditions.{t.condition}")
+            sub = tr("timeline.node_sub", cond=cond, n=len(t.actions))
             node = NodeItem(f"trigger:{t.name}", "trigger", ti, t.name, sub, self, color_key=node_kind)
             self._place(node, COL_X_TRIGGERS, Y_START + row * Y_GAP)
             self.nodes[f"trigger:{t.name}"] = node
@@ -165,7 +165,7 @@ class TimelineView(QGraphicsView):
         for gkind, groups in (("mining", mining_groups), ("building", building_groups),
                               ("reinforce", reinforce_groups)):
             for g in groups:
-                node = NodeItem(f"{gkind}:{g.name}", gkind, -1, g.name, gkind, self)
+                node = NodeItem(f"{gkind}:{g.name}", gkind, -1, g.name, tr(f"timeline.{gkind}"), self)
                 self._place(node, COL_X_GROUPS, Y_START + row * Y_GAP)
                 self.nodes[f"{gkind}:{g.name}"] = node
                 self._scene.addItem(node)

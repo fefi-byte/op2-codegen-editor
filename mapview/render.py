@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image
 
 from op2map import Op2Map
-from tileset import TILE, Tileset, decode_tileset
+from tileset import TILE, Tileset, load_tileset
 from vol import VolFile
 
 
@@ -22,7 +22,7 @@ def render_array(m: Op2Map, vol: VolFile) -> np.ndarray:
     tilesets: dict[int, Tileset] = {}
     for i, ts in enumerate(m.tileset_sources):
         if ts.filename:
-            tilesets[i] = decode_tileset(vol.read_file(ts.filename + ".bmp"))
+            tilesets[i] = load_tileset(vol.read_file(ts.filename + ".bmp"))
 
     W, H = m.width, m.height
     canvas = np.zeros((H * TILE, W * TILE, 3), dtype=np.uint8)

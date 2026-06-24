@@ -2,6 +2,8 @@
 
 A Python-based mission editor for Outpost 2 that generates native C++ mission source code and compiles it to a 32-bit DLL.
 
+Recent changes are tracked in [CHANGELOG.md](CHANGELOG.md).
+
 ## How it works
 
 1. The **editor GUI** (PySide6) lets you place units, buildings, beacons, walls, configure players, triggers, and AI groups visually.
@@ -31,22 +33,60 @@ LevelTemplate/  C++ mission template + bundled OP2 SDK sources
 ### Requirements
 
 - Python 3.11+
-- PySide6 (`pip install PySide6`)
+- PySide6, numpy, Pillow (`pip install PySide6 numpy Pillow`)
 - Visual Studio Build Tools 2019+ with the **C++ x86/x64 Build Tools** component (for `msbuild`)
-- Outpost 2 installed (OPU version recommended)
+- Outpost 2 installed (OPU 1.4.1 recommended)
 
 ### Editor config
 
-Copy `editor/config.example.json` to `editor/config.json` and adjust the paths:
+Paths live in a `config.ini` next to the executable (or in the project root when
+running `python -m app`). It is created automatically on first start; copy
+`config.example.ini` and adjust it, or edit the generated file:
 
-```json
-{
-  "output_dir": "C:/Path/To/Outpost2/OPU",
-  "dll_name": "cEditorMission.dll"
-}
+```ini
+[paths]
+game_path = D:\Outpost 2
+msvs_path = C:\Program Files\Microsoft Visual Studio\18\Community
+
+[output]
+output_dir =
+dll_name = cEditorMission.dll
+
+[ui]
+language = auto
 ```
 
-`config.json` is git-ignored (machine-specific paths).
+- `game_path` — Outpost 2 install folder. The editor reads the **extracted OPU
+  1.4.1 layout** (`OPU\base\maps`, `OPU\maps`, `OPU\base\tilesets`,
+  `OPU\base\techs`) — no `.vol` archives needed. If there is no `OPU` subfolder,
+  `game_path` itself is treated as the content root.
+- `msvs_path` — Visual Studio install folder (must contain `Common7\Tools\VsDevCmd.bat`).
+- `output_dir` — where the built DLL is copied (empty = `game_path`).
+- `language` — UI language (see [Language](#language) below).
+
+A `[build]` section can override the MSBuild toolset on newer Visual Studio
+versions (e.g. `platform_toolset = v143` for VS2022, `v145` for VS2026, when the
+v142/VS2019 toolset isn't installed).
+
+`config.ini` is git-ignored (machine-specific paths).
+
+### Language
+
+The UI ships in **German and English**. The active language comes from
+`config.ini [ui] language`:
+
+```ini
+[ui]
+language = auto    # auto = follow the OS language; or a fixed code: de, en
+```
+
+- `auto` detects the system language on startup and uses the matching
+  `lang.<code>.ini` if one exists, otherwise falls back to German.
+- Switch at runtime via the **Language** menu (applies on restart). Picking a
+  language pins it; "Automatic (system)" sets it back to `auto`.
+- To add a language, copy `lang.en.ini` to `lang.<code>.ini`, translate the
+  values (keys and `{placeholders}` stay unchanged), and select it — no code
+  changes needed.
 
 ### Start the editor
 
@@ -64,7 +104,7 @@ cd LevelTemplate
 msbuild OP2Script.vcxproj /p:Configuration=Release /p:Platform=Win32
 ```
 
-The compiled DLL is written to the path set in `config.json`.
+The compiled DLL is written to the path set in `config.ini`.
 
 ## SDK sources
 

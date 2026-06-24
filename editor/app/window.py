@@ -15,17 +15,25 @@ from .dialogs.groups import GroupsDialog
 class EditorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("OP2 Mission Editor (Prototyp)")
+        self.setWindowTitle(tr("window.app_title"))
         self.resize(1250, 870)
 
-        self.vol = VolFile(MAPS_VOL)
+        try:
+            self.res = FolderResources(OP2_DIR)
+            if not self.res.names():
+                raise FileNotFoundError(f"keine .map-Dateien unter {self.res.root}")
+        except Exception as e:
+            QMessageBox.critical(
+                self, tr("window.op2_not_found_title"),
+                tr("window.op2_not_found_text", e=e, path=appconfig.CONFIG_PATH))
+            raise SystemExit(1)
         self.map = None
         self.map_name = "cm02.map"
         self.mission_name = "Editor Mission"
         self.players: list[PlayerSpec] = [PlayerSpec()]
         self.objects: list[PlacedObject] = []
         self.victories: list[Condition] = [
-            Condition(kind="time", marks=600, objective="Halte 600 Marks durch.")]
+            Condition(kind="time", marks=600, objective=tr("window.default_victory_objective"))]
         self.defeats: list[Condition] = [Condition(kind="noCC", player=0)]
         self.triggers: list[TriggerDef] = []
         self.groups: list[MiningGroupSpec] = []
@@ -36,9 +44,8 @@ class EditorWindow(QMainWindow):
         self._pending_trigger_index = 0
         self._pending_action_index = -1
 
-        cfg = self._load_config()
-        self.output_dir = cfg.get("output_dir", DEFAULT_OUTPUT_DIR)
-        self.dll_name = cfg.get("dll_name", DEFAULT_DLL_NAME)
+        self.output_dir = DEFAULT_OUTPUT_DIR
+        self.dll_name = DEFAULT_DLL_NAME
         self._placement_active = False
         self._placement_preview_items = []
 
@@ -67,60 +74,65 @@ class EditorWindow(QMainWindow):
 
         self.coord_label = QLabel("Tile: –")
         self.statusBar().addPermanentWidget(self.coord_label)
-        self.statusBar().showMessage("Bereit.")
+        self.statusBar().showMessage(tr("window.status_ready"))
         self.load_map(self.map_name)
         self._refresh_overview()
 
-    def _load_config(self) -> dict:
-        try:
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-
-    def _save_config(self) -> None:
-        try:
-            CONFIG_PATH.write_text(json.dumps(
-                {"output_dir": self.output_dir, "dll_name": self.dll_name}, indent=2),
-                encoding="utf-8")
-        except Exception:
-            pass
-
     def _build_menu(self):
-        m = self.menuBar().addMenu("&Datei")
-        a = QAction("Projekt öffnen…", self); a.triggered.connect(self.open_project); m.addAction(a)
-        a = QAction("Projekt speichern…", self); a.triggered.connect(self.save_project); m.addAction(a)
+        m = self.menuBar().addMenu(tr("window.menu_file"))
+        a = QAction(tr("window.open_project"), self); a.triggered.connect(self.open_project); m.addAction(a)
+        a = QAction(tr("window.save_project"), self); a.triggered.connect(self.save_project); m.addAction(a)
         m.addSeparator()
-        a = QAction("Karte wählen…", self); a.triggered.connect(self.choose_map); m.addAction(a)
-        a = QAction("Ausgabeort der DLL…", self); a.triggered.connect(self.choose_output); m.addAction(a)
+        a = QAction(tr("window.choose_map"), self); a.triggered.connect(self.choose_map); m.addAction(a)
+        a = QAction(tr("window.choose_output"), self); a.triggered.connect(self.choose_output); m.addAction(a)
         m.addSeparator()
-        a = QAction("Beenden", self); a.triggered.connect(self.close); m.addAction(a)
+        a = QAction(tr("window.quit"), self); a.triggered.connect(self.close); m.addAction(a)
+
+        lang_menu = self.menuBar().addMenu(tr("window.menu_language"))
+        configured = appconfig.language().strip().lower()
+        auto_act = QAction(tr("window.lang_auto"), self)
+        auto_act.setCheckable(True)
+        auto_act.setChecked(configured in ("", "auto"))
+        auto_act.triggered.connect(lambda _checked=False: self._set_language("auto"))
+        lang_menu.addAction(auto_act)
+        lang_menu.addSeparator()
+        for code in i18n.available():
+            act = QAction(tr(f"languages.{code}"), self)
+            act.setCheckable(True)
+            act.setChecked(configured == code)
+            act.triggered.connect(lambda _checked=False, c=code: self._set_language(c))
+            lang_menu.addAction(act)
 
         # "Mission"-Aktionen als obere Werkzeugleiste statt Menue.
         tb = QToolBar("Mission", self)
         tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.addToolBar(tb)
         for label, slot in [
-            ("Spieler", self.edit_players),
-            ("Sieg & Niederlage", self.edit_conditions),
-            ("Gruppen", self.edit_groups),
-            ("Trigger", self.edit_triggers),
-            ("Code anzeigen", self.show_code),
-            ("Build → DLL", self.do_build),
-            ("Objekte leeren", self.clear_objects),
+            (tr("window.tb_players"), self.edit_players),
+            (tr("window.tb_conditions"), self.edit_conditions),
+            (tr("window.tb_groups"), self.edit_groups),
+            (tr("window.tb_triggers"), self.edit_triggers),
+            (tr("window.tb_show_code"), self.show_code),
+            (tr("window.tb_build"), self.do_build),
+            (tr("window.tb_clear"), self.clear_objects),
         ]:
             act = QAction(label, self)
             act.triggered.connect(slot)
             tb.addAction(act)
 
+    def _set_language(self, code):
+        appconfig.set_language(code)
+        QMessageBox.information(self, tr("window.lang_changed_title"), tr("window.lang_changed_text"))
+
     def _build_sidebar(self):
-        dock = QDockWidget("Platzieren", self)
+        dock = QDockWidget(tr("window.dock_place"), self)
         panel = QWidget()
         lay = QVBoxLayout(panel)
 
-        lay.addWidget(QLabel("Kategorie:"))
+        lay.addWidget(QLabel(tr("window.lbl_category")))
         self.cat_combo = QComboBox()
-        self.cat_combo.addItems(CATALOG.keys())
-        self.cat_combo.currentTextChanged.connect(self._fill_list)
+        fill_combo(self.cat_combo, CATALOG, "catalog")
+        self.cat_combo.currentIndexChanged.connect(lambda *_: self._fill_list(self.cat_combo.currentData()))
         lay.addWidget(self.cat_combo)
 
         self.list = QListWidget()
@@ -131,37 +143,37 @@ class EditorWindow(QMainWindow):
         # Spieler
         self.player_row = QWidget(); pr = QFormLayout(self.player_row); pr.setContentsMargins(0, 0, 0, 0)
         self.player_spin = QSpinBox(); self.player_spin.setRange(0, 5)
-        pr.addRow("Spieler:", self.player_spin)
+        pr.addRow(tr("window.lbl_player"), self.player_spin)
         lay.addWidget(self.player_row)
 
         self.unit_name_row = QWidget(); nr = QFormLayout(self.unit_name_row); nr.setContentsMargins(0, 0, 0, 0)
         self.unit_name_edit = QLineEdit()
-        self.unit_name_edit.setPlaceholderText("optional, z.B. mainSmelter")
-        nr.addRow("Unit-Name:", self.unit_name_edit)
+        self.unit_name_edit.setPlaceholderText(tr("window.unit_name_placeholder"))
+        nr.addRow(tr("window.lbl_unit_name"), self.unit_name_edit)
         lay.addWidget(self.unit_name_row)
 
         # Cargo-Truck-Parameter
         self.cargo_row = QWidget(); cr = QFormLayout(self.cargo_row); cr.setContentsMargins(0, 0, 0, 0)
-        self.cargo_combo = QComboBox(); self.cargo_combo.addItems(TRUCK_CARGO.keys())
-        self.cargo_combo.setCurrentText("Leer")  # Trucks standardmaessig leer
+        self.cargo_combo = QComboBox(); fill_combo(self.cargo_combo, TRUCK_CARGO, "truck_cargo")
+        self.cargo_combo.setCurrentIndex(self.cargo_combo.findData("Leer"))  # Trucks standardmaessig leer
         self.cargo_amount = QSpinBox(); self.cargo_amount.setRange(0, 5000); self.cargo_amount.setValue(1000)
-        cr.addRow("Fracht:", self.cargo_combo); cr.addRow("Menge:", self.cargo_amount)
+        cr.addRow(tr("window.lbl_cargo"), self.cargo_combo); cr.addRow(tr("window.lbl_amount"), self.cargo_amount)
         lay.addWidget(self.cargo_row)
 
         # ConVec-Bausatz
         self.kit_row = QWidget(); kr = QFormLayout(self.kit_row); kr.setContentsMargins(0, 0, 0, 0)
         self.kit_combo = QComboBox()
-        self.kit_combo.addItem("Leer", None)
+        self.kit_combo.addItem(tr("window.empty"), None)
         for disp, mid, _ in STRUCTURES:
             self.kit_combo.addItem(disp, mid)
-        kr.addRow("Bausatz:", self.kit_combo)
+        kr.addRow(tr("window.lbl_kit"), self.kit_combo)
         lay.addWidget(self.kit_row)
 
         # Beacon-Parameter
         self.beacon_row = QWidget(); br = QFormLayout(self.beacon_row); br.setContentsMargins(0, 0, 0, 0)
-        self.ore_combo = QComboBox(); self.ore_combo.addItems(ORE_TYPES.keys())
-        self.yield_combo = QComboBox(); self.yield_combo.addItems(YIELDS.keys())
-        br.addRow("Erz-Typ:", self.ore_combo); br.addRow("Ertrag:", self.yield_combo)
+        self.ore_combo = QComboBox(); fill_combo(self.ore_combo, ORE_TYPES, "ore_types")
+        self.yield_combo = QComboBox(); fill_combo(self.yield_combo, YIELDS, "yields")
+        br.addRow(tr("window.lbl_ore_type"), self.ore_combo); br.addRow(tr("window.lbl_yield"), self.yield_combo)
         lay.addWidget(self.beacon_row)
 
         # Waffe (Kampffahrzeuge Lynx/Panther/Tiger + Guard Post)
@@ -169,33 +181,30 @@ class EditorWindow(QMainWindow):
         self.weapon_combo = QComboBox()
         for d, m in WEAPONS:
             self.weapon_combo.addItem(d, m)
-        wr.addRow("Waffe:", self.weapon_combo)
+        wr.addRow(tr("window.lbl_weapon"), self.weapon_combo)
         lay.addWidget(self.weapon_row)
 
-        lay.addWidget(QLabel(
-            "Auswahl aktiv: Links setzen · Rechts abwaehlen\n"
-            "Ohne Auswahl: Links bearbeiten · Rechts entfernen\n"
-            "Mittel-Drag: schwenken · Rad: zoom"))
+        lay.addWidget(QLabel(tr("window.sidebar_hint")))
 
         dock.setWidget(panel)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
-        self._fill_list(self.cat_combo.currentText())
+        self._fill_list(self.cat_combo.currentData())
 
     # --- Mission-Uebersicht: Ausfuehrungs-Flussbaum + Gesamtuebersicht (Dock rechts) ---
     def _build_overview(self):
-        dock = QDockWidget("Mission-Übersicht", self)
+        dock = QDockWidget(tr("window.dock_overview"), self)
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         panel = QWidget()
         lay = QVBoxLayout(panel)
         bar = QHBoxLayout()
-        add_btn = QPushButton("Trigger +"); add_btn.clicked.connect(self._add_trigger)
+        add_btn = QPushButton(tr("window.add_trigger_btn")); add_btn.clicked.connect(self._add_trigger)
         bar.addWidget(add_btn); bar.addStretch(1)
         lay.addLayout(bar)
         self.overview = QTreeWidget()
         self.overview.setHeaderHidden(True)
         self.overview.itemDoubleClicked.connect(self._overview_activated)
         lay.addWidget(self.overview, 1)
-        lay.addWidget(QLabel("Doppelklick: bearbeiten · Trigger sind nach Ausführung verschachtelt"))
+        lay.addWidget(QLabel(tr("window.overview_hint")))
         dock.setWidget(panel)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
 
@@ -213,10 +222,10 @@ class EditorWindow(QMainWindow):
         name = f"Trigger{len(self.triggers) + 1}"
         self.triggers.append(TriggerDef(name=name))
         self._refresh_overview()
-        self.statusBar().showMessage(f"Trigger '{name}' angelegt (Doppelklick zum Bearbeiten).")
+        self.statusBar().showMessage(tr("window.status_trigger_added", name=name))
 
     def _trigger_cond_text(self, t):
-        return {v: k for k, (v, _) in TRIGGER_CONDITIONS.items()}.get(t.condition, t.condition)
+        return tr(f"trigger_conditions.{t.condition}")
 
     def _add_flow_trigger(self, parent, ti, path, prefix=""):
         t = self.triggers[ti]
@@ -228,7 +237,7 @@ class EditorWindow(QMainWindow):
             if a.kind == "createTrigger" and a.target in self._trig_idx_by_name:
                 tgt = self._trig_idx_by_name[a.target]
                 if tgt in new_path:
-                    self._ov_add(item, f"⟶ {a.target} (siehe oben)", "triggers", tgt)
+                    self._ov_add(item, f"⟶ {a.target} {tr('window.see_above')}", "triggers", tgt)
                 else:
                     self._add_flow_trigger(item, tgt, new_path, prefix="⟶ ")
             else:
@@ -246,23 +255,25 @@ class EditorWindow(QMainWindow):
         created = {a.target for t in self.triggers for a in t.actions
                    if a.kind == "createTrigger" and a.target}
 
-        sec_flow = self._ov_add(self.overview, f"Ablauf / Trigger ({len(self.triggers)})")
+        sec_flow = self._ov_add(self.overview, tr("window.ov_flow", n=len(self.triggers)))
         for i, t in enumerate(self.triggers):
             if t.enabled_at_start:
                 self._add_flow_trigger(sec_flow, i, set())
         for i, t in enumerate(self.triggers):
             if not t.enabled_at_start and t.name not in created:
-                self._add_flow_trigger(sec_flow, i, set(), prefix="(ungebunden) ")
+                self._add_flow_trigger(sec_flow, i, set(), prefix=tr("window.unbound_prefix") + " ")
 
-        sec_players = self._ov_add(self.overview, f"Spieler ({len(self.players)})")
+        sec_players = self._ov_add(self.overview, tr("window.ov_players", n=len(self.players)))
         for i, p in enumerate(self.players):
             colony = "Eden" if p.colony == Colony.Eden else "Plymouth"
             self._ov_add(sec_players,
-                         f"Spieler {i} — {colony}, {'Mensch' if p.is_human else 'KI'}, Tech {p.tech_level}",
+                         tr("players.list_label", i=i, colony=colony,
+                            type=(tr("players.human") if p.is_human else tr("players.ai")),
+                            tech=p.tech_level),
                          "players", i)
 
         groups_total = len(self.groups) + len(self.building_groups) + len(self.reinforce_groups)
-        sec_groups = self._ov_add(self.overview, f"Gruppen ({groups_total})")
+        sec_groups = self._ov_add(self.overview, tr("window.ov_groups", n=groups_total))
         for g in self.groups:
             self._ov_add(sec_groups, mining_group_summary(g), "groups")
         for g in self.building_groups:
@@ -271,13 +282,13 @@ class EditorWindow(QMainWindow):
             self._ov_add(sec_groups, reinforce_group_summary(g), "groups")
 
         sec_cond = self._ov_add(self.overview,
-                                f"Sieg/Niederlage ({len(self.victories)}/{len(self.defeats)})")
+                                tr("window.ov_conditions", w=len(self.victories), l=len(self.defeats)))
         for c in self.victories:
-            self._ov_add(sec_cond, f"Sieg: {condition_summary(c)}", "conditions")
+            self._ov_add(sec_cond, tr("window.ov_victory", s=condition_summary(c)), "conditions")
         for c in self.defeats:
-            self._ov_add(sec_cond, f"Niederlage: {condition_summary(c)}", "conditions")
+            self._ov_add(sec_cond, tr("window.ov_defeat", s=condition_summary(c)), "conditions")
 
-        sec_obj = self._ov_add(self.overview, f"Objekte ({len(self.objects)})")
+        sec_obj = self._ov_add(self.overview, tr("window.ov_objects", n=len(self.objects)))
         for oi, o in enumerate(self.objects):
             name = f"{o.unit_name}: " if getattr(o, "unit_name", "") else ""
             self._ov_add(sec_obj, f"{name}{o.display} P{o.player} @ ({o.tile_x},{o.tile_y})",
@@ -339,14 +350,14 @@ class EditorWindow(QMainWindow):
             self.view.setCursor(Qt.CrossCursor)
         kind, display, _map_id, _footprint = sel
         if kind in ("structure", "vehicle"):
-            self.statusBar().showMessage(f"Platzieren aktiv: {display}. Rechtsklick waehlt ab.")
+            self.statusBar().showMessage(tr("window.status_place_active", display=display))
 
     def _cancel_placement(self):
         self._placement_active = False
         self._clear_placement_preview()
         if self._action_pick is None and self._rect_pick_group is None:
             self.view.setCursor(Qt.ArrowCursor)
-        self.statusBar().showMessage("Platzierauswahl abgewaehlt.")
+        self.statusBar().showMessage(tr("window.status_place_deselected"))
 
     def _update_params(self):
         sel = self._selected()
@@ -365,7 +376,7 @@ class EditorWindow(QMainWindow):
 
     # --- Karte ---
     def choose_map(self):
-        dlg = MapDialog(self, self.vol.names(), self.map_name, self.mission_name)
+        dlg = MapDialog(self, self.res.names(), self.map_name, self.mission_name)
         if dlg.exec() == QDialog.Accepted:
             self.mission_name = dlg.name_edit.text().strip() or "Editor Mission"
             self.load_map(dlg.combo.currentText())
@@ -377,7 +388,7 @@ class EditorWindow(QMainWindow):
             self.players = dlg.players
             self._refresh_player_range()
             self._refresh_overview()
-            self.statusBar().showMessage(f"{len(self.players)} Spieler konfiguriert.")
+            self.statusBar().showMessage(tr("window.status_players_configured", n=len(self.players)))
 
     def _refresh_player_range(self):
         self.player_spin.setMaximum(max(0, len(self.players) - 1))
@@ -402,7 +413,7 @@ class EditorWindow(QMainWindow):
                 self._begin_action_pick(dlg.map_pick_request)
             else:
                 self._redraw_planned_actions()
-                self.statusBar().showMessage(f"{len(self.triggers)} Trigger definiert.")
+                self.statusBar().showMessage(tr("window.status_triggers_defined", n=len(self.triggers)))
 
     def edit_conditions(self):
         dlg = ConditionsDialog(self, self.victories, self.defeats)
@@ -411,7 +422,7 @@ class EditorWindow(QMainWindow):
             self.defeats = dlg.defeats
             self._refresh_overview()
             self.statusBar().showMessage(
-                f"Bedingungen: {len(self.victories)} Sieg, {len(self.defeats)} Niederlage.")
+                tr("window.status_conditions", w=len(self.victories), l=len(self.defeats)))
 
     def edit_groups(self):
         dlg = GroupsDialog(
@@ -429,7 +440,7 @@ class EditorWindow(QMainWindow):
             if rect_pick_group is not None:
                 self._begin_rect_pick(rect_pick_group)
             else:
-                self.statusBar().showMessage(f"{total} Gruppe(n) definiert.")
+                self.statusBar().showMessage(tr("window.status_groups_defined", n=total))
 
     def _begin_rect_pick(self, group):
         self._placement_active = False
@@ -441,7 +452,7 @@ class EditorWindow(QMainWindow):
             self._rect_pick_item = None
         self.view.rect_select_enabled = True
         self.view.setCursor(Qt.CrossCursor)
-        self.statusBar().showMessage(f"SetRect fuer {group.name}: Rechteck mit linker Maustaste ziehen.")
+        self.statusBar().showMessage(tr("window.status_setrect_begin", name=group.name))
 
     def _end_rect_pick(self):
         self.view.rect_select_enabled = False
@@ -546,7 +557,7 @@ class EditorWindow(QMainWindow):
             sx, sy = self._action_pick_start
             color = QColor(120, 220, 255) if self._action_pick["kind"] == "recordTube" else QColor(255, 180, 80)
             self._draw_action_line_preview(sx, sy, tx, ty, color)
-            self.coord_label.setText(f"Linie: ({sx},{sy}) -> ({tx},{ty})")
+            self.coord_label.setText(tr("window.coord_line", sx=sx, sy=sy, tx=tx, ty=ty))
             return
         if self._rect_pick_group is None or self._rect_pick_start is None:
             return
@@ -564,7 +575,7 @@ class EditorWindow(QMainWindow):
             x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
             action = self._mining_action_from_pick(rect_x=x, rect_y=y, rect_width=w, rect_height=h)
             self._add_action_from_pick(action)
-            self.statusBar().showMessage(f"Smelter-Rect gesetzt: ({x},{y}) {w}x{h}.")
+            self.statusBar().showMessage(tr("window.status_smelter_rect_set", x=x, y=y, w=w, h=h))
             self._end_action_pick()
             return
         if self._action_pick and self._action_pick_start is not None:
@@ -581,7 +592,7 @@ class EditorWindow(QMainWindow):
                     wall_type=self._action_pick["wall_type"],
                     x=sx, y=sy, x2=tx, y2=ty)
             self._add_action_from_pick(action)
-            self.statusBar().showMessage(f"{action_summary(action)} hinzugefuegt.")
+            self.statusBar().showMessage(tr("window.status_action_added", summary=action_summary(action)))
             self._end_action_pick()
             return
         if self._rect_pick_group is None or self._rect_pick_start is None:
@@ -595,18 +606,18 @@ class EditorWindow(QMainWindow):
         self._rect_pick_group.rect_height = h
         name = self._rect_pick_group.name
         self._end_rect_pick()
-        self.statusBar().showMessage(f"SetRect fuer {name}: ({x},{y}) {w}x{h}.")
+        self.statusBar().showMessage(tr("window.status_setrect_done", name=name, x=x, y=y, w=w, h=h))
         QTimer.singleShot(0, self.edit_groups)
 
     def _rect_drag_cancel(self):
         if self._action_pick is not None:
             self._end_action_pick()
-            self.statusBar().showMessage("Aktion-Auswahl abgebrochen.")
+            self.statusBar().showMessage(tr("window.status_action_canceled"))
             return
         if self._rect_pick_group is None:
             return
         self._end_rect_pick()
-        self.statusBar().showMessage("SetRect-Auswahl abgebrochen.")
+        self.statusBar().showMessage(tr("window.status_setrect_canceled"))
 
     def _clear_action_preview(self):
         for item in self._action_preview_items:
@@ -624,17 +635,17 @@ class EditorWindow(QMainWindow):
             self.view.rect_select_enabled = True
         self.view.setCursor(Qt.CrossCursor)
         label = {
-            "recordBuilding": "Gebaeude mit Linksklick setzen",
-            "assignToGroup": "Gebaeude-Position mit Linksklick setzen",
-            "recordTube": "Tube-Linie mit linker Maustaste ziehen",
-            "recordWall": "Wall-Linie mit linker Maustaste ziehen",
+            "recordBuilding": tr("window.pick_record_building"),
+            "assignToGroup": tr("window.pick_assign_group"),
+            "recordTube": tr("window.pick_record_tube"),
+            "recordWall": tr("window.pick_record_wall"),
             "startMiningOperation": {
-                "mine": "Mine mit Linksklick setzen",
-                "smelter": "Smelter mit Linksklick setzen",
-                "rect": "Smelter-Rect mit linker Maustaste ziehen",
-            }.get(request.get("mode"), "Mining-Operation auf Karte setzen"),
+                "mine": tr("window.pick_mine"),
+                "smelter": tr("window.pick_smelter"),
+                "rect": tr("window.pick_smelter_rect"),
+            }.get(request.get("mode"), tr("window.pick_mining_op")),
         }[request["kind"]]
-        self.statusBar().showMessage(f"{label}. Rechtsklick bricht ab.")
+        self.statusBar().showMessage(tr("window.status_pick_hint", label=label))
 
     def _end_action_pick(self, reopen=True):
         self.view.rect_select_enabled = False
@@ -808,8 +819,8 @@ class EditorWindow(QMainWindow):
                 name += ".dll"
             self.output_dir = dlg.dir_edit.text().strip() or DEFAULT_OUTPUT_DIR
             self.dll_name = name
-            self._save_config()
-            self.statusBar().showMessage(f"Ausgabeort: {Path(self.output_dir) / self.dll_name}")
+            appconfig.set_output(self.output_dir, self.dll_name)
+            self.statusBar().showMessage(tr("window.status_output_set", path=Path(self.output_dir) / self.dll_name))
 
     def _missions_dir(self) -> Path:
         d = ROOT / "missions"
@@ -825,7 +836,7 @@ class EditorWindow(QMainWindow):
 
     def save_project(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Mission speichern", str(self._missions_dir() / "mission.op2proj"),
+            self, tr("window.dlg_save_mission"), str(self._missions_dir() / "mission.op2proj"),
             "OP2 Mission (*.op2proj);;JSON (*.json)")
         if not path:
             return
@@ -842,20 +853,20 @@ class EditorWindow(QMainWindow):
         try:
             Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception as e:
-            QMessageBox.critical(self, "Speichern fehlgeschlagen", str(e))
+            QMessageBox.critical(self, tr("window.save_failed_title"), str(e))
             return
-        self.statusBar().showMessage(f"Gespeichert: {path} ({len(self.objects)} Objekte)")
+        self.statusBar().showMessage(tr("window.status_saved", path=path, n=len(self.objects)))
 
     def open_project(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Mission öffnen", str(self._missions_dir()),
-            "OP2 Mission (*.op2proj);;JSON (*.json);;Alle (*.*)")
+            self, tr("window.dlg_open_mission"), str(self._missions_dir()),
+            f"OP2 Mission (*.op2proj);;JSON (*.json);;{tr('window.filter_all')} (*.*)")
         if not path:
             return
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
         except Exception as e:
-            QMessageBox.critical(self, "Öffnen fehlgeschlagen", str(e))
+            QMessageBox.critical(self, tr("window.open_failed_title"), str(e))
             return
         self.mission_name = data.get("mission_name", "Editor Mission")
         # Knotenpositionen in-place aktualisieren (Timeline haelt eine Referenz darauf)
@@ -923,17 +934,17 @@ class EditorWindow(QMainWindow):
         self._redraw_planned_actions()
         self._refresh_overview()
         self.statusBar().showMessage(
-            f"Geladen: {path} ({len(self.objects)} Objekte, "
-            f"{len(self.groups) + len(self.building_groups) + len(self.reinforce_groups)} Gruppe(n))")
+            tr("window.status_loaded", path=path, n=len(self.objects),
+               g=len(self.groups) + len(self.building_groups) + len(self.reinforce_groups)))
 
     def load_map(self, name):
         try:
-            self.map = Op2Map(self.vol.read_file(name))
-            arr = np.ascontiguousarray(render_array(self.map, self.vol))
+            self.map = Op2Map(self.res.read_file(name))
+            arr = np.ascontiguousarray(render_array(self.map, self.res))
             qimg = QImage(arr.data, arr.shape[1], arr.shape[0], arr.shape[1] * 3, QImage.Format_RGB888)
             pix = QPixmap.fromImage(qimg.copy())
         except Exception as e:
-            QMessageBox.critical(self, "Fehler", f"{e}\n\n{traceback.format_exc()}")
+            QMessageBox.critical(self, tr("window.error_title"), f"{e}\n\n{traceback.format_exc()}")
             return
         self.map_name = name
         self.objects.clear()
@@ -956,7 +967,7 @@ class EditorWindow(QMainWindow):
         self.scene.setSceneRect(QRectF(pix.rect()))
         self.view.resetTransform()
         self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
-        self.statusBar().showMessage(f"{name}: {self.map.width}×{self.map.height} Tiles.")
+        self.statusBar().showMessage(tr("window.status_map_loaded", name=name, w=self.map.width, h=self.map.height))
         self._refresh_overview()
 
     # --- Platzieren / Entfernen ---
@@ -976,14 +987,14 @@ class EditorWindow(QMainWindow):
         if obj is None:
             return
         if obj.kind not in ("structure", "vehicle"):
-            self.statusBar().showMessage(f"{obj.display} hat keine Unit-Parameter.")
+            self.statusBar().showMessage(tr("window.status_no_unit_params", display=obj.display))
             return
         dlg = ObjectEditDialog(self, obj, len(self.players))
         if dlg.exec() == QDialog.Accepted:
             dlg.apply_to(obj)
             self._redraw_object(obj)
             label = obj.unit_name or obj.display
-            self.statusBar().showMessage(f"{label} aktualisiert.")
+            self.statusBar().showMessage(tr("window.status_updated", label=label))
 
     def on_place(self, tx, ty):
         if self._action_pick and self._action_pick["kind"] == "startMiningOperation":
@@ -992,10 +1003,10 @@ class EditorWindow(QMainWindow):
             mode = self._action_pick.get("mode")
             if mode == "mine":
                 action = self._mining_action_from_pick(x=tx, y=ty)
-                message = f"Mine gesetzt: ({tx},{ty})."
+                message = tr("window.status_mine_set", x=tx, y=ty)
             elif mode == "smelter":
                 action = self._mining_action_from_pick(x2=tx, y2=ty)
-                message = f"Smelter gesetzt: ({tx},{ty})."
+                message = tr("window.status_smelter_set", x=tx, y=ty)
             else:
                 return
             self._add_action_from_pick(action)
@@ -1011,7 +1022,7 @@ class EditorWindow(QMainWindow):
                 building_type=self._action_pick["building_type"],
                 x=tx, y=ty)
             self._add_action_from_pick(action)
-            self.statusBar().showMessage(f"{action_summary(action)} hinzugefuegt.")
+            self.statusBar().showMessage(tr("window.status_action_added", summary=action_summary(action)))
             self._end_action_pick()
             return
         if self._action_pick and self._action_pick["kind"] == "assignToGroup":
@@ -1024,7 +1035,7 @@ class EditorWindow(QMainWindow):
                 player=self._action_pick.get("player", 0),
                 x=tx, y=ty)
             self._add_action_from_pick(action)
-            self.statusBar().showMessage(f"{action_summary(action)} hinzugefuegt.")
+            self.statusBar().showMessage(tr("window.status_action_added", summary=action_summary(action)))
             self._end_action_pick()
             return
         if self.map is None or not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
@@ -1038,15 +1049,15 @@ class EditorWindow(QMainWindow):
         kind, disp, mid, fp = sel
         params = {}
         if mid == "mapCargoTruck":
-            params["truck_cargo"] = TRUCK_CARGO[self.cargo_combo.currentText()]
+            params["truck_cargo"] = TRUCK_CARGO[self.cargo_combo.currentData()]
             params["truck_amount"] = self.cargo_amount.value()
         elif mid == "mapConVec":
             convec_kit = self.kit_combo.currentData()
             if convec_kit:
                 params["convec_kit"] = convec_kit
         elif mid == "mapMiningBeacon":
-            params["ore_type"] = ORE_TYPES[self.ore_combo.currentText()]
-            params["yield_bars"] = YIELDS[self.yield_combo.currentText()]
+            params["ore_type"] = ORE_TYPES[self.ore_combo.currentData()]
+            params["yield_bars"] = YIELDS[self.yield_combo.currentData()]
         if mid in WEAPON_UNITS:
             params["weapon"] = self.weapon_combo.currentData()
         player = self.player_spin.value() if kind in ("structure", "vehicle") else 0
@@ -1056,12 +1067,12 @@ class EditorWindow(QMainWindow):
         self.objects.append(obj)
         self._refresh_overview()
         label = unit_name or disp
-        self.statusBar().showMessage(f"{label} @ ({tx},{ty}). Gesamt: {len(self.objects)}")
+        self.statusBar().showMessage(tr("window.status_placed", label=label, x=tx, y=ty, n=len(self.objects)))
 
     def on_remove(self, tx, ty):
         if self._action_pick is not None:
             self._end_action_pick()
-            self.statusBar().showMessage("Aktion-Auswahl abgebrochen.")
+            self.statusBar().showMessage(tr("window.status_action_canceled"))
             return
         if self._placement_active:
             self._cancel_placement()
@@ -1072,7 +1083,7 @@ class EditorWindow(QMainWindow):
                 self.scene.removeItem(item)
             self.objects.remove(obj)
             self._refresh_overview()
-            self.statusBar().showMessage(f"{obj.display} entfernt. Gesamt: {len(self.objects)}")
+            self.statusBar().showMessage(tr("window.status_removed", display=obj.display, n=len(self.objects)))
 
     def _draw(self, obj: PlacedObject):
         if obj.kind == "beacon":
@@ -1104,7 +1115,7 @@ class EditorWindow(QMainWindow):
         self.building_groups.clear()
         self.reinforce_groups.clear()
         self._refresh_overview()
-        self.statusBar().showMessage("Objekte geleert.")
+        self.statusBar().showMessage(tr("window.status_objects_cleared"))
 
     # --- Build ---
     def build_mission(self) -> Mission:
@@ -1146,7 +1157,7 @@ class EditorWindow(QMainWindow):
                 for g in self.reinforce_groups
             ],
             triggers=list(self.triggers),
-            start_message=StartMessage("Mit dem OP2 Mission Editor erstellt."),
+            start_message=StartMessage(tr("window.default_start_message")),
             victories=list(self.victories), defeats=list(self.defeats),
         )
 
@@ -1158,7 +1169,7 @@ class EditorWindow(QMainWindow):
         except Exception:
             code = traceback.format_exc()
         dlg = QDialog(self)
-        dlg.setWindowTitle("Generierter C++-Code (LevelMain.cpp)")
+        dlg.setWindowTitle(tr("window.code_dialog_title"))
         dlg.resize(760, 640)
         text = QPlainTextEdit()
         text.setReadOnly(True)
@@ -1176,12 +1187,12 @@ class EditorWindow(QMainWindow):
     def do_build(self):
         if self.map is None:
             return
-        self._progress = QProgressDialog("Build läuft… (C++ wird kompiliert)", None, 0, 0, self)
+        self._progress = QProgressDialog(tr("window.build_progress"), None, 0, 0, self)
         self._progress.setWindowTitle("Build")
         self._progress.setWindowModality(Qt.WindowModal)
         self._progress.setCancelButton(None)
         self._progress.show()
-        self.statusBar().showMessage("Build läuft…")
+        self.statusBar().showMessage(tr("window.status_build_running"))
         self._worker = BuildWorker(self.build_mission())
         self._worker.ok.connect(self._build_ok)
         self._worker.err.connect(self._build_err)
@@ -1194,17 +1205,17 @@ class EditorWindow(QMainWindow):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(dll, target)
         except Exception as e:
-            QMessageBox.warning(self, "Kopieren fehlgeschlagen",
-                                f"Build OK, aber Kopieren nach\n{target}\nschlug fehl:\n{e}")
-            self.statusBar().showMessage(f"Build OK, Kopieren fehlgeschlagen: {e}")
+            QMessageBox.warning(self, tr("window.copy_failed_title"),
+                                tr("window.copy_failed_text", target=target, e=e))
+            self.statusBar().showMessage(tr("window.status_copy_failed", e=e))
             return
-        self.statusBar().showMessage(f"Build OK → {target}")
-        QMessageBox.information(self, "Build erfolgreich",
-                                f"Mission gebaut ({len(self.objects)} Objekte) und kopiert nach:\n{target}")
+        self.statusBar().showMessage(tr("window.status_build_ok", target=target))
+        QMessageBox.information(self, tr("window.build_success_title"),
+                                tr("window.build_success_text", n=len(self.objects), target=target))
 
     def _build_err(self, msg):
         self._progress.close()
-        self.statusBar().showMessage("Build fehlgeschlagen.")
-        QMessageBox.critical(self, "Build fehlgeschlagen", msg)
+        self.statusBar().showMessage(tr("window.status_build_failed"))
+        QMessageBox.critical(self, tr("window.build_failed_title"), msg)
 
 

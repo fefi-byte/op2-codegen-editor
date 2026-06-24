@@ -15,8 +15,8 @@ _DIALOG_KINDS = {label: k for label, k in ACTION_KINDS.items() if k not in ("if"
 class ConditionEditDialog(QDialog):
     def __init__(self, parent, condition=None):
         super().__init__(parent)
-        self.setWindowTitle("Bedingung")
-        self.kind = QComboBox(); self.kind.addItems(ACTION_CONDITION_KINDS.keys())
+        self.setWindowTitle(tr("action_editor.dlg_condition_title"))
+        self.kind = QComboBox(); fill_combo(self.kind, ACTION_CONDITION_KINDS, "action_conditions")
         self.kind.currentTextChanged.connect(self._update)
         self.player = QSpinBox(); self.player.setRange(0, 5)
         self.building = QComboBox()
@@ -28,14 +28,16 @@ class ConditionEditDialog(QDialog):
         self.value = QSpinBox(); self.value.setRange(0, 1000000)
         self.resource = QComboBox(); self.resource.addItems(RESOURCES.keys())
         self.tech_id = QSpinBox(); self.tech_id.setRange(0, 20000)
-        self.negate = QCheckBox("negieren (NICHT)")
+        self.negate = QCheckBox(tr("action_editor.chk_negate"))
         self.form = QFormLayout()
-        self.form.addRow("Typ:", self.kind)
+        self.form.addRow(tr("action_editor.lbl_type"), self.kind)
         self._rows = {"player": self.player, "building": self.building, "x": self.x, "y": self.y,
                       "compare": self.compare, "value": self.value, "resource": self.resource,
                       "tech_id": self.tech_id}
-        labels = {"player": "Spieler:", "building": "Gebäude:", "x": "X:", "y": "Y:",
-                  "compare": "Vergleich:", "value": "Wert:", "resource": "Ressource:", "tech_id": "Tech-ID:"}
+        labels = {"player": tr("action_editor.lbl_player"), "building": tr("action_editor.lbl_building"),
+                  "x": tr("action_editor.lbl_x"), "y": tr("action_editor.lbl_y"),
+                  "compare": tr("action_editor.lbl_compare"), "value": tr("action_editor.lbl_value"),
+                  "resource": tr("action_editor.lbl_resource"), "tech_id": tr("action_editor.lbl_tech_id")}
         for k, w in self._rows.items():
             self.form.addRow(labels[k], w)
         self.form.addRow("", self.negate)
@@ -47,14 +49,14 @@ class ConditionEditDialog(QDialog):
         self._update()
 
     def _update(self):
-        fields = ACTION_CONDITION_KINDS[self.kind.currentText()][1]
+        fields = ACTION_CONDITION_KINDS[self.kind.currentData()][1]
         for k, w in self._rows.items():
             self.form.setRowVisible(w, k in fields)
 
     def _load(self, c):
         for label, (kind, _) in ACTION_CONDITION_KINDS.items():
             if kind == c.kind:
-                self.kind.setCurrentText(label); break
+                self.kind.setCurrentIndex(self.kind.findData(label)); break
         self.player.setValue(c.player)
         bi = self.building.findData(c.building_type)
         if bi >= 0:
@@ -68,7 +70,7 @@ class ConditionEditDialog(QDialog):
 
     def result(self):
         return ActionCondition(
-            kind=ACTION_CONDITION_KINDS[self.kind.currentText()][0],
+            kind=ACTION_CONDITION_KINDS[self.kind.currentData()][0],
             negate=self.negate.isChecked(), player=self.player.value(),
             building_type=self.building.currentData(), x=self.x.value(), y=self.y.value(),
             compare=COMPARE[self.compare.currentText()], value=self.value.value(),
@@ -78,13 +80,13 @@ class ConditionEditDialog(QDialog):
 class ActionEditDialog(QDialog):
     def __init__(self, parent, ctx, action=None, fixed_kind=None):
         super().__init__(parent)
-        self.setWindowTitle("Aktion")
+        self.setWindowTitle(tr("action_editor.dlg_action_title"))
         self.ctx = ctx
         self.kind = QComboBox()
         for label, k in _DIALOG_KINDS.items():
-            self.kind.addItem(label, k)
+            self.kind.addItem(tr(f"action_kinds.{k}"), k)
         self.kind.currentIndexChanged.connect(self._update)
-        self.text = QLineEdit("Nachricht…")
+        self.text = QLineEdit(tr("action_editor.default_message"))
         self.unit = QComboBox()
         for d, m in ALL_UNITS:
             self.unit.addItem(d, m)
@@ -112,7 +114,7 @@ class ActionEditDialog(QDialog):
         self.mining_group = QComboBox()
         for g in ctx["mining_groups"]:
             self.mining_group.addItem(f"{g.name} [MiningGroup]", g.name)
-        self.ore = QComboBox(); self.ore.addItems(MINING_OPERATION_ORES.keys())
+        self.ore = QComboBox(); fill_combo(self.ore, MINING_OPERATION_ORES, "mining_ores")
         self.rect_x = QSpinBox(); self.rect_x.setRange(0, 1023)
         self.rect_y = QSpinBox(); self.rect_y.setRange(0, 1023)
         self.rect_w = QSpinBox(); self.rect_w.setRange(1, 256); self.rect_w.setValue(4)
@@ -133,7 +135,7 @@ class ActionEditDialog(QDialog):
             self.assign_group.addItem(f"{name} [{gtype}]", name)
 
         self.form = QFormLayout()
-        self.form.addRow("Aktionstyp:", self.kind)
+        self.form.addRow(tr("action_editor.lbl_action_type"), self.kind)
         self._rows = {
             "text": self.text, "unit": self.unit, "weapon": self.weapon, "x": self.x, "y": self.y,
             "x2": self.x2, "y2": self.y2, "player": self.player, "target": self.target,
@@ -144,13 +146,20 @@ class ActionEditDialog(QDialog):
             "source_group": self.source_group, "vehicle": self.vehicle, "priority": self.priority,
             "target_count": self.target_count, "assign_group": self.assign_group,
         }
-        labels = {"text": "Text:", "unit": "Einheit:", "weapon": "Waffe/Cargo:", "x": "X:", "y": "Y:",
-                  "x2": "X2:", "y2": "Y2:", "player": "Spieler:", "target": "Ziel-Trigger:",
-                  "group": "BuildingGroup:", "building": "Gebäude:", "wall": "Wall:",
-                  "mining_group": "MiningGroup:", "ore": "Erz:", "rect_x": "Rect X:", "rect_y": "Rect Y:",
-                  "rect_w": "Rect Breite:", "rect_h": "Rect Höhe:", "truck_count": "Transporter:",
-                  "target_group": "Zielgruppe:", "source_group": "ReinforceGroup:", "vehicle": "Fahrzeug:",
-                  "priority": "Priorität:", "target_count": "Zielanzahl:", "assign_group": "Zielgruppe:"}
+        labels = {"text": tr("action_editor.lbl_text"), "unit": tr("action_editor.lbl_unit"),
+                  "weapon": tr("action_editor.lbl_weapon_cargo"), "x": tr("action_editor.lbl_x"),
+                  "y": tr("action_editor.lbl_y"), "x2": tr("action_editor.lbl_x2"),
+                  "y2": tr("action_editor.lbl_y2"), "player": tr("action_editor.lbl_player"),
+                  "target": tr("action_editor.lbl_target_trigger"), "group": "BuildingGroup:",
+                  "building": tr("action_editor.lbl_building"), "wall": "Wall:",
+                  "mining_group": "MiningGroup:", "ore": tr("action_editor.lbl_ore"),
+                  "rect_x": tr("action_editor.lbl_rect_x"), "rect_y": tr("action_editor.lbl_rect_y"),
+                  "rect_w": tr("action_editor.lbl_rect_width"), "rect_h": tr("action_editor.lbl_rect_height"),
+                  "truck_count": tr("action_editor.lbl_truck_count"),
+                  "target_group": tr("action_editor.lbl_target_group"), "source_group": "ReinforceGroup:",
+                  "vehicle": tr("action_editor.lbl_vehicle"), "priority": tr("action_editor.lbl_priority"),
+                  "target_count": tr("action_editor.lbl_target_count"),
+                  "assign_group": tr("action_editor.lbl_target_group")}
         for k, w in self._rows.items():
             self.form.addRow(labels[k], w)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -232,7 +241,7 @@ class ActionEditDialog(QDialog):
         self.truck_count.setValue(getattr(a, "truck_count", 0))
         ol = {v: k for k, v in MINING_OPERATION_ORES.items()}.get(a.ore_type)
         if ol:
-            self.ore.setCurrentText(ol)
+            self.ore.setCurrentIndex(self.ore.findData(ol))
 
     def result(self):
         k = self._current_kind()
@@ -263,7 +272,7 @@ class ActionEditDialog(QDialog):
         if k == "startMiningOperation":
             return TriggerAction(kind="startMiningOperation", group_name=self.group.currentData(),
                                  mining_group_name=self.mining_group.currentData(),
-                                 ore_type=MINING_OPERATION_ORES[self.ore.currentText()],
+                                 ore_type=MINING_OPERATION_ORES[self.ore.currentData()],
                                  truck_count=self.truck_count.value(),
                                  x=self.x.value(), y=self.y.value(), x2=self.x2.value(), y2=self.y2.value(),
                                  rect_x=self.rect_x.value(), rect_y=self.rect_y.value(),
@@ -289,19 +298,19 @@ class ConditionListWidget(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         logic_row = QHBoxLayout()
-        logic = QComboBox(); logic.addItems(["UND (alle)", "ODER (eine)"])
+        logic = QComboBox(); logic.addItems([tr("action_editor.logic_and"), tr("action_editor.logic_or")])
         logic.setCurrentIndex(1 if self.a.condition_logic == "or" else 0)
         logic.currentIndexChanged.connect(self._set_logic)
-        logic_row.addWidget(QLabel("Verknüpfung:")); logic_row.addWidget(logic); logic_row.addStretch(1)
+        logic_row.addWidget(QLabel(tr("action_editor.lbl_logic"))); logic_row.addWidget(logic); logic_row.addStretch(1)
         self.box.addLayout(logic_row)
         for c in list(self.a.conditions):
             row = QHBoxLayout()
-            row.addWidget(QLabel(("NICHT " if c.negate else "") + action_condition_summary(c)), 1)
+            row.addWidget(QLabel(((tr("action_editor.not_prefix") + " ") if c.negate else "") + action_condition_summary(c)), 1)
             edit = QPushButton("✎"); edit.setFixedWidth(28); edit.clicked.connect(lambda _, cc=c: self._edit(cc))
             rm = QPushButton("✕"); rm.setFixedWidth(28); rm.clicked.connect(lambda _, cc=c: self._remove(cc))
             row.addWidget(edit); row.addWidget(rm)
             self.box.addLayout(row)
-        add = QPushButton("+ Bedingung hinzufügen"); add.clicked.connect(self._add)
+        add = QPushButton(tr("action_editor.btn_add_condition")); add.clicked.connect(self._add)
         self.box.addWidget(add)
 
     def _set_logic(self, idx):
@@ -340,13 +349,13 @@ class ActionListWidget(QWidget):
                 item.widget().deleteLater()
         for a in list(self.actions):
             self.box.addWidget(ActionCard(a, self, self.ctx))
-        add = QPushButton("+ Aktion hinzufügen"); add.clicked.connect(self._add)
+        add = QPushButton(tr("action_editor.btn_add_action")); add.clicked.connect(self._add)
         self.box.addWidget(add)
 
     def _add(self):
         menu = QMenu(self)
         for label, k in ACTION_KINDS.items():
-            menu.addAction(label).setData(k)
+            menu.addAction(tr(f"action_kinds.{k}")).setData(k)
         picked = menu.exec(QCursor.pos())
         if picked is None:
             return
@@ -390,24 +399,24 @@ class ActionCard(QFrame):
         lay = QVBoxLayout(self)
 
         header = QHBoxLayout()
-        title = "Wenn / Dann / Sonst" if action.kind == "if" else action_summary(action)
+        title = tr("action_editor.card_if_title") if action.kind == "if" else action_summary(action)
         header.addWidget(QLabel(f"<b>{title}</b>"), 1)
         up = QPushButton("↑"); up.setFixedWidth(26); up.clicked.connect(lambda: parent_list._move(action, -1))
         dn = QPushButton("↓"); dn.setFixedWidth(26); dn.clicked.connect(lambda: parent_list._move(action, 1))
         header.addWidget(up); header.addWidget(dn)
         if action.kind != "if":
-            edit = QPushButton("Bearbeiten"); edit.clicked.connect(self._edit)
+            edit = QPushButton(tr("action_editor.btn_edit")); edit.clicked.connect(self._edit)
             header.addWidget(edit)
         rm = QPushButton("✕"); rm.setFixedWidth(28); rm.clicked.connect(lambda: parent_list._remove(action))
         header.addWidget(rm)
         lay.addLayout(header)
 
         if action.kind == "if":
-            lay.addWidget(QLabel("Wenn:"))
+            lay.addWidget(QLabel(tr("action_editor.lbl_if")))
             lay.addWidget(ConditionListWidget(action))
-            lay.addWidget(QLabel("Dann:"))
+            lay.addWidget(QLabel(tr("action_editor.lbl_then")))
             lay.addWidget(ActionListWidget(action.then_actions, ctx))
-            lay.addWidget(QLabel("Sonst:"))
+            lay.addWidget(QLabel(tr("action_editor.lbl_else")))
             lay.addWidget(ActionListWidget(action.else_actions, ctx))
 
     def _edit(self):
