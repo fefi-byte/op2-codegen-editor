@@ -2,6 +2,8 @@
 
 A Python-based mission editor for Outpost 2 that generates native C++ mission source code and compiles it to a 32-bit DLL.
 
+Recent changes are tracked in [CHANGELOG.md](CHANGELOG.md).
+
 ## How it works
 
 1. The **editor GUI** (PySide6) lets you place units, buildings, beacons, walls, configure players, triggers, and AI groups visually.
@@ -37,16 +39,28 @@ LevelTemplate/  C++ mission template + bundled OP2 SDK sources
 
 ### Editor config
 
-Copy `editor/config.example.json` to `editor/config.json` and adjust the paths:
+Paths live in a `config.ini` next to the executable (or in the project root when
+running `python -m app`). It is created automatically on first start; copy
+`config.example.ini` and adjust it, or edit the generated file:
 
-```json
-{
-  "output_dir": "C:/Path/To/Outpost2/OPU",
-  "dll_name": "cEditorMission.dll"
-}
+```ini
+[paths]
+game_path = D:\Outpost 2
+msvs_path = C:\Program Files\Microsoft Visual Studio\18\Community
+
+[output]
+output_dir =
+dll_name = cEditorMission.dll
 ```
 
-`config.json` is git-ignored (machine-specific paths).
+- `game_path` — Outpost 2 install folder. The editor reads the **extracted OPU
+  1.4.1 layout** (`OPU\base\maps`, `OPU\maps`, `OPU\base\tilesets`,
+  `OPU\base\techs`) — no `.vol` archives needed. If there is no `OPU` subfolder,
+  `game_path` itself is treated as the content root.
+- `msvs_path` — Visual Studio install folder (must contain `Common7\Tools\VsDevCmd.bat`).
+- `output_dir` — where the built DLL is copied (empty = `game_path`).
+
+`config.ini` is git-ignored (machine-specific paths).
 
 ### Start the editor
 
