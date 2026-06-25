@@ -1,0 +1,3 @@
+[submodule "LevelTemplate"]
+	path = LevelTemplate
+	url = https://github.com/OutpostUniverse/LevelTemplate.git

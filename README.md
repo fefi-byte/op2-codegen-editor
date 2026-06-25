@@ -106,9 +106,23 @@ msbuild OP2Script.vcxproj /p:Configuration=Release /p:Platform=Win32
 
 The compiled DLL is written to the path set in `config.ini`.
 
+## Cloning
+
+The `LevelTemplate/` folder is a **git submodule** of [OutpostUniverse/LevelTemplate](https://github.com/OutpostUniverse/LevelTemplate), which itself contains the nested SDK submodules (Outpost2DLL, OP2Helper, HFL). Clone with `--recursive`:
+
+```powershell
+git clone --recursive https://github.com/fefi-byte/op2-codegen-editor.git
+```
+
+If you already cloned without `--recursive`, run:
+
+```powershell
+git submodule update --init --recursive
+```
+
 ## SDK sources
 
-`LevelTemplate/OP2MissionSDK/` contains the bundled SDK headers and libraries:
+`LevelTemplate/OP2MissionSDK/` contains the SDK headers and libraries (pulled in via the submodule):
 
 - [Outpost2DLL](https://github.com/OutpostUniverse/Outpost2DLL) — core game API
 - [OP2Helper](https://github.com/OutpostUniverse/OP2Helper) — helper macros
