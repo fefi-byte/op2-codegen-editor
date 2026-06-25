@@ -5,6 +5,7 @@ from .placed_object import PlacedObject
 from .mapview import MapView
 from .build_worker import BuildWorker
 from .cpp_highlight import CppHighlighter
+from . import mission_project
 from .dialogs.map_dialog import MapDialog
 from .dialogs.object_edit import ObjectEditDialog
 from .dialogs.output_dialog import OutputDialog
@@ -46,6 +47,11 @@ class EditorWindow(QMainWindow):
         self.reinforce_groups: list[ReinforceGroupSpec] = []
         self.node_positions: dict = {}  # Timeline-Knotenpositionen (key -> [x, y])
         # Timeline node positions (key -> [x, y])
+        # Aktueller Mission-Ordner (jede Mission hat ihr eigenes self-contained
+        # Verzeichnis unter `missions/<name>/`). None = noch nie gespeichert.
+        # Current mission folder (each mission has its own self-contained
+        # directory under `missions/<name>/`). None = not saved yet.
+        self.mission_folder: Path | None = None
         self._next_object_id = 1
         self._pending_trigger_index = 0
         self._pending_action_index = -1
@@ -88,6 +94,7 @@ class EditorWindow(QMainWindow):
         m = self.menuBar().addMenu(tr("window.menu_file"))
         a = QAction(tr("window.open_project"), self); a.triggered.connect(self.open_project); m.addAction(a)
         a = QAction(tr("window.save_project"), self); a.triggered.connect(self.save_project); m.addAction(a)
+        a = QAction(tr("window.save_project_as"), self); a.triggered.connect(self.save_project_as); m.addAction(a)
         m.addSeparator()
         a = QAction(tr("window.choose_map"), self); a.triggered.connect(self.choose_map); m.addAction(a)
         a = QAction(tr("window.choose_output"), self); a.triggered.connect(self.choose_output); m.addAction(a)
@@ -900,35 +907,96 @@ class EditorWindow(QMainWindow):
             if all(o.uid != uid for o in self.objects):
                 return uid
 
-    def save_project(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, tr("window.dlg_save_mission"), str(self._missions_dir() / "mission.op2proj"),
-            "OP2 Mission (*.op2proj);;JSON (*.json)")
-        if not path:
-            return
-        data = {"mission_name": self.mission_name, "map": self.map_name,
-                "players": [asdict(p) for p in self.players],
-                "objects": [o.to_dict() for o in self.objects],
-                "groups": [asdict(g) for g in self.groups],
-                "building_groups": [asdict(g) for g in self.building_groups],
-                "reinforce_groups": [asdict(g) for g in self.reinforce_groups],
-                "triggers": [asdict(t) for t in self.triggers],
-                "victories": [asdict(c) for c in self.victories],
-                "defeats": [asdict(c) for c in self.defeats],
-                "node_positions": self.node_positions}
+    def _collect_project_data(self) -> dict:
+        """Sammelt alle Mission-Daten in ein JSON-serialisierbares Dict."""
+        return {
+            "mission_name": self.mission_name,
+            "map": self.map_name,
+            "players": [asdict(p) for p in self.players],
+            "objects": [o.to_dict() for o in self.objects],
+            "groups": [asdict(g) for g in self.groups],
+            "building_groups": [asdict(g) for g in self.building_groups],
+            "reinforce_groups": [asdict(g) for g in self.reinforce_groups],
+            "triggers": [asdict(t) for t in self.triggers],
+            "victories": [asdict(c) for c in self.victories],
+            "defeats": [asdict(c) for c in self.defeats],
+            "node_positions": self.node_positions,
+        }
+
+    def _mission_write_kwargs(self) -> dict:
+        """Argumente fuer mission_project.write_mission_folder() (ohne LevelMain)."""
+        map_source = None
+        if self.map_name:
+            map_source = self.res._index.get(self.map_name.lower())
+        return dict(
+            mission_name=self.mission_name,
+            map_name=self.map_name,
+            project_data=self._collect_project_data(),
+            map_source=Path(map_source) if map_source else None,
+            techtree_source=None,  # TODO: anbinden, sobald custom TechTrees gepflegt werden
+            dll_basename=mission_project.default_dll_basename(self.dll_name),
+        )
+
+    def _save_to_folder(self, folder: Path) -> bool:
+        """Schreibt die Mission als self-contained Ordner. Gibt True bei Erfolg zurueck."""
         try:
-            Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+            cpp = generate_levelmain(self.build_mission())
+            mission_project.write_mission_folder(
+                folder, level_main_cpp=cpp, **self._mission_write_kwargs()
+            )
         except Exception as e:
             QMessageBox.critical(self, tr("window.save_failed_title"), str(e))
+            return False
+        self.mission_folder = folder
+        self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}  [{folder.name}]")
+        self.statusBar().showMessage(
+            tr("window.status_saved", path=str(folder), n=len(self.objects))
+        )
+        return True
+
+    def save_project(self):
+        """Speichert in den bekannten Mission-Ordner; sonst fragt nach einem neuen."""
+        if self.mission_folder and self.mission_folder.is_dir():
+            self._save_to_folder(self.mission_folder)
             return
-        self.statusBar().showMessage(tr("window.status_saved", path=path, n=len(self.objects)))
+        self.save_project_as()
+
+    def save_project_as(self):
+        """Fragt nach einem Speicherort und schreibt die Mission self-contained."""
+        default_name = mission_project._slugify(self.mission_name)
+        # Datei-Dialog auf `missions/<slug>/mission.op2proj` -- so kann der Nutzer
+        # einen neuen Ordnernamen tippen, ohne dass der Ordner existieren muss.
+        # Wir nehmen dann das ausgewaehlte Elternverzeichnis als Mission-Ordner.
+        default_path = self._missions_dir() / default_name / "mission.op2proj"
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("window.dlg_save_mission"), str(default_path),
+            "OP2 Mission (mission.op2proj)",
+        )
+        if not path:
+            return
+        p = Path(path)
+        # Wenn der Nutzer "mission.op2proj" laesst, ist p.parent der Mission-Ordner.
+        # Wenn er einen anderen Dateinamen waehlt, behandeln wir trotzdem dessen
+        # Elternordner als Mission-Ordner (alle Files liegen daneben).
+        folder = p.parent
+        # Verhindern, dass das `missions/`-Wurzelverzeichnis selbst Mission wird.
+        if folder.resolve() == self._missions_dir().resolve():
+            folder = folder / default_name
+        self._save_to_folder(folder)
 
     def open_project(self):
+        # Nutzer darf entweder einen Mission-Ordner oder eine `.op2proj`-Datei
+        # waehlen. Datei-Dialog filtert beides.
         path, _ = QFileDialog.getOpenFileName(
             self, tr("window.dlg_open_mission"), str(self._missions_dir()),
             f"OP2 Mission (*.op2proj);;JSON (*.json);;{tr('window.filter_all')} (*.*)")
         if not path:
             return
+        proj_path = mission_project.find_op2proj(Path(path))
+        if proj_path is None:
+            QMessageBox.critical(self, tr("window.open_failed_title"), "mission.op2proj nicht gefunden")
+            return
+        path = str(proj_path)
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
         except Exception as e:
@@ -999,6 +1067,15 @@ class EditorWindow(QMainWindow):
                 self.reinforce_groups.append(ReinforceGroupSpec(targets=targets, **gd))
             except Exception:
                 continue
+        # Wenn die Mission als Ordner geoeffnet wurde (oder die .op2proj
+        # direkt aus einem solchen liegt), merken wir uns den Ordner --
+        # nachfolgendes Speichern aktualisiert ihn ohne Dialog.
+        parent = Path(path).parent
+        if mission_project.is_mission_folder(parent):
+            self.mission_folder = parent
+            self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}  [{parent.name}]")
+        else:
+            self.mission_folder = None
         self._redraw_planned_actions()
         self._refresh_overview()
         self.statusBar().showMessage(
@@ -1269,13 +1346,22 @@ class EditorWindow(QMainWindow):
     def do_build(self):
         if self.map is None:
             return
+        # Build setzt einen Mission-Ordner voraus. Falls die Mission noch nie
+        # gespeichert wurde, fragen wir hier nach (statt im Hintergrund-Thread
+        # ein Dialog zu oeffnen).
+        if self.mission_folder is None or not self.mission_folder.is_dir():
+            self.save_project_as()
+            if self.mission_folder is None:
+                return  # vom Nutzer abgebrochen
         self._progress = QProgressDialog(tr("window.build_progress"), None, 0, 0, self)
         self._progress.setWindowTitle("Build")
         self._progress.setWindowModality(Qt.WindowModal)
         self._progress.setCancelButton(None)
         self._progress.show()
         self.statusBar().showMessage(tr("window.status_build_running"))
-        self._worker = BuildWorker(self.build_mission())
+        self._worker = BuildWorker(
+            self.build_mission(), self.mission_folder, self._mission_write_kwargs()
+        )
         self._worker.ok.connect(self._build_ok)
         self._worker.err.connect(self._build_err)
         self._worker.start()

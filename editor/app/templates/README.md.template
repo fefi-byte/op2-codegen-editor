@@ -1,0 +1,48 @@
+# __MISSION_NAME__
+
+An Outpost 2 mission generated with [op2-codegen-editor](https://github.com/fefi-byte/op2-codegen-editor).
+
+## Files in this folder
+
+- `mission.op2proj` — editor project file (JSON, for re-opening in the editor)
+- `LevelMain.cpp` — generated mission source code (the main file you'll compile)
+- `DllMain.cpp` — standard mission DLL entry point
+- `OP2Script.vcxproj`, `OP2Script.sln` — Visual Studio project / solution
+- `build.bat` — one-click build script
+- `__MAP_FILENAME__` — the map this mission runs on
+- `MULTITEK.TXT` *(optional)* — custom tech tree, if this mission uses one
+
+## Build requirements
+
+- **Visual Studio Build Tools 2019 or newer** with the **C++ x86 (v142) toolset**
+- The `LevelTemplate` submodule at `../../LevelTemplate/` (containing `OP2MissionSDK`)
+
+If you got this folder as part of the full repo, clone with submodules:
+
+```powershell
+git clone --recursive https://github.com/fefi-byte/op2-codegen-editor.git
+```
+
+If you only have this mission folder, clone the SDK separately:
+
+```powershell
+git clone --recursive https://github.com/OutpostUniverse/LevelTemplate.git
+```
+
+…and adjust the `..\..\LevelTemplate\` paths in `OP2Script.vcxproj` / `OP2Script.sln` to point at it.
+
+## Build
+
+Either:
+
+```powershell
+build.bat
+```
+
+…or open `OP2Script.sln` in Visual Studio and build (`Release | Win32`).
+
+The mission DLL appears in `Release\__DLL_BASENAME__.dll`.
+
+## Install
+
+Copy the DLL into your Outpost 2 install folder (the `OPU\` subfolder for OPU 1.4.x, or the game root for legacy installs), next to the `.map` file referenced above.

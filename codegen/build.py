@@ -76,6 +76,53 @@ def build() -> Path:
     return dll
 
 
+def build_folder(folder: Path) -> Path:
+    """Baut die Mission, die als self-contained Ordner unter `missions/<name>/` liegt.
+
+    Erwartet `OP2Script.vcxproj` direkt im Ordner. Gibt den Pfad zur erzeugten
+    DLL im Ordner `Release/` zurueck.
+
+    Builds the mission stored as a self-contained folder under
+    `missions/<name>/`. Expects `OP2Script.vcxproj` to sit directly in the
+    folder. Returns the path of the produced DLL in `Release/`.
+    """
+    folder = Path(folder)
+    vcxproj = folder / "OP2Script.vcxproj"
+    if not vcxproj.exists():
+        raise SystemExit(f"[FEHLER] OP2Script.vcxproj nicht gefunden: {vcxproj}")
+
+    vsdevcmd = appconfig.vsdevcmd()
+    if not vsdevcmd.exists():
+        raise SystemExit(
+            f"[FEHLER] VsDevCmd.bat nicht gefunden:\n{vsdevcmd}\n"
+            f"Bitte 'msvs_path' in der config.ini anpassen:\n{appconfig.CONFIG_PATH}")
+    props = "/p:Configuration=Release /p:Platform=Win32"
+    if appconfig.platform_toolset():
+        props += f" /p:PlatformToolset={appconfig.platform_toolset()}"
+    if appconfig.windows_sdk():
+        props += f" /p:WindowsTargetPlatformVersion={appconfig.windows_sdk()}"
+    cmd = (
+        f'"{vsdevcmd}" -arch=x86 >nul 2>&1 && '
+        f'msbuild "{vcxproj}" {props} /v:minimal /nologo'
+    )
+    print(f"[..] msbuild laeuft fuer {folder.name} ...")
+    # Outpost2Path aus der Umgebung nehmen, damit die SDK-Subprojekte keine
+    # automatische Kopie in den Spiel-Ordner anstossen (Editor erledigt das).
+    env = {k: v for k, v in os.environ.items() if k.lower() != "outpost2path"}
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, env=env)
+    if result.returncode != 0:
+        print(result.stdout[-3000:])
+        print(result.stderr[-3000:])
+        raise SystemExit(f"[FEHLER] Build fehlgeschlagen (Code {result.returncode})")
+
+    release = folder / "Release"
+    dll = next(release.glob("*.dll"), None) if release.is_dir() else None
+    if not dll:
+        raise SystemExit(f"[FEHLER] Keine DLL im Release-Ordner gefunden: {release}")
+    print(f"[ok] DLL: {dll}  ({dll.stat().st_size} Bytes)")
+    return dll
+
+
 def main() -> None:
     mission = build_demo()
     cpp = generate_levelmain(mission)
