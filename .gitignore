@@ -43,10 +43,8 @@ obj/
 editor/config.json
 config.ini
 
-# LevelTemplate: old submodule metadata (SDK sources are bundled directly)
-LevelTemplate/**/.gitmodules
-LevelTemplate/.git/
-LevelTemplate/.git-github-backup/
+# Build artifacts inside mission folders (cmake creates `build/Release/<mission>.dll`).
+missions/*/build/
 
 # Backup / scratch files
 *.orig

@@ -1,12 +1,15 @@
-"""Mission-Ordner: jede Mission ist ein eigener self-contained Ordner.
+"""Mission-Ordner: jede Mission ist ein eigener self-contained Ordner (TitanAPI-Variante).
 
 Inhalt:
   - mission.op2proj   (Editor-Projektdatei, JSON)
-  - LevelMain.cpp     (generiert)
-  - DllMain.cpp       (1:1 aus Template)
+  - mission.cpp       (generiert -- TitanAPI / op2:: facade)
+  - op2_mission.hpp   (1:1 aus Template, Mission-DLL-ABI)
+  - op2_log.hpp       (1:1 aus Template, file logging)
+  - op2_crash.hpp     (1:1 aus Template, SEH guards)
+  - version.rc.in     (Windows version info, von CMake befuellt)
+  - CMakeLists.txt    (CMake-Projekt, Pfade relativ zum TitanAPI-Submodul)
   - <name>.map        (Karte-Kopie)
   - MULTITEK.TXT      (optional, falls Mission custom tech tree nutzt)
-  - OP2Script.vcxproj, OP2Script.sln  (VS-Projekt, Pfade relativ zum LevelTemplate-Submodul)
   - build.bat, README.md
 
 Ziel: jeder kann mit `git clone --recursive` + `build.bat` die Mission
@@ -76,29 +79,44 @@ def write_mission_folder(
     level_main_cpp: str,
     map_source: Path | None,
     techtree_source: Path | None = None,
-    dll_basename: str = "ctest",
+    dll_basename: str = "cMission",
 ) -> dict[str, Path]:
-    """Schreibt eine vollstaendige Mission in den Ordner.
+    """Schreibt eine vollstaendige TitanAPI-Mission in den Ordner.
 
-    Gibt ein Dict mit den geschriebenen Pfaden zurueck (fuer Status-Anzeigen).
+    `level_main_cpp` wird als `mission.cpp` geschrieben. Solange der Editor-
+    Codegen noch nicht auf TitanAPI portiert ist, faellt eine leere/legacy-
+    Eingabe auf das `mission.cpp.template` zurueck.
     """
     folder.mkdir(parents=True, exist_ok=True)
     written: dict[str, Path] = {}
+
+    namespace = _slugify(mission_name)
+    repl = {
+        "__MISSION_NAMESPACE__": namespace,
+        "__MISSION_NAME__": mission_name,
+        "__DLL_BASENAME__": dll_basename,
+        "__MAP_FILENAME__": map_name or "on1_01.map",
+    }
 
     # 1) Editor-Projektdatei
     proj_path = folder / "mission.op2proj"
     proj_path.write_text(json.dumps(project_data, indent=2), encoding="utf-8")
     written["project"] = proj_path
 
-    # 2) LevelMain.cpp (generiert)
-    lm = folder / "LevelMain.cpp"
-    lm.write_text(level_main_cpp, encoding="utf-8")
-    written["levelmain"] = lm
+    # 2) mission.cpp -- wenn der Codegen schon TitanAPI-Code liefert, nehmen
+    #    wir den; sonst die platzhalter-gefuellte Template-Datei.
+    mcpp = folder / "mission.cpp"
+    if level_main_cpp and level_main_cpp.lstrip().startswith("//") and "op2.hpp" in level_main_cpp:
+        mcpp.write_text(level_main_cpp, encoding="utf-8")
+    else:
+        _copy_template("mission.cpp.template", mcpp, repl)
+    written["mission_cpp"] = mcpp
 
-    # 3) DllMain.cpp (aus Template, 1:1)
-    dll = folder / "DllMain.cpp"
-    _copy_template("DllMain.cpp", dll)
-    written["dllmain"] = dll
+    # 3) TitanAPI-Scaffolding (1:1 kopiert) + version.rc.in
+    for name in ("op2_mission.hpp", "op2_log.hpp", "op2_crash.hpp", "version.rc.in"):
+        target = folder / name
+        _copy_template(name, target)
+        written[name] = target
 
     # 4) Karte kopieren (sofern gefunden)
     if map_source and map_source.is_file():
@@ -113,20 +131,9 @@ def write_mission_folder(
         shutil.copy2(techtree_source, target)
         written["techtree"] = target
 
-    # 6) Visual-Studio-Projekt + Solution
-    namespace = _slugify(mission_name)
-    guid = _project_guid_from_folder(folder)
-    repl = {
-        "__PROJECT_GUID__": guid,
-        "__MISSION_NAMESPACE__": namespace,
-        "__MISSION_NAME__": mission_name,
-        "__DLL_BASENAME__": dll_basename,
-        "__MAP_FILENAME__": map_name or "(none)",
-    }
-    _copy_template("OP2Script.vcxproj.template", folder / "OP2Script.vcxproj", repl)
-    _copy_template("OP2Script.sln.template", folder / "OP2Script.sln", repl)
-    written["vcxproj"] = folder / "OP2Script.vcxproj"
-    written["sln"] = folder / "OP2Script.sln"
+    # 6) CMakeLists.txt
+    _copy_template("CMakeLists.txt.template", folder / "CMakeLists.txt", repl)
+    written["cmake"] = folder / "CMakeLists.txt"
 
     # 7) build.bat + README
     _copy_template("build.bat.template", folder / "build.bat", repl)
@@ -152,10 +159,10 @@ def find_op2proj(path: Path) -> Path | None:
 
 
 def default_dll_basename(dll_name: str) -> str:
-    """`cEditorMission.dll` -> `cEditorMission`. Faellt auf `ctest` zurueck."""
+    """`cEditorMission.dll` -> `cEditorMission`. Faellt auf `cMission` zurueck."""
     name = (dll_name or "").strip()
     if not name:
-        return "ctest"
+        return "cMission"
     if name.lower().endswith(".dll"):
         name = name[:-4]
-    return name or "ctest"
+    return name or "cMission"

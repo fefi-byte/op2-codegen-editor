@@ -1,46 +1,25 @@
 @echo off
-REM Build script for mission "__MISSION_NAME__"
-REM Requires Visual Studio Build Tools (MSBuild) with C++ x86 toolset
-REM (v142 ships with VS2019 / Build Tools 2019; newer VS may need its own toolset).
+REM Build script for mission "__MISSION_NAME__" (TitanAPI / CMake).
+REM Requires: CMake 3.21+ and Visual Studio 2026 (or newer) with C++ x86 toolset.
 
 setlocal
 
-REM --- 1) Locate Visual Studio's Developer Command Prompt (VsDevCmd.bat) ---
-REM Try vswhere first (works for all VS versions from 2017 onward).
-set "VSDEVCMD="
-set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-if exist "%VSWHERE%" (
-    for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -prerelease -property installationPath`) do (
-        if exist "%%i\Common7\Tools\VsDevCmd.bat" set "VSDEVCMD=%%i\Common7\Tools\VsDevCmd.bat"
-    )
-)
-
-REM Fallback: common install paths.
-if "%VSDEVCMD%"=="" (
-    for %%v in (18 17 16) do (
-        for %%e in (Community Professional Enterprise BuildTools) do (
-            if exist "%ProgramFiles%\Microsoft Visual Studio\%%v\%%e\Common7\Tools\VsDevCmd.bat" (
-                set "VSDEVCMD=%ProgramFiles%\Microsoft Visual Studio\%%v\%%e\Common7\Tools\VsDevCmd.bat"
-            )
-        )
-    )
-)
-
-if "%VSDEVCMD%"=="" (
-    echo ERROR: Could not find VsDevCmd.bat -- install Visual Studio Build Tools with C++ workload.
-    exit /b 1
-)
-
-echo Using: %VSDEVCMD%
-
-REM --- 2) Activate the x86 build environment and run msbuild ---
-call "%VSDEVCMD%" -arch=x86 -no_logo
+REM --- 1) Locate cmake ---
+where /q cmake
 if errorlevel 1 (
-    echo ERROR: Failed to initialise the VS developer environment.
+    echo ERROR: cmake.exe not on PATH. Install CMake and re-run.
     exit /b 1
 )
 
-msbuild "%~dp0OP2Script.vcxproj" /p:Configuration=Release /p:Platform=Win32 /v:minimal /nologo
+REM --- 2) Configure + build ---
+cd /d "%~dp0"
+cmake -S . -B build -G "Visual Studio 18 2026" -A Win32
+if errorlevel 1 (
+    echo ERROR: CMake configuration failed.
+    exit /b 1
+)
+
+cmake --build build --config Release
 if errorlevel 1 (
     echo.
     echo Build failed.
@@ -48,5 +27,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo Build successful. DLL is in: %~dp0Release\__DLL_BASENAME__.dll
+echo Build successful. DLL is in: %~dp0build\Release\__DLL_BASENAME__.dll
 endlocal

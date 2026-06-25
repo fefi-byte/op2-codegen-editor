@@ -1,4 +1,7 @@
-# OP2 Mission Editor
+# OP2 Mission Editor — `titanapi` branch
+
+> **Experimental branch** that swaps the legacy Outpost2DLL/OP2Helper/HFL SDK for [TitanAPI](https://github.com/leviathan400/TitanAPI), a modern C++23 SDK by leviathan400.
+> The `main` branch still uses the legacy SDK.
 
 A Python-based mission editor for Outpost 2 that generates native C++ mission source code and compiles it to a 32-bit DLL.
 
@@ -8,7 +11,9 @@ Recent changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 1. The **editor GUI** (PySide6) lets you place units, buildings, beacons, walls, configure players, triggers, and AI groups visually.
 2. The **code generator** (`codegen/`) turns the mission model into a `.cpp` file.
-3. **MSBuild / MSVC** compiles the `.cpp` into a 32-bit DLL that Outpost 2 loads directly.
+3. **CMake / MSVC (VS2026)** compiles the `.cpp` into a 32-bit DLL that Outpost 2 loads directly.
+
+> Note: Phase 1 of the TitanAPI migration produces a working scaffold (CMakeLists.txt + mission.cpp stub from the TitanAPI Template sample). The editor's code generator still emits legacy SDK code, so the generated `mission.cpp` will currently fall back to a Template-style stub. Porting the codegen is the next step.
 
 ## Repository layout
 
@@ -108,10 +113,10 @@ The compiled DLL is written to the path set in `config.ini`.
 
 ## Cloning
 
-The `LevelTemplate/` folder is a **git submodule** of [OutpostUniverse/LevelTemplate](https://github.com/OutpostUniverse/LevelTemplate), which itself contains the nested SDK submodules (Outpost2DLL, OP2Helper, HFL). Clone with `--recursive`:
+The `TitanAPI/` folder is a **git submodule** of [leviathan400/TitanAPI](https://github.com/leviathan400/TitanAPI). Clone with `--recursive`:
 
 ```powershell
-git clone --recursive https://github.com/fefi-byte/op2-codegen-editor.git
+git clone --recursive -b titanapi https://github.com/fefi-byte/op2-codegen-editor.git
 ```
 
 If you already cloned without `--recursive`, run:
@@ -120,13 +125,9 @@ If you already cloned without `--recursive`, run:
 git submodule update --init --recursive
 ```
 
-## SDK sources
+## SDK source
 
-`LevelTemplate/OP2MissionSDK/` contains the SDK headers and libraries (pulled in via the submodule):
-
-- [Outpost2DLL](https://github.com/OutpostUniverse/Outpost2DLL) — core game API
-- [OP2Helper](https://github.com/OutpostUniverse/OP2Helper) — helper macros
-- [HFL](https://github.com/OutpostUniverse/HFL) — extended unit/player API (UnitEx, PlayerEx, TethysGameEx)
+[TitanAPI](https://github.com/leviathan400/TitanAPI) is a modern C++23 SDK for Outpost 2. The `op2::` facade is header-only — every mission `#include`s straight from `TitanAPI/TitanAPI/include/op2.hpp`, no separate library to link.
 - [odasl](https://github.com/OutpostUniverse/odasl) — audio lib
 
 The SDK sources are bundled directly (no git submodules) so the project builds without any additional clones.

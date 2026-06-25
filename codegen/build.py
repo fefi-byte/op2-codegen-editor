@@ -76,56 +76,76 @@ def build() -> Path:
     return dll
 
 
+def _find_cmake() -> str:
+    """Sucht cmake.exe -- PATH zuerst, sonst die VS2019+-Installationen."""
+    # 1) PATH
+    p = shutil.which("cmake")
+    if p:
+        return p
+    # 2) VS-Installationen (VS bringt sein eigenes CMake mit unter Common7\IDE\...)
+    candidates = []
+    for vs_year in ("18", "17", "16"):
+        for edition in ("Community", "Professional", "Enterprise", "BuildTools"):
+            candidates.append(
+                Path("C:/Program Files/Microsoft Visual Studio") / vs_year / edition
+                / "Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
+            )
+    # 3) Standalone-Install
+    candidates.append(Path("C:/Program Files/CMake/bin/cmake.exe"))
+    candidates.append(Path("C:/Program Files (x86)/CMake/bin/cmake.exe"))
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    raise SystemExit(
+        "[FEHLER] cmake.exe nicht gefunden.\n"
+        "Bitte CMake installieren (oder Visual Studio mit C++/CMake-Komponente) "
+        "und sicherstellen, dass cmake auf dem PATH ist."
+    )
+
+
 def build_folder(folder: Path) -> Path:
-    """Baut die Mission, die als self-contained Ordner unter `missions/<name>/` liegt.
+    """Baut eine TitanAPI-Mission via CMake.
 
-    Erwartet `OP2Script.vcxproj` direkt im Ordner. Gibt den Pfad zur erzeugten
-    DLL im Ordner `Release/` zurueck.
-
-    Builds the mission stored as a self-contained folder under
-    `missions/<name>/`. Expects `OP2Script.vcxproj` to sit directly in the
-    folder. Returns the path of the produced DLL in `Release/`.
+    Erwartet `CMakeLists.txt` direkt im Ordner. Gibt den Pfad zur erzeugten
+    DLL unter `build/Release/` zurueck.
     """
     folder = Path(folder)
-    vcxproj = folder / "OP2Script.vcxproj"
-    if not vcxproj.exists():
-        raise SystemExit(f"[FEHLER] OP2Script.vcxproj nicht gefunden: {vcxproj}")
+    cmakelists = folder / "CMakeLists.txt"
+    if not cmakelists.exists():
+        raise SystemExit(f"[FEHLER] CMakeLists.txt nicht gefunden: {cmakelists}")
 
-    vsdevcmd = appconfig.vsdevcmd()
-    if not vsdevcmd.exists():
-        raise SystemExit(
-            f"[FEHLER] VsDevCmd.bat nicht gefunden:\n{vsdevcmd}\n"
-            f"Bitte 'msvs_path' in der config.ini anpassen:\n{appconfig.CONFIG_PATH}")
-    props = "/p:Configuration=Release /p:Platform=Win32"
-    if appconfig.platform_toolset():
-        props += f" /p:PlatformToolset={appconfig.platform_toolset()}"
-    if appconfig.windows_sdk():
-        props += f" /p:WindowsTargetPlatformVersion={appconfig.windows_sdk()}"
-    cmd = (
-        f'"{vsdevcmd}" -arch=x86 >nul 2>&1 && '
-        f'msbuild "{vcxproj}" {props} /v:minimal /nologo'
-    )
-    print(f"[..] msbuild laeuft fuer {folder.name} ...")
-    # Outpost2Path aus der Umgebung nehmen, damit die SDK-Subprojekte keine
-    # automatische Kopie in den Spiel-Ordner anstossen (Editor erledigt das).
+    cmake = _find_cmake()
+    build_dir = folder / "build"
     env = {k: v for k, v in os.environ.items() if k.lower() != "outpost2path"}
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
-        print(result.stdout[-3000:])
-        print(result.stderr[-3000:])
-        # Build-Ausgabe IN die Exception aufnehmen, damit die GUI sie anzeigt.
-        # Include build output IN the exception so the GUI can show it.
-        details = (result.stdout or "") + "\n" + (result.stderr or "")
-        details = details.strip()[-3000:] if details.strip() else "(keine msbuild-Ausgabe)"
+    print(f"[..] cmake configure fuer {folder.name} ...")
+    configure_cmd = [
+        cmake, "-S", str(folder), "-B", str(build_dir),
+        "-G", "Visual Studio 18 2026", "-A", "Win32",
+    ]
+    res = subprocess.run(configure_cmd, capture_output=True, text=True, env=env)
+    if res.returncode != 0:
+        details = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()[-3000:] or "(keine cmake-Ausgabe)"
         raise SystemExit(
-            f"[FEHLER] Build fehlgeschlagen (Code {result.returncode})\n\n"
-            f"msbuild-Ausgabe (letzte Zeilen):\n{details}"
+            f"[FEHLER] cmake configure fehlgeschlagen (Code {res.returncode})\n\n"
+            f"cmake-Ausgabe (letzte Zeilen):\n{details}"
         )
 
-    release = folder / "Release"
+    print(f"[..] cmake --build (Release) fuer {folder.name} ...")
+    res = subprocess.run(
+        [cmake, "--build", str(build_dir), "--config", "Release"],
+        capture_output=True, text=True, env=env,
+    )
+    if res.returncode != 0:
+        details = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()[-3000:] or "(keine cmake-Ausgabe)"
+        raise SystemExit(
+            f"[FEHLER] cmake build fehlgeschlagen (Code {res.returncode})\n\n"
+            f"cmake-Ausgabe (letzte Zeilen):\n{details}"
+        )
+
+    release = build_dir / "Release"
     dll = next(release.glob("*.dll"), None) if release.is_dir() else None
     if not dll:
-        raise SystemExit(f"[FEHLER] Keine DLL im Release-Ordner gefunden: {release}")
+        raise SystemExit(f"[FEHLER] Keine DLL gefunden unter: {release}")
     print(f"[ok] DLL: {dll}  ({dll.stat().st_size} Bytes)")
     return dll
 
