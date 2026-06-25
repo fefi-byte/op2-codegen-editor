@@ -50,3 +50,8 @@ LevelTemplate/.git-github-backup/
 
 # Backup / scratch files
 *.orig
+
+# PyInstaller (standalone exe build)
+build/
+dist/
+*.spec

@@ -1,8 +1,10 @@
 from __future__ import annotations
+import subprocess
 from .common import *
 from .placed_object import PlacedObject
 from .mapview import MapView
 from .build_worker import BuildWorker
+from .cpp_highlight import CppHighlighter
 from .dialogs.map_dialog import MapDialog
 from .dialogs.object_edit import ObjectEditDialog
 from .dialogs.output_dialog import OutputDialog
@@ -16,6 +18,9 @@ class EditorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(tr("window.app_title"))
+        # Fenster-Icon (Form-Icon).
+        # Window icon (form icon).
+        self.setWindowIcon(QIcon(str(ICON_PATH)))
         self.resize(1250, 870)
 
         try:
@@ -40,6 +45,7 @@ class EditorWindow(QMainWindow):
         self.building_groups: list[BuildingGroupSpec] = []
         self.reinforce_groups: list[ReinforceGroupSpec] = []
         self.node_positions: dict = {}  # Timeline-Knotenpositionen (key -> [x, y])
+        # Timeline node positions (key -> [x, y])
         self._next_object_id = 1
         self._pending_trigger_index = 0
         self._pending_action_index = -1
@@ -88,6 +94,26 @@ class EditorWindow(QMainWindow):
         m.addSeparator()
         a = QAction(tr("window.quit"), self); a.triggered.connect(self.close); m.addAction(a)
 
+        view_menu = self.menuBar().addMenu(tr("window.menu_view"))
+        # Kachelgitter-Umschalter; Anfangszustand aus config.ini.
+        # Tile-grid toggle; initial state from config.ini.
+        grid_on = appconfig.show_grid()
+        self.view.set_grid(grid_on)
+        self.grid_action = QAction(tr("window.show_grid"), self)
+        self.grid_action.setCheckable(True)
+        self.grid_action.setChecked(grid_on)
+        self.grid_action.toggled.connect(self._toggle_grid)
+        view_menu.addAction(self.grid_action)
+        view_menu.addSeparator()
+        # Zoom-Voreinstellungen; das Mausrad zoomt weiterhin frei.
+        # Zoom presets; the mouse wheel still free-zooms.
+        zoom_def = QAction(tr("window.zoom_default"), self)
+        zoom_def.triggered.connect(self.view.zoom_default)
+        view_menu.addAction(zoom_def)
+        zoom_fit = QAction(tr("window.zoom_fit"), self)
+        zoom_fit.triggered.connect(self.view.zoom_fit)
+        view_menu.addAction(zoom_fit)
+
         lang_menu = self.menuBar().addMenu(tr("window.menu_language"))
         configured = appconfig.language().strip().lower()
         auto_act = QAction(tr("window.lang_auto"), self)
@@ -104,6 +130,7 @@ class EditorWindow(QMainWindow):
             lang_menu.addAction(act)
 
         # "Mission"-Aktionen als obere Werkzeugleiste statt Menue.
+        # "Mission" actions as a top toolbar instead of a menu.
         tb = QToolBar("Mission", self)
         tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.addToolBar(tb)
@@ -114,6 +141,7 @@ class EditorWindow(QMainWindow):
             (tr("window.tb_triggers"), self.edit_triggers),
             (tr("window.tb_show_code"), self.show_code),
             (tr("window.tb_build"), self.do_build),
+            (tr("window.tb_test_op2"), self._launch_op2),
             (tr("window.tb_clear"), self.clear_objects),
         ]:
             act = QAction(label, self)
@@ -123,6 +151,12 @@ class EditorWindow(QMainWindow):
     def _set_language(self, code):
         appconfig.set_language(code)
         QMessageBox.information(self, tr("window.lang_changed_title"), tr("window.lang_changed_text"))
+
+    def _toggle_grid(self, on):
+        # Gitter ein-/ausblenden und Einstellung in config.ini sichern.
+        # Show/hide the grid and persist the setting in config.ini.
+        self.view.set_grid(on)
+        appconfig.set_show_grid(on)
 
     def _build_sidebar(self):
         dock = QDockWidget(tr("window.dock_place"), self)
@@ -141,6 +175,7 @@ class EditorWindow(QMainWindow):
         lay.addWidget(self.list, 1)
 
         # Spieler
+        # Player
         self.player_row = QWidget(); pr = QFormLayout(self.player_row); pr.setContentsMargins(0, 0, 0, 0)
         self.player_spin = QSpinBox(); self.player_spin.setRange(0, 5)
         pr.addRow(tr("window.lbl_player"), self.player_spin)
@@ -153,14 +188,17 @@ class EditorWindow(QMainWindow):
         lay.addWidget(self.unit_name_row)
 
         # Cargo-Truck-Parameter
+        # Cargo truck parameters
         self.cargo_row = QWidget(); cr = QFormLayout(self.cargo_row); cr.setContentsMargins(0, 0, 0, 0)
         self.cargo_combo = QComboBox(); fill_combo(self.cargo_combo, TRUCK_CARGO, "truck_cargo")
         self.cargo_combo.setCurrentIndex(self.cargo_combo.findData("Leer"))  # Trucks standardmaessig leer
+        # Trucks empty by default
         self.cargo_amount = QSpinBox(); self.cargo_amount.setRange(0, 5000); self.cargo_amount.setValue(1000)
         cr.addRow(tr("window.lbl_cargo"), self.cargo_combo); cr.addRow(tr("window.lbl_amount"), self.cargo_amount)
         lay.addWidget(self.cargo_row)
 
         # ConVec-Bausatz
+        # ConVec kit
         self.kit_row = QWidget(); kr = QFormLayout(self.kit_row); kr.setContentsMargins(0, 0, 0, 0)
         self.kit_combo = QComboBox()
         self.kit_combo.addItem(tr("window.empty"), None)
@@ -170,6 +208,7 @@ class EditorWindow(QMainWindow):
         lay.addWidget(self.kit_row)
 
         # Beacon-Parameter
+        # Beacon parameters
         self.beacon_row = QWidget(); br = QFormLayout(self.beacon_row); br.setContentsMargins(0, 0, 0, 0)
         self.ore_combo = QComboBox(); fill_combo(self.ore_combo, ORE_TYPES, "ore_types")
         self.yield_combo = QComboBox(); fill_combo(self.yield_combo, YIELDS, "yields")
@@ -177,6 +216,7 @@ class EditorWindow(QMainWindow):
         lay.addWidget(self.beacon_row)
 
         # Waffe (Kampffahrzeuge Lynx/Panther/Tiger + Guard Post)
+        # Weapon (combat vehicles Lynx/Panther/Tiger + Guard Post)
         self.weapon_row = QWidget(); wr = QFormLayout(self.weapon_row); wr.setContentsMargins(0, 0, 0, 0)
         self.weapon_combo = QComboBox()
         for d, m in WEAPONS:
@@ -191,6 +231,7 @@ class EditorWindow(QMainWindow):
         self._fill_list(self.cat_combo.currentData())
 
     # --- Mission-Uebersicht: Ausfuehrungs-Flussbaum + Gesamtuebersicht (Dock rechts) ---
+    # --- Mission overview: execution flow tree + overall summary (dock on the right) ---
     def _build_overview(self):
         dock = QDockWidget(tr("window.dock_overview"), self)
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
@@ -375,6 +416,7 @@ class EditorWindow(QMainWindow):
         self.weapon_row.setVisible(mid in WEAPON_UNITS)
 
     # --- Karte ---
+    # --- Map ---
     def choose_map(self):
         dlg = MapDialog(self, self.res.names(), self.map_name, self.mission_name)
         if dlg.exec() == QDialog.Accepted:
@@ -526,6 +568,12 @@ class EditorWindow(QMainWindow):
         self._rect_pick_item.setZValue(1000)
         self.scene.addItem(self._rect_pick_item)
 
+    # Die drei _rect_drag_*-Methoden multiplexen drei Zieh-Modi:
+    #   (a) startMiningOperation Smelter-"rect" (Rechteck), (b) recordTube/recordWall
+    #   Linien-Zug, (c) das SetRect-Rechteck einer Gruppe.
+    # The three _rect_drag_* methods multiplex three drag modes:
+    #   (a) startMiningOperation smelter "rect" (rectangle), (b) recordTube/recordWall
+    #   line drag, (c) a group's SetRect rectangle.
     def _rect_drag_start(self, tx, ty):
         if self._action_pick and self._action_pick["kind"] == "startMiningOperation" and self._action_pick.get("mode") == "rect":
             tx, ty = self._clamp_tile(tx, ty)
@@ -624,6 +672,20 @@ class EditorWindow(QMainWindow):
             self.scene.removeItem(item)
         self._action_preview_items = []
 
+    # Startet einen Karten-Auswahlmodus aus einem Trigger-Aktions-Dialog.
+    # Das verbrauchte request-dict-Schema:
+    #   kind: "recordBuilding" | "recordTube" | "recordWall" | "assignToGroup"
+    #         | "startMiningOperation"
+    #   mode (optional): "mine" | "smelter" | "rect" (nur startMiningOperation)
+    #   group_name, building_type, wall_type, mining_group_name: je nach kind
+    #   trigger_index, action_index, player, ore_type, truck_count, Koordinaten usw.
+    # Begins a map-pick mode from a trigger-action dialog.
+    # The consumed request dict schema:
+    #   kind: "recordBuilding" | "recordTube" | "recordWall" | "assignToGroup"
+    #         | "startMiningOperation"
+    #   mode (optional): "mine" | "smelter" | "rect" (startMiningOperation only)
+    #   group_name, building_type, wall_type, mining_group_name: depending on kind
+    #   trigger_index, action_index, player, ore_type, truck_count, coords, etc.
     def _begin_action_pick(self, request):
         self._placement_active = False
         self._clear_placement_preview()
@@ -707,6 +769,10 @@ class EditorWindow(QMainWindow):
         self.scene.addItem(rect)
         self._action_preview_items = [rect]
 
+    # Liefert die Kacheln einer L-foermigen (achsenparallelen) Linie von (x1,y1)
+    # nach (x2,y2); es wird zuerst entlang der laengeren Achse geschritten.
+    # Returns the tiles of an L-shaped (axis-aligned) line from (x1,y1) to (x2,y2),
+    # stepping along the longer axis first.
     def _line_tiles(self, x1, y1, x2, y2):
         tiles = []
         if abs(x2 - x1) >= abs(y2 - y1):
@@ -870,6 +936,7 @@ class EditorWindow(QMainWindow):
             return
         self.mission_name = data.get("mission_name", "Editor Mission")
         # Knotenpositionen in-place aktualisieren (Timeline haelt eine Referenz darauf)
+        # Update node positions in place (the timeline holds a reference to it)
         self.node_positions.clear()
         self.node_positions.update(data.get("node_positions", {}))
         if "players" in data and data["players"]:
@@ -894,6 +961,7 @@ class EditorWindow(QMainWindow):
                     continue
         self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}")
         self.load_map(data.get("map", self.map_name))  # leert Szene + Objekte
+        # clears scene + objects
         used_uids = {d.get("uid") for d in data.get("objects", []) if d.get("uid")}
         for od in data.get("objects", []):
             try:
@@ -971,6 +1039,7 @@ class EditorWindow(QMainWindow):
         self._refresh_overview()
 
     # --- Platzieren / Entfernen ---
+    # --- Place / Remove ---
     def _object_at(self, tx, ty):
         for obj in reversed(self.objects):
             if obj.covers(tx, ty):
@@ -996,6 +1065,13 @@ class EditorWindow(QMainWindow):
             label = obj.unit_name or obj.display
             self.statusBar().showMessage(tr("window.status_updated", label=label))
 
+    # Verteilt einen Karten-Klick in Prioritaetsreihenfolge: zuerst eine aktive
+    # Aktions-Auswahl (startMiningOperation / recordBuilding / assignToGroup),
+    # sonst das Platzieren des gewaehlten Katalog-Elements, sonst Klick-zum-Bearbeiten
+    # eines vorhandenen Objekts.
+    # Dispatches a map click in priority order: first an active action-pick
+    # (startMiningOperation / recordBuilding / assignToGroup), else placement of the
+    # selected catalog item, else click-to-edit an existing object.
     def on_place(self, tx, ty):
         if self._action_pick and self._action_pick["kind"] == "startMiningOperation":
             if self.map is None or not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
@@ -1118,8 +1194,10 @@ class EditorWindow(QMainWindow):
         self.statusBar().showMessage(tr("window.status_objects_cleared"))
 
     # --- Build ---
+    # --- Build ---
     def build_mission(self) -> Mission:
         # Offset +31/-1 wird im Codegen ergaenzt (MkXY fuer Einheiten, XYPos fuer Beacons/Walls).
+        # Offset +31/-1 is added in the codegen (MkXY for units, XYPos for beacons/walls).
         units, beacons, walls = [], [], []
         for o in self.objects:
             if o.kind in ("structure", "vehicle"):
@@ -1176,6 +1254,10 @@ class EditorWindow(QMainWindow):
         text.setPlainText(code)
         text.setFont(QFont("Consolas", 10))
         text.setLineWrapMode(QPlainTextEdit.NoWrap)
+        # Dunkler Hintergrund + C++-Syntax-Highlighting.
+        # Dark background + C++ syntax highlighting.
+        text.setStyleSheet("QPlainTextEdit { background-color: #1e1e1e; color: #d4d4d4; }")
+        dlg._highlighter = CppHighlighter(text.document())
         btns = QDialogButtonBox(QDialogButtonBox.Close)
         btns.rejected.connect(dlg.reject)
         btns.accepted.connect(dlg.accept)
@@ -1200,22 +1282,66 @@ class EditorWindow(QMainWindow):
 
     def _build_ok(self, dll):
         self._progress.close()
-        target = Path(self.output_dir) / self.dll_name
+        # DLL nur in den OPU-Ordner legen (Standard-output_dir = OPU) -- dort
+        # sucht die OPU-Version von OP2 nach Missionen und dort liegt
+        # op2launcher.exe; nie in den Spiel-Wurzelordner kopieren.
+        # Put the DLL only in the OPU folder (default output_dir = OPU) -- that
+        # is where the OPU version of OP2 looks for missions and where
+        # op2launcher.exe lives; never copy into the game root folder.
+        targets = []
+        for folder in (Path(self.output_dir), CONTENT_ROOT):
+            t = folder / self.dll_name
+            if t not in targets:
+                targets.append(t)
         try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(dll, target)
+            for t in targets:
+                t.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(dll, t)
         except Exception as e:
             QMessageBox.warning(self, tr("window.copy_failed_title"),
-                                tr("window.copy_failed_text", target=target, e=e))
+                                tr("window.copy_failed_text", target=t, e=e))
             self.statusBar().showMessage(tr("window.status_copy_failed", e=e))
             return
-        self.statusBar().showMessage(tr("window.status_build_ok", target=target))
-        QMessageBox.information(self, tr("window.build_success_title"),
-                                tr("window.build_success_text", n=len(self.objects), target=target))
+        dests = "\n".join(str(t) for t in targets)
+        self.statusBar().showMessage(tr("window.status_build_ok", target=targets[0]))
+        text = tr("window.build_success_text", n=len(self.objects), target=dests)
+        # Bei vorhandenem op2launcher zusaetzlich "OP2 starten" anbieten.
+        # When op2launcher is available, also offer "Launch OP2".
+        if self._op2launcher_path().exists():
+            box = QMessageBox(QMessageBox.Information, tr("window.build_success_title"), text, parent=self)
+            launch_btn = box.addButton(tr("window.launch_op2"), QMessageBox.AcceptRole)
+            box.addButton(QMessageBox.Close)
+            box.exec()
+            if box.clickedButton() is launch_btn:
+                self._launch_op2()
+        else:
+            QMessageBox.information(self, tr("window.build_success_title"), text)
 
     def _build_err(self, msg):
         self._progress.close()
         self.statusBar().showMessage(tr("window.status_build_failed"))
         QMessageBox.critical(self, tr("window.build_failed_title"), msg)
+
+    def _op2launcher_path(self) -> Path:
+        # op2launcher.exe liegt im OPU-Ordner.
+        # op2launcher.exe lives in the OPU folder.
+        return CONTENT_ROOT / "op2launcher.exe"
+
+    def _launch_op2(self):
+        # OP2 ueber op2launcher.exe direkt in die aktuelle Mission-DLL starten
+        # (Aufruf im OPU-Ordner: op2launcher.exe <dll_name>).
+        # Launch OP2 via op2launcher.exe straight into the current mission DLL
+        # (run in the OPU folder: op2launcher.exe <dll_name>).
+        launcher = self._op2launcher_path()
+        if not launcher.exists():
+            QMessageBox.warning(self, tr("window.launcher_missing_title"),
+                                tr("window.launcher_missing_text", path=launcher))
+            return
+        try:
+            subprocess.Popen([str(launcher), self.dll_name], cwd=str(CONTENT_ROOT))
+            self.statusBar().showMessage(tr("window.status_launching_op2", dll=self.dll_name))
+        except Exception as e:
+            QMessageBox.critical(self, tr("window.launcher_failed_title"),
+                                 tr("window.launcher_failed_text", e=e))
 
 

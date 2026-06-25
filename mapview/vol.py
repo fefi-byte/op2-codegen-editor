@@ -4,6 +4,13 @@ Format (aus OP2Utility/src/Archive/VolFile.cpp nachgebaut):
   SectionHeader = 4-Byte-Tag + uint32  (length = wert & 0x7FFFFFFF, padding-bit = wert>>31)
   Layout: "VOL " | "volh"(len 0) | "vols"+Stringtabelle | "voli"+Indextabelle | Datenbloecke("VBLK")
   IndexEntry (14 Byte): filenameOffset u32, dataBlockOffset u32, fileSize i32, compressionType u16
+
+Reader for Outpost-2 .vol archives (uncompressed, as in the GOG/OPU release).
+
+Format (reconstructed from OP2Utility/src/Archive/VolFile.cpp):
+  SectionHeader = 4-byte tag + uint32  (length = value & 0x7FFFFFFF, padding bit = value>>31)
+  Layout: "VOL " | "volh"(len 0) | "vols"+string table | "voli"+index table | data blocks ("VBLK")
+  IndexEntry (14 bytes): filenameOffset u32, dataBlockOffset u32, fileSize i32, compressionType u16
 """
 from __future__ import annotations
 
@@ -32,6 +39,7 @@ class VolFile:
         self._read_header()
 
     # --- Low-level Helfer ---
+    # --- Low-level helpers ---
     def _read(self, n: int) -> bytes:
         b = self._buf[self._pos:self._pos + n]
         self._pos += n
@@ -52,6 +60,7 @@ class VolFile:
         return length
 
     # --- Header ---
+    # --- Header ---
     def _read_header(self) -> None:
         self._read_tag(b"VOL ")
         if self._read_tag(b"volh") != 0:
@@ -65,6 +74,7 @@ class VolFile:
             names = names[:-1]
         names = [n.decode("ascii", "replace") for n in names]
         # Padding am Ende der Stringtabelle ueberspringen
+        # Skip padding at the end of the string table
         self._pos += string_table_length - actual - 4
 
         index_table_length = self._read_tag(b"voli")
@@ -75,6 +85,7 @@ class VolFile:
             raw_entries.append((fn_off, blk_off, size, comp))
 
         # Gueltige Eintraege: bis filenameOffset == 0xFFFFFFFF
+        # Valid entries: until filenameOffset == 0xFFFFFFFF
         for i, (fn_off, blk_off, size, comp) in enumerate(raw_entries):
             if fn_off == 0xFFFFFFFF:
                 break
@@ -82,6 +93,7 @@ class VolFile:
             self.entries.append(VolEntry(name, blk_off, size, comp))
 
     # --- Zugriff ---
+    # --- Access ---
     def names(self) -> list[str]:
         return [e.name for e in self.entries]
 
@@ -100,6 +112,7 @@ class VolFile:
                 f"{e.name}: Kompression 0x{e.compression:X} (nur unkomprimiert unterstuetzt)"
             )
         start = e.data_block_offset + 8  # nach SectionHeader
+        # start = e.data_block_offset + 8  # after the SectionHeader
         return self._buf[start:start + e.file_size]
 
 

@@ -3,7 +3,10 @@ from ..common import *
 
 
 class GroupsDialog(QDialog):
-    """Gruppen verwalten: MiningGroup, BuildingGroup und ReinforceGroup."""
+    """Gruppen verwalten: MiningGroup, BuildingGroup und ReinforceGroup.
+
+    EN: Manage groups: MiningGroup, BuildingGroup and ReinforceGroup.
+    """
     def __init__(self, parent, mining_groups, building_groups, reinforce_groups, objects, player_count):
         super().__init__(parent)
         self.setWindowTitle(tr("groups.window_title"))
@@ -26,6 +29,8 @@ class GroupsDialog(QDialog):
         self._loading = False
         self.rect_pick_request: int | None = None
 
+        # Knotenpositionen / platzierte Objekte nach map_id fuer die Gruppen-Dropdowns auswaehlen.
+        # EN: Each comprehension selects placed objects by map_id to populate the group-type dropdowns.
         self.mines = [o for o in self.objects if o.map_id in ("mapCommonOreMine", "mapRareOreMine")]
         self.smelters = [o for o in self.objects if o.map_id in ("mapCommonOreSmelter", "mapRareOreSmelter")]
         self.trucks = [o for o in self.objects if o.map_id == "mapCargoTruck"]

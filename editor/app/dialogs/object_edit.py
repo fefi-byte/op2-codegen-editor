@@ -4,6 +4,10 @@ from ..placed_object import PlacedObject
 
 
 class ObjectEditDialog(QDialog):
+    """Eigenschaften eines platzierten Objekts bearbeiten: Name, Spieler, Fracht/Bausatz.
+
+    EN: Edit the properties of a placed object: name, player, cargo/construction kit.
+    """
     def __init__(self, parent, obj: PlacedObject, num_players: int):
         super().__init__(parent)
         self.setWindowTitle(tr("object_edit.title", name=obj.display))

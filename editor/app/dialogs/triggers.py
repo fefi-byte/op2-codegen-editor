@@ -4,7 +4,11 @@ from .action_editor import ActionListWidget
 
 
 class TriggersDialog(QDialog):
-    """Benutzerdefinierte Trigger: Bedingung + Aktionen, mit Laufzeit-Erstellung."""
+    """Benutzerdefinierte Trigger: Bedingung + Aktionen, mit Laufzeit-Erstellung.
+
+    Custom triggers: a condition plus a list of actions, with runtime creation
+    of further triggers supported.
+    """
     def __init__(
         self, parent, triggers, building_groups=None, target_groups=None,
         reinforce_groups=None, mining_groups=None, objects=None, initial_trigger_index=0,
@@ -35,6 +39,7 @@ class TriggersDialog(QDialog):
         self.map_pick_request = None
 
         # --- Trigger-Liste ---
+        # --- Trigger list ---
         self.tlist = QListWidget()
         self.tlist.currentRowChanged.connect(self._on_select)
         add = QPushButton(tr("triggers.btn_add_trigger")); add.clicked.connect(self._add)
@@ -44,6 +49,7 @@ class TriggersDialog(QDialog):
         left.addWidget(add); left.addWidget(rm)
 
         # --- Trigger-Eigenschaften ---
+        # --- Trigger properties ---
         self.name = QLineEdit()
         self.at_start = QCheckBox(tr("triggers.chk_at_start"))
         self.one_shot = QCheckBox(tr("triggers.chk_one_shot"))
@@ -69,6 +75,10 @@ class TriggersDialog(QDialog):
         self.form.addRow(self.at_start)
         self.form.addRow(self.one_shot)
         self.form.addRow(tr("triggers.lbl_condition"), self.cond)
+        # Feldname -> zugehoeriges Widget; Sichtbarkeit wird je nach gewaehlter
+        # Bedingungsart durch _update_cond_fields() umgeschaltet.
+        # Maps a field name -> its widget; visibility is toggled per selected
+        # condition kind by _update_cond_fields().
         self._cond_rows = {
             "player": self.player, "marks": self.marks, "count": self.count,
             "compare": self.compare, "tech_id": self.tech_id, "resource": self.resource,
@@ -95,6 +105,7 @@ class TriggersDialog(QDialog):
             w.toggled.connect(self._store_current)
 
         # --- Aktionen ---
+        # --- Actions ---
         self.alist = QListWidget(); self.alist.setMaximumHeight(120)
         self.alist.currentRowChanged.connect(self._on_action_select)
         self.act_kind = QComboBox(); fill_combo(self.act_kind, ACTION_KINDS, "action_kinds")
@@ -139,6 +150,7 @@ class TriggersDialog(QDialog):
         for group in self.reinforce_groups:
             self.act_source_group.addItem(f"{group.name} [ReinforceGroup]", group.name)
         # Zielgruppe fuer "Gebaeude einer Gruppe zuweisen": jede Gruppe (Mining/Building/Reinforce)
+        # Target group for "assign building to a group": any group (Mining/Building/Reinforce)
         self.act_assign_group = QComboBox()
         for group in self.mining_groups:
             self.act_assign_group.addItem(f"{group.name} [MiningGroup]", group.name)
@@ -155,6 +167,10 @@ class TriggersDialog(QDialog):
                 self.act_wall.addItem(d, m)
         self.act_form = QFormLayout()
         self.act_form.addRow(tr("triggers.lbl_action_kind"), self.act_kind)
+        # Feldname -> zugehoeriges Widget; Sichtbarkeit wird je nach gewaehlter
+        # Aktionsart durch _update_action_fields() umgeschaltet.
+        # Maps a field name -> its widget; visibility is toggled per selected
+        # action kind by _update_action_fields().
         self._act_rows = {"text": self.act_text, "unit": self.act_unit,
                           "vehicle": self.act_vehicle, "weapon": self.act_weapon,
                           "target_count": self.act_target_count, "priority": self.act_priority,
@@ -206,6 +222,7 @@ class TriggersDialog(QDialog):
         act_btns = QHBoxLayout(); act_btns.addWidget(add_act); act_btns.addWidget(update_act); act_btns.addWidget(rm_act)
 
         # --- IF-Bedingungen pro Aktion ---
+        # --- Per-action IF conditions ---
         self._act_conditions = []
         self.cond_logic = QComboBox(); self.cond_logic.addItems([tr("triggers.logic_and"), tr("triggers.logic_or")])
         self.cond_list = QListWidget(); self.cond_list.setMaximumHeight(90)
@@ -224,6 +241,10 @@ class TriggersDialog(QDialog):
         self.cc_negate = QCheckBox(tr("triggers.chk_negate"))
         self.cc_form = QFormLayout()
         self.cc_form.addRow(tr("triggers.lbl_cond_kind"), self.cc_kind)
+        # Feldname -> zugehoeriges Widget; Sichtbarkeit wird je nach gewaehlter
+        # Bedingungsart durch _update_cc_fields() umgeschaltet.
+        # Maps a field name -> its widget; visibility is toggled per selected
+        # condition kind by _update_cc_fields().
         self._cc_rows = {"player": self.cc_player, "building": self.cc_building,
                          "x": self.cc_x, "y": self.cc_y, "compare": self.cc_compare,
                          "value": self.cc_value, "resource": self.cc_resource, "tech_id": self.cc_tech}
@@ -240,12 +261,14 @@ class TriggersDialog(QDialog):
         cond_btns = QHBoxLayout(); cond_btns.addWidget(add_cond); cond_btns.addWidget(rm_cond)
 
         # Reiter "Bedingung": Trigger-Identitaet + Bedingung + deren Parameter
+        # "Condition" tab: trigger identity + condition + its parameters
         cond_tab = QWidget()
         cond_layout = QVBoxLayout(cond_tab)
         cond_layout.addLayout(self.form)
         cond_layout.addStretch(1)
 
         # Reiter "Aktionen": verschachtelter Karten-Editor (Wenn/Dann/Sonst)
+        # "Actions" tab: nested card editor (When/Then/Else)
         act_tab = QWidget()
         act_layout = QVBoxLayout(act_tab)
         act_layout.addWidget(QLabel(tr("triggers.lbl_actions_hint")))
@@ -268,6 +291,7 @@ class TriggersDialog(QDialog):
             self.tlist.setCurrentRow(max(0, min(self._initial_trigger_index, len(self.triggers) - 1)))
             if self._initial_action_index >= 0:
                 self.tabs.setCurrentIndex(1)  # direkt zum Aktionen-Reiter
+                # jump straight to the Actions tab
         else:
             self._set_form_enabled(False)
 
@@ -297,6 +321,7 @@ class TriggersDialog(QDialog):
             w.setEnabled(on)
 
     # --- Trigger-Liste ---
+    # --- Trigger list ---
     def _refresh_list(self):
         self.tlist.blockSignals(True)
         cur = self.tlist.currentRow()
@@ -334,6 +359,7 @@ class TriggersDialog(QDialog):
             self._set_form_enabled(False)
 
     # --- Eigenschaften laden/speichern ---
+    # --- Load/store properties ---
     def _load(self, i):
         t = self.triggers[i]
         self._loading = True
@@ -382,6 +408,7 @@ class TriggersDialog(QDialog):
             self.form.setRowVisible(w, key in fields)
 
     # --- Aktionen ---
+    # --- Actions ---
     def _refresh_actions(self):
         self.alist.clear()
         if not (0 <= self._idx < len(self.triggers)):
@@ -389,6 +416,7 @@ class TriggersDialog(QDialog):
         for a in self.triggers[self._idx].actions:
             self.alist.addItem(action_summary(a))
         # Ziel-Trigger-Auswahl aktualisieren (andere Trigger)
+        # Refresh the target-trigger selection (the other triggers)
         self.act_target.clear()
         for t in self.triggers:
             if t is not self.triggers[self._idx]:
@@ -443,6 +471,7 @@ class TriggersDialog(QDialog):
         if ore_label:
             self.act_ore.setCurrentIndex(self.act_ore.findData(ore_label))
         # IF-Bedingungen der Aktion laden
+        # Load the action's IF conditions
         self._act_conditions = [ActionCondition(**asdict(c)) for c in getattr(action, "conditions", [])]
         self.cond_logic.setCurrentIndex(1 if getattr(action, "condition_logic", "and") == "or" else 0)
         self._refresh_act_conditions()
@@ -490,6 +519,7 @@ class TriggersDialog(QDialog):
         for key, w in self._act_rows.items():
             self.act_form.setRowVisible(w, vis[key])
         # X/Y-Beschriftung kontextabhaengig
+        # X/Y labels are context-dependent
         xlbl, ylbl = {
             "startMiningOperation": (tr("triggers.lbl_mine_x"), tr("triggers.lbl_mine_y")),
             "assignToGroup": (tr("triggers.lbl_building_x"), tr("triggers.lbl_building_y")),
@@ -631,7 +661,9 @@ class TriggersDialog(QDialog):
         self.accept()
 
     # --- Pro-Aktion-Bedingungen ---
+    # --- Per-action conditions ---
     def _update_cc_fields(self):  # obsolet (alte Pro-Aktion-Bedingungs-UI; durch if-Block ersetzt)
+        # obsolete (old per-action condition UI; replaced by the if-block)
         fields = ACTION_CONDITION_KINDS[self.cc_kind.currentData()][1]
         for k, w in self._cc_rows.items():
             self.cc_form.setRowVisible(w, k in fields)

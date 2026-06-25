@@ -9,15 +9,22 @@ from pathlib import Path
 
 import numpy as np
 
+# editor/app
 HERE = Path(__file__).resolve().parent      # editor/app
+# editor
 EDITOR_DIR = HERE.parent                      # editor
+# op2-cpp-poc
 ROOT = EDITOR_DIR.parent                       # op2-cpp-poc
 for _p in (ROOT / "codegen", ROOT / "mapview", EDITOR_DIR):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from PySide6.QtCore import Qt, QRectF, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QImage, QPainter, QPen, QPixmap
+# Fenster-/App-Icon (liegt im Paket unter resources/).
+# Window/app icon (lives in the package under resources/).
+ICON_PATH = HERE / "resources" / "Structure.ico"
+
+from PySide6.QtCore import Qt, QLineF, QRectF, QThread, QTimer, Signal
+from PySide6.QtGui import QAction, QBrush, QColor, QIcon, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDockWidget,
     QFileDialog, QFormLayout, QGraphicsRectItem, QGraphicsScene,
@@ -48,18 +55,31 @@ from mission_model import (
 from techs import load_techs
 
 # Pfade kommen aus config.ini (neben der EXE bzw. im Projekt-Root).
+# Paths come from config.ini (next to the EXE or in the project root).
 appconfig.ensure_default_file()
 OP2_DIR = appconfig.game_path()
 # OPU 1.4.1: Karten/Tilesets/Techs liegen entpackt unter <game>/OPU (kein .vol).
+# OPU 1.4.1: maps/tilesets/techs are unpacked under <game>/OPU (no .vol).
 CONTENT_ROOT = content_root(OP2_DIR)
 TECHS_DIR = CONTENT_ROOT / "base" / "techs"
+# native 32px -> scharf
 SCENE_TILE = TILE  # native 32px -> scharf
 
 # Standard-Ausgabeort der Mission-DLL. Colony-Missionen brauchen den Praefix "c".
+# Default output location of the mission DLL. Colony missions need the prefix "c".
 DEFAULT_OUTPUT_DIR = appconfig.output_dir()
 DEFAULT_DLL_NAME = appconfig.dll_name()
 
 # --- Mehrsprachigkeit ---
+# --- Internationalisation ---
+# i18n-Bruecke: tr("section.key", **fmt) schlaegt den Text in der aktiven
+# Sprach-INI nach (Fallback de -> Schluessel). fill_combo zeigt uebersetzten
+# Text an, speichert aber das urspruengliche (deutsche) Dict-Label als itemData,
+# damit bestehende `DICT[combo.currentData()]`-Lookups weiter funktionieren.
+# i18n bridge: tr("section.key", **fmt) looks the text up in the active-language
+# INI (fallback de -> the key). fill_combo shows translated text but stores the
+# original (German) dict label as itemData, so existing
+# `DICT[combo.currentData()]` lookups keep working.
 i18n.init(appconfig.language())
 tr = i18n.tr
 
@@ -71,12 +91,19 @@ def fill_combo(combo, mapping, section):
     urspruengliche (deutsche) Label, damit bestehende `DICT[combo.currentData()]`-
     Lookups unveraendert funktionieren. Zum Setzen: combo.setCurrentIndex(
     combo.findData(label)).
+
+    Fills a QComboBox from a {label: value|tuple} dict in a language-neutral way.
+
+    Display = translated via tr(f"{section}.{internal_value}"); itemData = the
+    original (German) label, so existing `DICT[combo.currentData()]` lookups keep
+    working unchanged. To select: combo.setCurrentIndex(combo.findData(label)).
     """
     for label, val in mapping.items():
         internal = val[0] if isinstance(val, tuple) else val
         combo.addItem(tr(f"{section}.{internal}"), label)
 
 # Gebaeude (Anzeige, map_id, Footprint aus building.txt)
+# Buildings (display name, map_id, footprint from building.txt)
 STRUCTURES = [
     ("Command Center", "mapCommandCenter", (3, 2)),
     ("Tokamak", "mapTokamak", (2, 2)),
@@ -108,6 +135,7 @@ VEHICLES = [
     ("Tiger", "mapTiger", (1, 1)),
 ]
 # Mauern/Rohre (auch vom Trigger-Dialog genutzt)
+# Walls/tubes (also used by the trigger dialog)
 WALL_ITEMS = [
     ("Rohr (Tube)", "mapTube", (1, 1)),
     ("Mauer (Wall)", "mapWall", (1, 1)),
@@ -115,11 +143,14 @@ WALL_ITEMS = [
     ("Microbe-Mauer", "mapMicrobeWall", (1, 1)),
 ]
 # Kategorie -> (kind, items)
+# Category -> (kind, items)
 CATALOG = {
     "Gebäude": ("structure", STRUCTURES),
     "Fahrzeuge": ("vehicle", VEHICLES),
     # Beacons, Magma Vents, Geysire, Mauern & Rohre in einer Kategorie.
+    # Beacons, magma vents, geysers, walls & tubes in one category.
     # Eintraege mit 4. Element ueberschreiben den Standard-Kind der Kategorie.
+    # Entries with a 4th element override the category's default kind.
     "Beacons & Mauern": ("beacon", [
         ("Mining Beacon", "mapMiningBeacon", (1, 1)),
         ("Magma Vent", "mapMagmaVent", (1, 1)),
@@ -127,8 +158,10 @@ CATALOG = {
     ] + [(d, m, fp, "wall") for d, m, fp in WALL_ITEMS]),
 }
 # Einheiten/Gebaeude, die eine Waffe tragen koennen (Waffenauswahl beim Platzieren)
+# Units/buildings that can carry a weapon (weapon choice when placing)
 WEAPON_UNITS = {"mapLynx", "mapPanther", "mapTiger", "mapGuardPost"}
 # Einheiten/Gebaeude fuer "Einheit erzeugen"-Aktionen (Anzeige -> map_id)
+# Units/buildings for "create unit" actions (display name -> map_id)
 ALL_UNITS = [(d, m) for d, m, _ in STRUCTURES] + [(d, m) for d, m, _ in VEHICLES]
 VEHICLE_UNITS = [(d, m) for d, m, _ in VEHICLES]
 MILITARY_VEHICLES = [
@@ -157,6 +190,8 @@ WEAPONS = [
     ("Supernova", "mapSupernova"),
 ]
 
+# Truck-Ladung: Anzeige -> interner Cargo-Code
+# Truck cargo: display name -> internal cargo code
 TRUCK_CARGO = {
     "Common Ore": "truckCommonOre", "Rare Ore": "truckRareOre",
     "Food": "truckFood", "Common Metal": "truckCommonMetal",
@@ -172,6 +207,7 @@ BEACON_COLOR = QColor(255, 200, 40)
 WALL_COLOR = QColor(180, 180, 180)
 
 # Sieg-/Niederlage-Bedingungen: Anzeige -> (kind, [genutzte Felder])
+# Victory/defeat conditions: display name -> (kind, [fields used])
 CONDITIONS = {
     "Zeit überstehen": ("time", ["marks", "objective"]),
     "Letzter Überlebender": ("lastStanding", []),
@@ -190,6 +226,7 @@ RESOURCES = {"Common Ore": "resCommonOre", "Rare Ore": "resRareOre", "Food": "re
 
 
 # Trigger-Bedingungen: Anzeige -> (kind, [Felder])
+# Trigger conditions: display name -> (kind, [fields])
 TRIGGER_CONDITIONS = {
     "Zeit (Marks)": ("time", ["marks"]),
     "Punkt erreicht": ("point", ["player", "x", "y"]),
@@ -224,6 +261,7 @@ MINING_OPERATION_TYPES = {
 
 
 # IF-Bedingungen pro Aktion: Anzeige -> kind, und welche Felder genutzt werden
+# IF conditions per action: display name -> kind, and which fields are used
 ACTION_CONDITION_KINDS = {
     "Gebäude an Position vorhanden": ("buildingAtLocation", ["player", "building", "x", "y"]),
     "Gebäude-Schaden an Position": ("unitDamage", ["player", "building", "x", "y", "compare", "value"]),
@@ -238,6 +276,10 @@ def _cmp_sym(compare):
 
 
 def action_condition_summary(c) -> str:
+    """Bildet eine IF-Aktionsbedingung auf ein lesbares Listenlabel ab.
+
+    Maps an IF-action condition object to a human-readable list label.
+    """
     cmp = _cmp_sym(c.compare)
     neg = (tr("sum.not") + " ") if c.negate else ""
     if c.kind == "buildingAtLocation":
@@ -254,12 +296,20 @@ def action_condition_summary(c) -> str:
 
 
 def trigger_summary(t) -> str:
+    """Bildet ein Trigger-Objekt auf ein lesbares Listenlabel ab.
+
+    Maps a trigger object to a human-readable list label.
+    """
     cond = tr(f"trigger_conditions.{t.condition}")
     start = tr("sum.trig_start") if t.enabled_at_start else tr("sum.trig_runtime")
     return tr("sum.trigger", name=t.name, start=start, cond=cond, n=len(t.actions))
 
 
 def action_summary(a) -> str:
+    """Bildet ein Aktions-Objekt auf ein lesbares Listenlabel ab (inkl. IF-Praefix).
+
+    Maps an action object to a human-readable list label (including IF prefix).
+    """
     prefix = (tr("sum.if_prefix", n=len(a.conditions)) + " ") if getattr(a, "conditions", None) else ""
     return prefix + _action_summary_core(a)
 
@@ -300,7 +350,11 @@ def _action_summary_core(a) -> str:
 
 
 def condition_summary(c: Condition) -> str:
-    """Kurzbeschreibung einer Bedingung fuer die Liste."""
+    """Kurzbeschreibung einer Bedingung fuer die Liste.
+
+    Short description of a victory/defeat condition for the list (maps the model
+    object to a human-readable list label).
+    """
     cmp = _cmp_sym(c.compare)
     k = c.kind
     if k == "time":
@@ -325,6 +379,10 @@ def condition_summary(c: Condition) -> str:
 
 
 def mining_group_summary(g: MiningGroupSpec) -> str:
+    """Bildet eine Mining-Gruppe auf ein lesbares Listenlabel ab.
+
+    Maps a mining group to a human-readable list label.
+    """
     if not getattr(g, "has_setup", True):
         return tr("sum.group_mining_empty", name=g.name, p=g.player, n=len(g.truck_ids))
     return tr("sum.group_mining", name=g.name, p=g.player, mx=g.mine_x, my=g.mine_y,
@@ -332,10 +390,18 @@ def mining_group_summary(g: MiningGroupSpec) -> str:
 
 
 def building_group_summary(g: BuildingGroupSpec) -> str:
+    """Bildet eine Gebaeude-Gruppe auf ein lesbares Listenlabel ab.
+
+    Maps a building group to a human-readable list label.
+    """
     return tr("sum.group_building", name=g.name, p=g.player, rx=g.rect_x, ry=g.rect_y,
               rw=g.rect_width, rh=g.rect_height, n=len(g.unit_ids))
 
 
 def reinforce_group_summary(g: ReinforceGroupSpec) -> str:
+    """Bildet eine Reinforce-Gruppe auf ein lesbares Listenlabel ab.
+
+    Maps a reinforce group to a human-readable list label.
+    """
     return tr("sum.group_reinforce", name=g.name, p=g.player, f=len(g.unit_ids), t=len(g.targets))
 

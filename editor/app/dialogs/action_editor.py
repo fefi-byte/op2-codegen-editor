@@ -3,16 +3,26 @@
 ActionListWidget rendert eine Liste von Aktionen als Karten + "+ Aktion".
 Eine if-Aktion (kind == "if") ist eine Karte mit Wenn/Dann/Sonst, wobei Dann
 und Sonst wieder ActionListWidgets enthalten (rekursiv).
+
+Nested action editor (Home-Assistant style, card-based).
+ActionListWidget renders a list of actions as cards plus a "+ Action" button.
+An "if" action (kind == "if") is a card with When/Then/Else, where Then and
+Else again contain ActionListWidgets (recursive nesting).
 """
 from __future__ import annotations
 
 from ..common import *
 
 # Aktionstypen, die per Dialog (mit Parametern) angelegt werden:
+# Action kinds that are created via a dialog (with parameters):
 _DIALOG_KINDS = {label: k for label, k in ACTION_KINDS.items() if k not in ("if", "noop")}
 
 
 class ConditionEditDialog(QDialog):
+    """Dialog zum Bearbeiten einer einzelnen Wenn-Bedingung einer if-Aktion.
+
+    Dialog for editing a single When-condition of an "if" action.
+    """
     def __init__(self, parent, condition=None):
         super().__init__(parent)
         self.setWindowTitle(tr("action_editor.dlg_condition_title"))
@@ -78,6 +88,11 @@ class ConditionEditDialog(QDialog):
 
 
 class ActionEditDialog(QDialog):
+    """Dialog zum Anlegen/Bearbeiten einer einzelnen Aktion (parametergesteuert).
+
+    Dialog for creating/editing a single action; fields shown depend on the
+    selected action kind (card-based nested action editor, Home-Assistant style).
+    """
     def __init__(self, parent, ctx, action=None, fixed_kind=None):
         super().__init__(parent)
         self.setWindowTitle(tr("action_editor.dlg_action_title"))
@@ -173,6 +188,7 @@ class ActionEditDialog(QDialog):
         self._update()
 
     # --- Sichtbarkeit pro Aktionstyp ---
+    # --- Field visibility per action kind ---
     _VIS = {
         "message": ["text"],
         "createUnit": ["unit", "weapon", "x", "y", "player"],
@@ -285,7 +301,10 @@ class ActionEditDialog(QDialog):
 
 
 class ConditionListWidget(QWidget):
-    """Wenn-Block: Liste von Bedingungen + Verknuepfung."""
+    """Wenn-Block: Liste von Bedingungen + Verknuepfung.
+
+    When-block: list of conditions plus their AND/OR logic link.
+    """
     def __init__(self, if_action):
         super().__init__()
         self.a = if_action
@@ -334,7 +353,11 @@ class ConditionListWidget(QWidget):
 
 
 class ActionListWidget(QWidget):
-    """Liste von Aktionen als Karten + '+ Aktion hinzufügen'."""
+    """Liste von Aktionen als Karten + '+ Aktion hinzufügen'.
+
+    List of actions rendered as cards plus an '+ Add action' button;
+    the recursive container of the card-based nested action editor.
+    """
     def __init__(self, actions, ctx):
         super().__init__()
         self.actions = actions
@@ -389,6 +412,11 @@ class ActionListWidget(QWidget):
 
 
 class ActionCard(QFrame):
+    """Eine einzelne Aktions-Karte (Kopfzeile + Buttons; bei 'if' Wenn/Dann/Sonst).
+
+    A single action card (header plus buttons; for an 'if' action it shows the
+    nested When/Then/Else blocks).
+    """
     def __init__(self, action, parent_list, ctx):
         super().__init__()
         self.a = action

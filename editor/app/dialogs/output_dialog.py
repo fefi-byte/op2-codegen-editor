@@ -3,7 +3,10 @@ from ..common import *
 
 
 class OutputDialog(QDialog):
-    """Ausgabeort und Dateiname der erzeugten Mission-DLL."""
+    """Ausgabeort und Dateiname der erzeugten Mission-DLL.
+
+    EN: Output location and file name of the generated mission DLL.
+    """
     def __init__(self, parent, out_dir, dll_name):
         super().__init__(parent)
         self.setWindowTitle(tr("output_dialog.title"))

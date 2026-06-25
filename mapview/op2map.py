@@ -8,6 +8,17 @@ Layout:
   "TILE SET\x1a" (10 B)
   tileMappings: count u32, dann count * 8 B (tilesetIndex u16, tileGraphicIndex u16, animCount u16, animDelay u16)
   ... (terrainTypes, versionTags, tileGroups -- fuer Rendering nicht noetig)
+
+Reader for Outpost-2 .map files (reimplemented from OP2Utility/src/Map).
+
+Layout:
+  MapHeader (20 B): versionTag u32, bSavedGame i32, lgWidth u32, height u32, tilesetCount u32
+  tiles:        TileCount * u32  (bitfield; tileMappingIndex = (tile>>5) & 0x7FF)
+  clipRect:     4 * i32
+  tilesetSources: per tileset: len u32, name[len], (if len>0) numTiles u32
+  "TILE SET\x1a" (10 B)
+  tileMappings: count u32, then count * 8 B (tilesetIndex u16, tileGraphicIndex u16, animCount u16, animDelay u16)
+  ... (terrainTypes, versionTags, tileGroups -- not needed for rendering)
 """
 from __future__ import annotations
 
@@ -18,6 +29,7 @@ from dataclasses import dataclass
 @dataclass
 class TilesetSource:
     filename: str   # z.B. "well0001"
+    # e.g. "well0001"
     num_tiles: int
 
 
@@ -44,14 +56,17 @@ class Op2Map:
         tile_count = self.height * self.width
 
         # Tiles
+        # Tiles
         self.tiles = list(struct.unpack_from(f"<{tile_count}I", self._buf, self._pos))
         self._pos += tile_count * 4
 
+        # clipRect (4 * i32)
         # clipRect (4 * i32)
         self.clip_rect = struct.unpack_from("<4i", self._buf, self._pos)
         self._pos += 16
 
         # Tileset-Quellen
+        # Tileset sources
         self.tileset_sources: list[TilesetSource] = []
         for _ in range(self.tileset_count):
             ln = struct.unpack_from("<I", self._buf, self._pos)[0]
@@ -65,11 +80,13 @@ class Op2Map:
             self.tileset_sources.append(TilesetSource(name, num))
 
         # "TILE SET\x1a"
+        # "TILE SET\x1a"
         header = self._buf[self._pos:self._pos + 10]
         self._pos += 10
         if header != b"TILE SET\x1a\x00":
             raise ValueError(f"'TILE SET'-Marker nicht gefunden, stattdessen {header!r}")
 
+        # TileMappings
         # TileMappings
         count = struct.unpack_from("<I", self._buf, self._pos)[0]
         self._pos += 4
@@ -80,19 +97,38 @@ class Op2Map:
             self.tile_mappings.append(TileMapping(ts, gfx, ac, ad))
 
     # --- Render-Hilfen ---
+    # --- Render helpers ---
     def tile_index(self, x: int, y: int) -> int:
         # OP2 speichert Tiles in vertikalen 32-Spalten-Streifen (siehe Map::GetTileIndex):
+        # OP2 stores tiles in vertical 32-column strips (see Map::GetTileIndex):
         #   index = (upperX * height + y) * 32 + lowerX
+        #   index = (upperX * height + y) * 32 + lowerX
+        # lowerX = die unteren 5 Bits von x (Position innerhalb des 32er-Streifens),
+        #          upperX = x >> 5 (welcher Streifen).
+        # lowerX = the low 5 bits of x (position within the 32-column strip),
+        #          upperX = x >> 5 (which strip).
         lower_x = x & 0x1F
         upper_x = x >> 5
         return (upper_x * self.height + y) * 32 + lower_x
 
     def tile_mapping_index(self, x: int, y: int) -> int:
+        # Das Tile-Wort ist ein Bitfeld; die Bits [5:16] = (tile>>5)&0x7FF
+        # enthalten den 11-Bit-Tile-Mapping-Index.
+        # The tile word is a bitfield; bits [5:16] = (tile>>5)&0x7FF
+        # hold the 11-bit tile-mapping index.
         tile = self.tiles[self.tile_index(x, y)]
         return (tile >> 5) & 0x7FF
 
     def tileset_and_graphic(self, x: int, y: int) -> tuple[int, int]:
-        """Gibt (tileset_index, tile_graphic_index) fuer eine Zelle zurueck."""
+        """Gibt (tileset_index, tile_graphic_index) fuer eine Zelle zurueck.
+
+        Returns (tileset_index, tile_graphic_index) for a cell. Der ueber
+        tile_mapping_index() gewonnene 11-Bit-Index waehlt ein TileMapping,
+        das wiederum den Tileset-Index und den Grafik-Index liefert.
+
+        The 11-bit index obtained via tile_mapping_index() selects a
+        TileMapping, which in turn yields the tileset index plus graphic index.
+        """
         m = self.tile_mappings[self.tile_mapping_index(x, y)]
         return m.tileset_index, m.tile_graphic_index
 

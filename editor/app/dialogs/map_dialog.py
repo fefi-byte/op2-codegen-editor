@@ -3,6 +3,10 @@ from ..common import *
 
 
 class MapDialog(QDialog):
+    """Missionsname und zugehoerige .map-Datei auswaehlen.
+
+    EN: Choose the mission name and the associated .map file.
+    """
     def __init__(self, parent, names, current_map, mission_name):
         super().__init__(parent)
         self.setWindowTitle(tr("map_dialog.title"))

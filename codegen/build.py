@@ -2,6 +2,11 @@
 
 Schreibt den generierten C++-Code in das (bewiesene) LevelTemplate-Projekt
 und ruft msbuild ueber die VS-Entwicklerumgebung auf.
+
+Orchestrates: mission model -> LevelMain.cpp -> msbuild -> mission DLL.
+
+Writes the generated C++ code into the (proven) LevelTemplate project
+and invokes msbuild through the VS developer environment.
 """
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ VCXPROJ = TEMPLATE / "OP2Script.vcxproj"
 
 def write_levelmain(cpp: str) -> None:
     # Original einmalig sichern, damit das Template wiederherstellbar bleibt.
+    # Back up the original once so the template stays restorable.
     backup = TEMPLATE / "LevelMain.cpp.orig"
     if not backup.exists() and LEVELMAIN.exists():
         shutil.copy2(LEVELMAIN, backup)
@@ -49,9 +55,14 @@ def build() -> Path:
     # Outpost2Path aus der Umgebung entfernen, damit der Post-Build-Schritt des
     # Templates NICHT zusaetzlich ctest.dll in den OP2-Ordner kopiert.
     # (Die DLL wird stattdessen vom Editor an den gewuenschten Ort gelegt.)
+    # Remove Outpost2Path from the environment so the template's post-build step
+    # does NOT additionally copy ctest.dll into the OP2 folder.
+    # (Instead the DLL is placed at the desired location by the editor.)
     env = {k: v for k, v in os.environ.items() if k.lower() != "outpost2path"}
     # shell=True: cmd-String direkt an cmd.exe geben, damit die verschachtelten
     # Anfuehrungszeichen korrekt ankommen (Liste + cmd /c verstuemmelt sie).
+    # shell=True: pass the cmd string directly to cmd.exe so the nested
+    # quotes arrive correctly (a list + cmd /c would mangle them).
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True, env=env)
     if result.returncode != 0:
         print(result.stdout[-3000:])

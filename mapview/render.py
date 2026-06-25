@@ -3,6 +3,12 @@
 Aufruf:
   python render.py <maps.vol> <name.map> [out.png] [tile_px]
   python render.py <pfad/zur/datei.map> [out.png] [tile_px]
+
+Renders an OP2 map as a PNG: resolve tiles -> tilesets -> assemble image.
+
+Usage:
+  python render.py <maps.vol> <name.map> [out.png] [tile_px]
+  python render.py <path/to/file.map> [out.png] [tile_px]
 """
 from __future__ import annotations
 
@@ -18,7 +24,10 @@ from vol import VolFile
 
 
 def render_array(m: Op2Map, vol: VolFile) -> np.ndarray:
-    """Rendert die Map in ein (H*32, W*32, 3) uint8 RGB-Array (volle Tile-Aufloesung)."""
+    """Rendert die Map in ein (H*32, W*32, 3) uint8 RGB-Array (volle Tile-Aufloesung).
+
+    Renders the map into an (H*32, W*32, 3) uint8 RGB array (full tile resolution).
+    """
     tilesets: dict[int, Tileset] = {}
     for i, ts in enumerate(m.tileset_sources):
         if ts.filename:
@@ -59,6 +68,7 @@ def main() -> None:
         tile_px = int(args[3]) if len(args) > 3 else 16
     else:
         # Lose .map-Datei: zugehoeriges maps.vol im selben Ordner fuer Tilesets nutzen
+        # Loose .map file: use the accompanying maps.vol in the same folder for tilesets
         map_path = Path(args[0])
         data = map_path.read_bytes()
         vol = VolFile(map_path.parent / "maps.vol")

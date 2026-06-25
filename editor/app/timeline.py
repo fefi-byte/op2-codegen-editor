@@ -4,6 +4,13 @@ Trigger und Gruppen sind Knoten; Aktionen, die etwas referenzieren, werden als
 gerichtete Verbindungen (Draehte) gezeichnet. Knoten sind verschiebbar,
 Doppelklick oeffnet den passenden Editor, im Verbinden-Modus zieht man neue
 Verbindungen (Trigger -> Trigger / Trigger -> Gruppe).
+
+Interactive mission timeline / node canvas (Node-RED-style).
+
+Triggers and groups are nodes; actions that reference something are drawn as
+directed connections (wires). Nodes can be moved, a double-click opens the
+matching editor, and in connect mode you drag new connections
+(trigger -> trigger / trigger -> group).
 """
 from __future__ import annotations
 
@@ -35,10 +42,24 @@ WIRE_COLORS = {
 
 
 class NodeItem(QGraphicsRectItem):
+    """Rechteckiger Knoten fuer einen Trigger oder eine Gruppe auf der Timeline.
+
+    Rectangular node representing a trigger or a group on the timeline.
+
+    Traegt Titel/Untertitel, einen Eingangs-Port oben (jeder Knoten kann Ziel
+    sein) und bei Triggern zusaetzlich einen Ausgangs-Port unten. Knoten sind
+    verschieb- und auswaehlbar.
+    Carries title/subtitle, an input port at the top (every node can be a
+    target) and, for triggers, an additional output port at the bottom. Nodes
+    are movable and selectable.
+    """
     def __init__(self, key, kind, index, title, subtitle, timeline, color_key=None):
         super().__init__(0, 0, NODE_W, NODE_H)
         self.key = key
+        # "trigger" | "mining" | "building" | "reinforce"
         self.kind = kind            # "trigger" | "mining" | "building" | "reinforce"
+        # Trigger-Index (oder -1)
+        # Trigger index (or -1)
         self.index = index          # Trigger-Index (oder -1)
         self.timeline = timeline
         color = NODE_COLORS.get(color_key or kind, QColor(110, 110, 110))
@@ -53,9 +74,11 @@ class NodeItem(QGraphicsRectItem):
         s = QGraphicsSimpleTextItem(subtitle, self)
         s.setBrush(QBrush(QColor(225, 225, 225))); s.setPos(8, 28)
         # Eingangs-Port oben (alle Knoten koennen Ziel sein)
+        # Input port at the top (all nodes can be a target)
         pin = QGraphicsEllipseItem(NODE_W / 2 - 6, -6, 12, 12, self)
         pin.setBrush(QBrush(QColor(220, 220, 220))); pin.setPen(QPen(QColor(20, 20, 20), 1))
         # Ausgangs-Port unten nur fuer Trigger
+        # Output port at the bottom, only for triggers
         if kind == "trigger":
             pout = QGraphicsEllipseItem(NODE_W / 2 - 6, NODE_H - 6, 12, 12, self)
             pout.setBrush(QBrush(QColor(255, 255, 255))); pout.setPen(QPen(QColor(20, 20, 20), 1))
@@ -87,6 +110,15 @@ class NodeItem(QGraphicsRectItem):
 
 
 class WireItem(QGraphicsPathItem):
+    """Gerichtete Verbindung (Draht) zwischen zwei Knoten, eingefaerbt nach Aktionsart.
+
+    Directed connection (wire) between two nodes, coloured by action kind.
+
+    Zeichnet eine kubische Bezier-Kurve vom Ausgang des Quell- zum Eingang des
+    Zielknotens samt Pfeilspitze; folgt den Knoten beim Verschieben.
+    Draws a cubic Bezier curve from the source node's output to the target
+    node's input, plus an arrowhead; follows the nodes when they move.
+    """
     def __init__(self, src, dst, action_kind):
         super().__init__()
         self.src = src
@@ -98,12 +130,17 @@ class WireItem(QGraphicsPathItem):
         self.update_path()
 
     def update_path(self):
+        # Neuberechnung der Kurve: kubische Bezier (Quelle->Ziel) + Pfeilspitzen-Polygon.
+        # Recompute the curve: cubic Bezier (source->target) + arrowhead polygon.
         p1 = self.src.output_pos()   # unten am Quellknoten
+        # bottom of the source node
         p2 = self.dst.input_pos()    # oben am Zielknoten
+        # top of the target node
         path = QPainterPath(p1)
         dy = max(40.0, abs(p2.y() - p1.y()) * 0.5)
         path.cubicTo(p1.x(), p1.y() + dy, p2.x(), p2.y() - dy, p2.x(), p2.y())
         # Pfeilspitze nach unten ins Ziel
+        # Arrowhead pointing down into the target
         path.addPolygon(QPolygonF([
             QPointF(p2.x(), p2.y()),
             QPointF(p2.x() - 6, p2.y() - 12),
@@ -113,10 +150,21 @@ class WireItem(QGraphicsPathItem):
 
 
 class TimelineView(QGraphicsView):
+    """Scroll-/zoombare Ansicht, die Trigger- und Gruppenknoten samt Draehten haelt.
+
+    Scrollable/zoomable view that holds the trigger and group nodes and their wires.
+
+    Baut die Szene aus dem Missionsmodell auf, persistiert Knotenpositionen und
+    sendet Signale fuer Bearbeiten/Hinzufuegen/Loeschen/Verbinden.
+    Builds the scene from the mission model, persists node positions, and emits
+    signals for edit/add/delete/connect.
+    """
     editTrigger = Signal(int)
     editGroups = Signal()
     addTrigger = Signal()
+    # (Quell-Trigger-Name, Ziel-Knoten-Key)
     connectMade = Signal(str, str)   # (Quell-Trigger-Name, Ziel-Knoten-Key)
+    # Trigger-Index
     deleteTrigger = Signal(int)      # Trigger-Index
 
     def __init__(self, positions: dict):
@@ -124,6 +172,8 @@ class TimelineView(QGraphicsView):
         super().__init__(self._scene)
         self.setRenderHint(QPainter.Antialiasing, True)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
+        # key -> [x, y], wird persistiert
+        # key -> [x, y], gets persisted
         self.positions = positions          # key -> [x, y], wird persistiert
         self.nodes: dict[str, NodeItem] = {}
         self.wires: list[WireItem] = []
@@ -132,6 +182,7 @@ class TimelineView(QGraphicsView):
         self._suppress_save = False
 
     # --- Aufbau ---
+    # --- Build-up ---
     def rebuild(self, triggers, mining_groups, building_groups, reinforce_groups):
         self._scene.clear()
         self.nodes.clear()
@@ -148,6 +199,7 @@ class TimelineView(QGraphicsView):
 
         self._suppress_save = True
         # Trigger-Knoten: senkrechte Spalte links, nach Startzeit von oben nach unten
+        # Trigger nodes: vertical column on the left, by start time top to bottom
         order = sorted(range(len(triggers)),
                        key=lambda i: (not triggers[i].enabled_at_start, triggers[i].marks))
         for row, ti in enumerate(order):
@@ -161,6 +213,7 @@ class TimelineView(QGraphicsView):
             self._scene.addItem(node)
 
         # Gruppen-Knoten: senkrechte Spalte rechts
+        # Group nodes: vertical column on the right
         row = 0
         for gkind, groups in (("mining", mining_groups), ("building", building_groups),
                               ("reinforce", reinforce_groups)):
@@ -173,6 +226,7 @@ class TimelineView(QGraphicsView):
         self._suppress_save = False
 
         # Verbindungen aus Aktionen
+        # Connections derived from actions
         for ti, t in enumerate(triggers):
             src = self.nodes.get(f"trigger:{t.name}")
             if src is None:
@@ -188,6 +242,15 @@ class TimelineView(QGraphicsView):
         self._scene.setSceneRect(rect.adjusted(-80, -80, 80, 80))
 
     def _target_key(self, action, name_to_key):
+        """Liefert den Knoten-Key, auf den eine Aktion zeigt (oder None).
+
+        Returns the node key an action points at (or None).
+
+        createTrigger -> Ziel-Trigger; startMiningOperation -> Mining-Gruppe;
+        assignToGroup/setTargCount/recordBuilding/recordTube/recordWall -> Gruppe.
+        createTrigger -> target trigger; startMiningOperation -> mining group;
+        assignToGroup/setTargCount/recordBuilding/recordTube/recordWall -> group.
+        """
         k = action.kind
         if k == "createTrigger" and action.target:
             return f"trigger:{action.target}"
@@ -207,8 +270,10 @@ class TimelineView(QGraphicsView):
     def auto_layout(self):
         self.positions.clear()
         # Beim naechsten rebuild werden Standardpositionen verwendet.
+        # On the next rebuild the default positions will be used.
 
     # --- Callbacks von Knoten ---
+    # --- Callbacks from nodes ---
     def _on_node_moved(self, node):
         if not self._suppress_save:
             p = node.scenePos()
@@ -225,6 +290,8 @@ class TimelineView(QGraphicsView):
     def _connect_click(self, node):
         if self.connect_src is None:
             if node.kind != "trigger":
+                # Verbindungen starten nur an Triggern
+                # Connections can only start at triggers
                 return  # Verbindungen starten nur an Triggern
             self.connect_src = node
             node.setPen(QPen(QColor(255, 255, 0), 3))

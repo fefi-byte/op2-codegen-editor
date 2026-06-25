@@ -3,7 +3,10 @@ from ..common import *
 
 
 class PlayersDialog(QDialog):
-    """Spieler verwalten: Kolonie, Mensch/KI, Tech-Level, Kolonisten, Forschungen."""
+    """Spieler verwalten: Kolonie, Mensch/KI, Tech-Level, Kolonisten, Forschungen.
+
+    EN: Manage players: colony, human/AI, tech level, colonists, researches.
+    """
     def __init__(self, parent, players):
         super().__init__(parent)
         self.setWindowTitle(tr("players.title"))
@@ -12,6 +15,7 @@ class PlayersDialog(QDialog):
         self._idx = 0
         self._loading = False
         self.all_techs = load_techs(TECHS_DIR / "multitek.txt")  # (id, name), sortiert
+        # EN: (id, name), sorted
         self.tech_names = {tid: name for tid, name in self.all_techs}
 
         self.plist = QListWidget()
@@ -34,6 +38,7 @@ class PlayersDialog(QDialog):
         self.food = QSpinBox(); self.food.setRange(0, 1000000)
 
         # Forschungen: Auswahl per Name + "Tech hinzufügen" + Liste
+        # EN: Researches: selection by name + "Add tech" + list
         self.tech_avail = QComboBox()
         add_tech = QPushButton(tr("players.add_tech"))
         add_tech.clicked.connect(self._add_tech)
@@ -62,6 +67,7 @@ class PlayersDialog(QDialog):
         form.addRow("", rm_tech)
 
         # bei jeder Aenderung in den aktuellen Spieler schreiben
+        # EN: on every change, write into the current player
         for w in (self.colony, self.ptype):
             w.currentIndexChanged.connect(self._store_current)
         for w in (self.workers, self.scientists, self.kids,
@@ -70,6 +76,7 @@ class PlayersDialog(QDialog):
         for w in (self.init_res, self.set_pop, self.set_res):
             w.toggled.connect(self._store_current)
         # Tech-Level beeinflusst auch die verfuegbaren Forschungen
+        # EN: the tech level also affects the available researches
         self.tech.valueChanged.connect(self._on_tech_level_changed)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -127,6 +134,7 @@ class PlayersDialog(QDialog):
         if self._loading or not (0 <= self._idx < len(self.players)):
             return
         # Forschungen werden separat (Hinzufügen/Entfernen) verwaltet -> uebernehmen.
+        # EN: researches are managed separately (add/remove) -> carry them over.
         researches = list(self.players[self._idx].researches)
         p = PlayerSpec(
             colony=Colony.Eden if self.colony.currentText() == "Eden" else Colony.Plymouth,
@@ -150,15 +158,20 @@ class PlayersDialog(QDialog):
         if self._loading or not (0 <= self._idx < len(self.players)):
             return
         self._store_current()  # uebernimmt neues Tech-Level
+        # EN: applies the new tech level
         lvl = self.players[self._idx].tech_level
         # Bereits durch das Tech-Level abgedeckte Forschungen entfernen.
+        # EN: Remove researches that are already covered by the tech level.
         self.players[self._idx].researches = [
             t for t in self.players[self._idx].researches if t > lvl * 1000]
         self._refresh_tech_avail(lvl)
         self._refresh_research_list()
 
     def _refresh_tech_avail(self, tech_level: int):
-        """Verfuegbare Techs = die NICHT schon durch das Tech-Level vergeben sind."""
+        """Verfuegbare Techs = die NICHT schon durch das Tech-Level vergeben sind.
+
+        EN: Available techs = those NOT already granted by the tech level.
+        """
         self.tech_avail.clear()
         threshold = tech_level * 1000
         already = set(self.players[self._idx].researches) if 0 <= self._idx < len(self.players) else set()

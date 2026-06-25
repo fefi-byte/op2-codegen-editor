@@ -3,6 +3,12 @@
 Liest ein Mission-Objekt (mission_model.py) und erzeugt den C++-Quelltext,
 der mit der bewiesenen Pipeline (LevelTemplate + msbuild) zu einer
 lauffaehigen Mission-DLL kompiliert.
+
+Codegen: mission model -> LevelMain.cpp (Outpost 2 SDK C++).
+
+Reads a mission object (mission_model.py) and produces the C++ source code
+that, via the proven pipeline (LevelTemplate + msbuild), compiles into a
+runnable mission DLL.
 """
 from __future__ import annotations
 
@@ -39,22 +45,37 @@ MINING_OPERATION_TYPES = {
 
 
 def _cpp_string(text: str) -> str:
-    """Escaped einen Python-String fuer ein C++-String-Literal."""
+    """Escaped einen Python-String fuer ein C++-String-Literal.
+
+    Escapes a Python string for use as a C++ string literal.
+    """
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+# Editor-Kachelkoordinaten sind 0-basiert; OP2 erwartet 1-basierte Koordinaten,
+# daher +1. Das Ergebnis wird anschliessend von den SDK-Makros weiterverarbeitet:
+# MkXY(x,y)=LOCATION(x+31,y-1) und XYPos(x,y)=x+31,y-1 -> Welt-Versatz +32 in X.
+# Editor tile coordinates are 0-based; OP2 expects 1-based coordinates, hence +1.
+# The result then feeds the SDK macros MkXY(x,y)=LOCATION(x+31,y-1) and
+# XYPos(x,y)=x+31,y-1, giving a net world offset of +32 in X.
 def _op2_coord(value: int) -> int:
     return value + 1
 
 
+# Baut den MkXY()-SDK-Aufruf aus 0-basierten Editor-Koordinaten (siehe _op2_coord).
+# Builds the MkXY() SDK call from 0-based editor coordinates (see _op2_coord).
 def _mkxy(x: int, y: int) -> str:
     return f"MkXY({_op2_coord(x)}, {_op2_coord(y)})"
 
 
+# Baut den XYPos()-SDK-Aufruf aus 0-basierten Editor-Koordinaten (siehe _op2_coord).
+# Builds the XYPos() SDK call from 0-based editor coordinates (see _op2_coord).
 def _xypos(x: int, y: int) -> str:
     return f"XYPos({_op2_coord(x)}, {_op2_coord(y)})"
 
 
+# Baut den MkRect()-SDK-Aufruf; jede Ecke wird via _op2_coord 1-basiert gemacht.
+# Builds the MkRect() SDK call; each corner is made 1-based via _op2_coord.
 def _mkrect(x1: int, y1: int, x2: int, y2: int) -> str:
     return (
         f"MkRect({_op2_coord(x1)}, {_op2_coord(y1)}, "
@@ -63,7 +84,10 @@ def _mkrect(x1: int, y1: int, x2: int, y2: int) -> str:
 
 
 def _cpp_ident(text: str, fallback: str = "Item") -> str:
-    """Erzeugt einen gueltigen C++-Identifier aus Editor-Namen/IDs."""
+    """Erzeugt einen gueltigen C++-Identifier aus Editor-Namen/IDs.
+
+    Produces a valid C++ identifier from editor names/IDs.
+    """
     s = "".join(c if c.isalnum() else "_" for c in text).strip("_")
     if not s:
         s = fallback
@@ -84,6 +108,24 @@ def _unique_ident(text: str, used: set[str], fallback: str = "Item") -> str:
 
 
 def _global_names(mission: Mission) -> dict:
+    """Baut parallele Namens-Maps fuer generierte C++-Variablen.
+
+    Fuer Einheiten, Gruppen und Trigger werden mehrere Nachschlage-Tabellen
+    aufgebaut: nach Editor-Index vs. nach uid, einfacher Ausdruck vs.
+    Get_*()-Getter, sowie ScriptGlobal-Save-Slots fuer jene Objekte (Units,
+    Groups, Trigger), die ueber Save/Load hinweg erhalten bleiben muessen.
+    Das zurueckgegebene dict buendelt all diese Maps plus die Feldliste fuer
+    die ScriptGlobal-Struktur, damit die uebrigen Generator-Funktionen
+    konsistent denselben C++-Variablennamen verwenden.
+
+    Builds parallel name maps for generated C++ variables. For units, groups
+    and triggers it assembles several lookup tables: by editor index vs. by
+    uid, plain expression vs. Get_*() getter, plus ScriptGlobal save slots for
+    those objects (units, groups, triggers) that must survive save/load. The
+    returned dict bundles all these maps together with the field list for the
+    ScriptGlobal struct, so the remaining generator functions consistently use
+    the same C++ variable name.
+    """
     used: set[str] = set()
     runtime_mining_group_names = {
         action.mining_group_name
@@ -156,6 +198,9 @@ def _global_names(mission: Mission) -> dict:
     # Pro assignToGroup-Aktion ein Trigger-Handle (fuer den 10-Tik-Poll, der sich
     # nach dem Fund selbst per Destroy() beendet). Rekursiv durch if-Bloecke,
     # per id(action) geschluesselt (eindeutig auch bei Verschachtelung).
+    # One trigger handle per assignToGroup action (for the 10-tick poll that
+    # ends itself via Destroy() once found). Walked recursively through if
+    # blocks, keyed by id(action) (unique even when nested).
     _an = [0]
 
     def _walk_assign(actions):
@@ -244,6 +289,7 @@ def _gen_init_proc(mission: Mission, names: dict) -> str:
     unit_var_by_uid: dict[str, str] = {}
 
     # --- Spieler einrichten ---
+    # --- Set up players ---
     for i, player in enumerate(mission.players):
         go = "GoEden" if player.colony == Colony.Eden else "GoPlymouth"
         lines.append(f"\tPlayer[{i}].{go}();")
@@ -254,6 +300,7 @@ def _gen_init_proc(mission: Mission, names: dict) -> str:
         if player.init_resources:
             lines.append(f"\tInitPlayerResources({i});")
         # Explizite Kolonisten/Ressourcen ueberschreiben die Standardwerte.
+        # Explicit colonists/resources override the default values.
         if player.workers is not None:
             lines.append(f"\tPlayer[{i}].SetWorkers({player.workers});")
         if player.scientists is not None:
@@ -269,12 +316,15 @@ def _gen_init_proc(mission: Mission, names: dict) -> str:
     lines.append("")
 
     # --- Startnachricht ---
+    # --- Start message ---
     if mission.start_message:
         lines.append(f"\tAddGameMessage({_cpp_string(mission.start_message.text)});")
         lines.append("")
 
     # --- Beacons / Magma Vents / Geysire ---
+    # --- Beacons / magma vents / geysers ---
     # WICHTIG: vor den Einheiten erzeugen, damit Minen auf einem Beacon stehen koennen.
+    # IMPORTANT: create before the units, so mines can sit on top of a beacon.
     if mission.beacons:
         for b in mission.beacons:
             lines.append(
@@ -284,6 +334,7 @@ def _gen_init_proc(mission: Mission, names: dict) -> str:
         lines.append("")
 
     # --- Einheiten platzieren ---
+    # --- Place units ---
     if mission.units:
         if any(
             i not in names["unit_by_index"] and u.uid not in referenced_unit_ids
@@ -312,27 +363,32 @@ def _gen_init_proc(mission: Mission, names: dict) -> str:
         lines.append("")
 
     # --- Mauern & Rohre ---
+    # --- Walls & tubes ---
     if mission.walls_tubes:
         for w in mission.walls_tubes:
             lines.append(f"\tTethysGame::CreateWallOrTube({_xypos(w.x, w.y)}, 0, {w.wall_type});")
         lines.append("")
 
     # --- MiningGroups ---
+    # --- Mining groups ---
     if mission.mining_groups:
         lines += _gen_mining_groups(mission, names, unit_var_by_uid)
         lines.append("")
 
     # --- BuildingGroups ---
+    # --- Building groups ---
     if mission.building_groups:
         lines += _gen_building_groups(mission, names, unit_var_by_uid)
         lines.append("")
 
     # --- ReinforceGroups ---
+    # --- Reinforce groups ---
     if mission.reinforce_groups:
         lines += _gen_reinforce_groups(mission, names, unit_var_by_uid)
         lines.append("")
 
     # --- Benutzerdefinierte Trigger (die beim Start aktiv sind) ---
+    # --- Custom triggers (those active at start) ---
     start_triggers = [t for t in mission.triggers if t.enabled_at_start]
     if start_triggers:
         for t in start_triggers:
@@ -340,7 +396,9 @@ def _gen_init_proc(mission: Mission, names: dict) -> str:
         lines.append("")
 
     # --- Sieg- und Niederlage-Bedingungen ---
+    # --- Victory and defeat conditions ---
     counter = [0]  # gemeinsamer Zaehler fuer eindeutige Trigger-Variablennamen
+    # shared counter for unique trigger variable names
     for cond in mission.victories:
         lines += _gen_condition(cond, is_victory=True, counter=counter)
     for cond in mission.defeats:
@@ -365,6 +423,7 @@ def _gen_mining_groups(mission: Mission, names: dict, unit_var_by_uid: dict[str,
         lines.append(f"\t{names['mining_save_by_index'][i]} = {group_var}.Id();")
         if getattr(group, "has_setup", True):
             # Sofort eingerichtete Gruppe: Setup + Trucks bei Init.
+            # Immediately set-up group: Setup + trucks at init time.
             rx2 = group.rect_x + group.rect_width - 1
             ry2 = group.rect_y + group.rect_height - 1
             lines.append(f"\tLOCATION {base}Mine = {_mkxy(group.mine_x, group.mine_y)};")
@@ -379,6 +438,9 @@ def _gen_mining_groups(mission: Mission, names: dict, unit_var_by_uid: dict[str,
             # Verzoegerte Gruppe: NUR erstellen. Setup + TakeUnit erfolgen zur
             # Laufzeit (startMiningOperation), sonst steht der Truck in einer
             # nicht eingerichteten Gruppe und faehrt nie eine Route.
+            # Deferred group: only create it. Setup + TakeUnit happen at
+            # runtime (startMiningOperation); otherwise the truck sits in an
+            # un-set-up group and never drives a route.
             lines.append(f"\t// {group_var}: Setup + Trucks folgen zur Laufzeit")
     return lines
 
@@ -438,13 +500,19 @@ def _gen_reinforce_groups(mission: Mission, names: dict, unit_var_by_uid: dict[s
 
 
 def _trig_fn_name(name: str) -> str:
-    """Sanitisierter, eindeutiger C-Funktionsname fuer einen Trigger-Callback."""
+    """Sanitisierter, eindeutiger C-Funktionsname fuer einen Trigger-Callback.
+
+    Sanitized, unique C function name for a trigger callback.
+    """
     s = "".join(c if c.isalnum() else "_" for c in name).strip("_") or "Trig"
     return "TrigCB_" + s
 
 
 def _trigger_create_expr(t) -> str:
-    """C++-Ausdruck, der den Trigger erzeugt (ohne Semikolon)."""
+    """C++-Ausdruck, der den Trigger erzeugt (ohne Semikolon).
+
+    C++ expression that creates the trigger (without trailing semicolon).
+    """
     os = 1 if t.one_shot else 0
     cb = f'"{_trig_fn_name(t.name)}"'
     k = t.condition
@@ -474,7 +542,10 @@ _RES_METHOD = {"resCommonOre": "Ore()", "resRareOre": "RareOre()", "resFood": "F
 
 
 def _condition_code(c, var):
-    """Gibt (setup_zeilen, bool_ausdruck) fuer eine ActionCondition zurueck."""
+    """Gibt (setup_zeilen, bool_ausdruck) fuer eine ActionCondition zurueck.
+
+    Returns (setup_lines, bool_expression) for an ActionCondition.
+    """
     op = _CMP_OP.get(c.compare, ">=")
     k = c.kind
     if k == "playerResource":
@@ -502,7 +573,10 @@ def _condition_code(c, var):
 
 
 def _build_action_conditions(action, ai):
-    """Gibt (setup_zeilen, kombinierter_bool_ausdruck) fuer die Bedingungen einer Aktion."""
+    """Gibt (setup_zeilen, kombinierter_bool_ausdruck) fuer die Bedingungen einer Aktion.
+
+    Returns (setup_lines, combined_bool_expression) for an action's conditions.
+    """
     setups, exprs = [], []
     for ci, c in enumerate(getattr(action, "conditions", None) or []):
         s, e = _condition_code(c, f"cond_{ai}_{ci}")
@@ -531,7 +605,10 @@ def _emit_action_list(actions, ctx):
 
 
 def _emit_action(a, ctx):
-    """Erzeugt die C++-Zeilen fuer eine Aktion (Basis-Einrueckung ein Tab)."""
+    """Erzeugt die C++-Zeilen fuer eine Aktion (Basis-Einrueckung ein Tab).
+
+    Produces the C++ lines for one action (base indentation is one tab).
+    """
     uid = ctx["counter"][0]
     ctx["counter"][0] += 1
     if a.kind == "if":
@@ -558,7 +635,10 @@ def _emit_action(a, ctx):
 
 
 def _emit_single_action(a, uid, ctx):
-    """Erzeugt die Zeilen einer einfachen (nicht-if) Aktion als Liste."""
+    """Erzeugt die Zeilen einer einfachen (nicht-if) Aktion als Liste.
+
+    Produces the lines of a simple (non-if) action as a list.
+    """
     names = ctx["names"]
     extra_blocks = ctx["extra_blocks"]
     trig_fn = ctx["trig_fn"]
@@ -609,6 +689,14 @@ def _emit_single_action(a, uid, ctx):
                 act.append(f"\t{source_var}.RecordVehReinforceGroup({target_var}, {a.reinforce_priority});")
             act.append(f"\t{target_var}.SetTargCount({a.unit_type}, {a.weapon_type}, {a.target_count});")
     elif a.kind == "startMiningOperation":
+        # Mehrstufige Laufzeit-Operation: Mine + Smelter beim Builder vormerken,
+        # dessen Ziel-Anzahlen setzen, dann operative Trigger verketten
+        # (Smelter fertig -> danach Mine fertig). Im Ready-Callback schliesslich
+        # die MiningGroup einrichten (Setup) und die Trucks zuteilen (TakeUnit).
+        # Multi-stage runtime operation: record mine + smelter on the builder,
+        # set its target counts, then chain operational triggers (smelter ready
+        # -> then mine ready). In the ready callback, finally Setup the
+        # MiningGroup and TakeUnit the trucks.
         group_expr = names["building_getter_by_name"].get(a.group_name)
         mining_expr = names["mining_getter_by_name"].get(a.mining_group_name)
         mining_group_spec = ctx["mining_group_by_name"].get(a.mining_group_name)
@@ -666,6 +754,12 @@ def _emit_single_action(a, uid, ctx):
             ready.append(f"\t{base}Group.SetTargCount(mapCargoTruck, mapNone, {target_trucks});")
             extra_blocks.append(f"Export void {ready_cb}()\n{{\n" + "\n".join(ready) + "\n}")
     elif a.kind == "assignToGroup":
+        # 10-Tik-Polling-Zeittrigger, der nach dem Gebaeude bei (x,y) sucht;
+        # sobald es gefunden ist, wird die Einheit der Gruppe hinzugefuegt und
+        # der Trigger beendet sich selbst per Destroy().
+        # A 10-tick polling time-trigger that scans for the building at (x,y);
+        # once found it adds the unit to the group and Destroy()s its own
+        # trigger.
         group_expr = _group_getter_by_name(names, a.group_name)
         if group_expr is not None:
             base = f"assign_{uid}_{_cpp_ident(a.group_name)}"
@@ -693,7 +787,11 @@ def _emit_single_action(a, uid, ctx):
 
 
 def _gen_callbacks(mission, names: dict) -> str:
-    """Erzeugt die Export-Callback-Funktionen aller Trigger (rekursiv fuer if-Bloecke)."""
+    """Erzeugt die Export-Callback-Funktionen aller Trigger (rekursiv fuer if-Bloecke).
+
+    Generates the Export callback functions for all triggers (recursively for
+    if blocks).
+    """
     by_name = {t.name: t for t in mission.triggers}
     mining_group_by_name = {group.name: group for group in mission.mining_groups}
     building_group_by_name = {group.name: group for group in mission.building_groups}
@@ -712,6 +810,7 @@ def _gen_callbacks(mission, names: dict) -> str:
             body.append("\tUnitEx u;")
         body += _emit_action_list(t.actions, ctx)
         if not body:
+            # no actions
             body.append("\t// keine Aktionen")
         blocks.append(f"Export void {_trig_fn_name(t.name)}()\n{{\n" + "\n".join(body) + "\n}")
     return "\n\n".join(blocks + extra_blocks)
@@ -724,9 +823,16 @@ def _gen_condition(cond, is_victory: bool, counter: list[int]) -> list[str]:
     Funktion aktiviert sie. Helper-Bedingungen (lastStanding/starship/noCC)
     brauchen keinen Trigger und keinen ScriptGlobal-Zustand -> Save-Struktur
     bleibt unveraendert.
+
+    Generates C++ for a victory/defeat condition.
+
+    Triggers are created disabled (bEnabled=0); the Create*Condition function
+    enables them. Helper conditions (lastStanding/starship/noCC) need no
+    trigger and no ScriptGlobal state -> the save struct stays unchanged.
     """
     k = cond.kind
     # Helper-Bedingungen ohne eigenen Trigger
+    # Helper conditions without their own trigger
     if k == "lastStanding":
         return ["\tCreateLastOneStandingVictoryCondition();"]
     if k == "starship":
@@ -735,10 +841,12 @@ def _gen_condition(cond, is_victory: bool, counter: list[int]) -> list[str]:
         return [f"\tCreateNoCommandCenterFailureCondition({cond.player});"]
 
     # Trigger-basierte Bedingungen
+    # Trigger-based conditions
     n = counter[0]
     counter[0] += 1
     var = f"cond{n}"
     # bEnabled=1: der Trigger muss aktiviert sein, sonst feuert die Bedingung nie.
+    # bEnabled=1: the trigger must be enabled, otherwise the condition never fires.
     if k == "time":
         trig = f'CreateTimeTrigger(1, 1, {cond.marks}, "NoResponseToTrigger")'
     elif k == "buildingCount":
@@ -763,7 +871,10 @@ def _gen_condition(cond, is_victory: bool, counter: list[int]) -> list[str]:
 
 
 def generate_levelmain(mission: Mission) -> str:
-    """Erzeugt den kompletten Inhalt von LevelMain.cpp."""
+    """Erzeugt den kompletten Inhalt von LevelMain.cpp.
+
+    Generates the complete contents of LevelMain.cpp.
+    """
     names = _global_names(mission)
     details = ", ".join([
         _cpp_string(mission.name),

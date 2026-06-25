@@ -1,11 +1,29 @@
 from __future__ import annotations
 import sys
-from .common import QApplication
+from .common import QApplication, QIcon, ICON_PATH
 from .window import EditorWindow
 
 
 def main():
+    """
+    Einstiegspunkt des Editors: erstellt die ``QApplication``, zeigt das
+    ``EditorWindow`` an und startet die Ereignisschleife.
+
+    The editor entry point: create the ``QApplication``, show the
+    ``EditorWindow`` and run the event loop.
+    """
     app = QApplication(sys.argv)
+    # Eigene Windows-Taskleisten-Identitaet, damit dort das App-Icon statt des
+    # Python-Icons erscheint.
+    # Own Windows taskbar identity so the app icon (not Python's) shows there.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("op2.mission.editor")
+    except Exception:
+        pass
+    # App-weites Icon (greift auch fuer alle Dialoge).
+    # Application-wide icon (also applies to all dialogs).
+    app.setWindowIcon(QIcon(str(ICON_PATH)))
     win = EditorWindow()
     win.show()
     sys.exit(app.exec())

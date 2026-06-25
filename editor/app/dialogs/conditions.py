@@ -3,7 +3,10 @@ from ..common import *
 
 
 class ConditionsDialog(QDialog):
-    """Sieg- und Niederlage-Bedingungen zusammenstellen."""
+    """Sieg- und Niederlage-Bedingungen zusammenstellen.
+
+    Compose victory and defeat conditions for the mission.
+    """
     def __init__(self, parent, victories, defeats):
         super().__init__(parent)
         self.setWindowTitle(tr("conditions_dlg.title"))
@@ -12,6 +15,7 @@ class ConditionsDialog(QDialog):
         self.defeats = [Condition(**asdict(c)) for c in defeats]
 
         # --- Formular (links) ---
+        # --- Form (left side) ---
         self.kind = QComboBox(); fill_combo(self.kind, CONDITIONS, "conditions")
         self.kind.currentTextChanged.connect(self._update_fields)
         self.player = QSpinBox(); self.player.setRange(0, 5)
@@ -52,6 +56,7 @@ class ConditionsDialog(QDialog):
         left.addLayout(self.form); left.addLayout(add_row); left.addStretch(1)
 
         # --- Listen (rechts) ---
+        # --- Lists (right side) ---
         self.win_list = QListWidget()
         self.lose_list = QListWidget()
         rm_win = QPushButton(tr("conditions_dlg.btn_rm_win"))

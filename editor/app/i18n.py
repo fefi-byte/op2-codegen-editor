@@ -12,6 +12,20 @@ Die aktive Sprache kommt aus config.ini ([ui] language); fehlt ein Schluessel,
 wird auf Deutsch (de) und zuletzt auf den Schluessel selbst zurueckgegriffen.
 Fehlende Schluessel werden gesammelt (missing_keys()), damit Tests Luecken
 finden.
+
+Lightweight INI-based internationalisation for the editor.
+
+Language files `lang.<code>.ini` live next to the EXE or in the project root
+(the same base_dir as config.ini). Layout:
+
+    [section]
+    key = Text with optional {placeholders}
+
+Access in code:  tr("section.key", placeholder=value)
+
+The active language comes from config.ini ([ui] language); if a key is
+missing, it falls back to German (de) and finally to the key itself.
+Missing keys are collected (missing_keys()) so that tests can find gaps.
 """
 from __future__ import annotations
 
@@ -27,7 +41,18 @@ _missing: set[str] = set()
 
 
 def _load_lang(code: str) -> dict[str, str]:
+    """Liest `lang.<code>.ini` und liefert ein flaches {"section.key": Text}-Dict.
+
+    Reads `lang.<code>.ini` and returns a flat {"section.key": text} dict.
+
+    interpolation=None: '%' wird literal behandelt (kein ConfigParser-%-Splicing).
+    interpolation=None: '%' is treated literally (no ConfigParser %-splicing).
+    Literales `\\n` in der INI wird zu einem echten Zeilenumbruch.
+    A literal `\\n` in the INI is turned into a real newline.
+    """
     cp = configparser.ConfigParser(interpolation=None)
+    # Schluessel case-sensitiv lassen
+    # Keep keys case-sensitive
     cp.optionxform = str  # Schluessel case-sensitiv lassen
     cp.read(appconfig.base_dir() / f"lang.{code}.ini", encoding="utf-8")
     flat: dict[str, str] = {}
@@ -35,13 +60,19 @@ def _load_lang(code: str) -> dict[str, str]:
         for key, value in cp.items(section):
             # Literales \n in der INI -> echter Zeilenumbruch (robuster als
             # mehrzeilige INI-Werte).
+            # Literal \n in the INI -> real line break (more robust than
+            # multi-line INI values).
             flat[f"{section}.{key}"] = value.replace("\\n", "\n")
     return flat
 
 
 def detect_system_language() -> str | None:
-    """Zwei-Buchstaben-Sprachcode der Systemsprache (z.B. 'de', 'en') oder None."""
+    """Zwei-Buchstaben-Sprachcode der Systemsprache (z.B. 'de', 'en') oder None.
+
+    Two-letter language code of the system language (e.g. 'de', 'en') or None.
+    """
     # Windows: konfigurierte Anzeige-Sprache der Oberflaeche.
+    # Windows: configured display language of the UI.
     try:
         import ctypes
         import locale
@@ -52,6 +83,7 @@ def detect_system_language() -> str | None:
     except Exception:
         pass
     # POSIX: uebliche Locale-Umgebungsvariablen (de_DE.UTF-8 -> de).
+    # POSIX: usual locale environment variables (de_DE.UTF-8 -> de).
     import os
     for var in ("LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"):
         val = os.environ.get(var)
@@ -63,7 +95,10 @@ def detect_system_language() -> str | None:
 
 
 def resolve_language(language: str | None) -> str:
-    """Loest 'auto'/leer in einen tatsaechlich vorhandenen Sprachcode auf."""
+    """Loest 'auto'/leer in einen tatsaechlich vorhandenen Sprachcode auf.
+
+    Resolves 'auto'/empty into a language code that actually exists.
+    """
     code = (language or "").strip().lower()
     if code in ("", "auto"):
         code = detect_system_language() or FALLBACK_LANG
@@ -77,6 +112,10 @@ def init(language: str | None = None) -> None:
     """Laedt Fallback- und aktive Sprache. Mehrfachaufruf ist unschaedlich.
 
     `language` = None -> aus config.ini; 'auto'/leer -> Systemsprache erkennen.
+
+    Loads the fallback and active language. Calling repeatedly is harmless.
+
+    `language` = None -> from config.ini; 'auto'/empty -> detect system language.
     """
     global _active
     _active = resolve_language(language if language is not None else appconfig.language())
@@ -89,13 +128,22 @@ def active() -> str:
 
 
 def available() -> list[str]:
-    """Sprachkuerzel, fuer die eine lang.<code>.ini existiert."""
+    """Sprachkuerzel, fuer die eine lang.<code>.ini existiert.
+
+    Language codes for which a lang.<code>.ini file exists.
+    """
     base = appconfig.base_dir()
     return sorted(p.stem.split(".", 1)[1] for p in base.glob("lang.*.ini"))
 
 
 def tr(key: str, /, **fmt) -> str:
-    """Uebersetzten Text fuer `key` liefern (mit optionaler {platzhalter}-Ersetzung)."""
+    """Uebersetzten Text fuer `key` liefern (mit optionaler {platzhalter}-Ersetzung).
+
+    Return the translated text for `key` (with optional {placeholder} substitution).
+
+    Fallback-Kette: aktive Sprache -> de (FALLBACK_LANG) -> der Schluessel selbst.
+    Fallback chain: active language -> de (FALLBACK_LANG) -> the key itself.
+    """
     if not _langs:
         init()
     text = _langs.get(_active, {}).get(key)
