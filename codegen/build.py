@@ -113,7 +113,14 @@ def build_folder(folder: Path) -> Path:
     if result.returncode != 0:
         print(result.stdout[-3000:])
         print(result.stderr[-3000:])
-        raise SystemExit(f"[FEHLER] Build fehlgeschlagen (Code {result.returncode})")
+        # Build-Ausgabe IN die Exception aufnehmen, damit die GUI sie anzeigt.
+        # Include build output IN the exception so the GUI can show it.
+        details = (result.stdout or "") + "\n" + (result.stderr or "")
+        details = details.strip()[-3000:] if details.strip() else "(keine msbuild-Ausgabe)"
+        raise SystemExit(
+            f"[FEHLER] Build fehlgeschlagen (Code {result.returncode})\n\n"
+            f"msbuild-Ausgabe (letzte Zeilen):\n{details}"
+        )
 
     release = folder / "Release"
     dll = next(release.glob("*.dll"), None) if release.is_dir() else None

@@ -962,26 +962,29 @@ class EditorWindow(QMainWindow):
         self.save_project_as()
 
     def save_project_as(self):
-        """Fragt nach einem Speicherort und schreibt die Mission self-contained."""
+        """Fragt nach einem Mission-Namen und schreibt die Mission self-contained."""
+        from PySide6.QtWidgets import QInputDialog
         default_name = mission_project._slugify(self.mission_name)
-        # Datei-Dialog auf `missions/<slug>/mission.op2proj` -- so kann der Nutzer
-        # einen neuen Ordnernamen tippen, ohne dass der Ordner existieren muss.
-        # Wir nehmen dann das ausgewaehlte Elternverzeichnis als Mission-Ordner.
-        default_path = self._missions_dir() / default_name / "mission.op2proj"
-        path, _ = QFileDialog.getSaveFileName(
-            self, tr("window.dlg_save_mission"), str(default_path),
-            "OP2 Mission (mission.op2proj)",
+        # Mission-Name wird zum Ordnernamen unter `missions/`. Damit der Nutzer
+        # neue Ordner nicht via Datei-Dialog "anlegen" muss (der native
+        # QFileDialog akzeptiert keine nicht-existierenden Pfade), fragen wir
+        # einfach nach dem Namen.
+        name, ok = QInputDialog.getText(
+            self, tr("window.dlg_save_mission"),
+            "Mission-Ordnername (wird unter missions/ angelegt):",
+            text=default_name,
         )
-        if not path:
+        if not ok or not name.strip():
             return
-        p = Path(path)
-        # Wenn der Nutzer "mission.op2proj" laesst, ist p.parent der Mission-Ordner.
-        # Wenn er einen anderen Dateinamen waehlt, behandeln wir trotzdem dessen
-        # Elternordner als Mission-Ordner (alle Files liegen daneben).
-        folder = p.parent
-        # Verhindern, dass das `missions/`-Wurzelverzeichnis selbst Mission wird.
-        if folder.resolve() == self._missions_dir().resolve():
-            folder = folder / default_name
+        slug = mission_project._slugify(name.strip())
+        folder = self._missions_dir() / slug
+        # Existierenden Ordner: Nutzer um Bestaetigung bitten.
+        if folder.is_dir() and any(folder.iterdir()):
+            if QMessageBox.question(
+                self, tr("window.dlg_save_mission"),
+                f"'{folder.name}' existiert bereits. Inhalt ueberschreiben?",
+            ) != QMessageBox.Yes:
+                return
         self._save_to_folder(folder)
 
     def open_project(self):
@@ -1351,8 +1354,8 @@ class EditorWindow(QMainWindow):
         # ein Dialog zu oeffnen).
         if self.mission_folder is None or not self.mission_folder.is_dir():
             self.save_project_as()
-            if self.mission_folder is None:
-                return  # vom Nutzer abgebrochen
+        if self.mission_folder is None or not self.mission_folder.is_dir():
+            return  # vom Nutzer abgebrochen / Speichern fehlgeschlagen
         self._progress = QProgressDialog(tr("window.build_progress"), None, 0, 0, self)
         self._progress.setWindowTitle("Build")
         self._progress.setWindowModality(Qt.WindowModal)
