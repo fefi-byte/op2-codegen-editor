@@ -38,9 +38,8 @@ class EditorWindow(QMainWindow):
         self.mission_name = "Editor Mission"
         self.players: list[PlayerSpec] = [PlayerSpec()]
         self.objects: list[PlacedObject] = []
-        self.victories: list[Condition] = [
-            Condition(kind="time", marks=600, objective=tr("window.default_victory_objective"))]
-        self.defeats: list[Condition] = [Condition(kind="noCC", player=0)]
+        self.victories: list[Condition] = []
+        self.defeats: list[Condition] = []
         self.triggers: list[TriggerDef] = []
         self.groups: list[MiningGroupSpec] = []
         self.building_groups: list[BuildingGroupSpec] = []
