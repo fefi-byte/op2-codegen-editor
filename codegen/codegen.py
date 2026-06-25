@@ -63,6 +63,14 @@ _COMPARE = {
 }
 
 
+# Editor tiles are 0-based (top-left = (0,0)); TitanAPI's visible tiles --
+# the same numbers the in-game status bar shows -- are 1-based (top-left =
+# (1,1)). So `visible = editor + 1` in both axes. Use _xy() everywhere the
+# generator emits a Location literal.
+def _xy(x: int, y: int) -> str:
+    return f"{{ {int(x) + 1}, {int(y) + 1} }}"
+
+
 # ---------------------------------------------------------------------------
 # String helpers.
 # ---------------------------------------------------------------------------
@@ -185,7 +193,7 @@ def _emit_base_layout(mission: Mission) -> list[str]:
                         y = int(getattr(b, "yield_bars", -1))
                         yld = {0: "abi::OreYield::Bar3", 1: "abi::OreYield::Bar2",
                                2: "abi::OreYield::Bar1"}.get(y, "abi::OreYield::Bar2")
-                        lines.append(f"            {{ {{ {int(b.x)}, {int(b.y)} }}, {ore}, {yld} }},")
+                        lines.append(f"            {{ {_xy(b.x, b.y)}, {ore}, {yld} }},")
                 lines.append(f"        }};")
             # tubes + walls (Gaia)
             tubes = [w for w in walls if w.wall_type == "mapTube"]
@@ -193,12 +201,12 @@ def _emit_base_layout(mission: Mission) -> list[str]:
             if tubes:
                 lines.append(f"        base.tubes = {{")
                 for t in tubes:
-                    lines.append(f"            {{ {{ {int(t.x)}, {int(t.y)} }}, {{ {int(t.x)}, {int(t.y)} }} }},")
+                    lines.append(f"            {{ {_xy(t.x, t.y)}, {_xy(t.x, t.y)} }},")
                 lines.append(f"        }};")
             if wall_items:
                 lines.append(f"        base.walls = {{")
                 for w in wall_items:
-                    lines.append(f"            {{ {{ {int(w.x)}, {int(w.y)} }}, {{ {int(w.x)}, {int(w.y)} }} }},")
+                    lines.append(f"            {{ {_xy(w.x, w.y)}, {_xy(w.x, w.y)} }},")
                 lines.append(f"        }};")
 
         # buildings vs vehicles for this player's units
@@ -217,10 +225,10 @@ def _emit_base_layout(mission: Mission) -> list[str]:
             for u in buildings:
                 cargo = mapid(u.cargo) if (u.cargo and u.cargo != "mapNone") else "MapID::None"
                 if cargo == "MapID::None":
-                    lines.append(f"            {{ {{ {int(u.x)}, {int(u.y)} }}, {mapid(u.unit_type)} }},")
+                    lines.append(f"            {{ {_xy(u.x, u.y)}, {mapid(u.unit_type)} }},")
                 else:
                     lines.append(
-                        f"            {{ {{ {int(u.x)}, {int(u.y)} }}, {mapid(u.unit_type)}, {cargo} }},"
+                        f"            {{ {_xy(u.x, u.y)}, {mapid(u.unit_type)}, {cargo} }},"
                     )
             lines.append(f"        }};")
 
@@ -233,7 +241,7 @@ def _emit_base_layout(mission: Mission) -> list[str]:
                           "UnitDirection::SouthWest", "UnitDirection::West", "UnitDirection::NorthWest",
                           "UnitDirection::North", "UnitDirection::NorthEast")[facing_idx]
                 lines.append(
-                    f"            {{ {{ {int(u.x)}, {int(u.y)} }}, {mapid(u.unit_type)}, {weapon}, {facing} }},"
+                    f"            {{ {_xy(u.x, u.y)}, {mapid(u.unit_type)}, {weapon}, {facing} }},"
                 )
             lines.append(f"        }};")
 
