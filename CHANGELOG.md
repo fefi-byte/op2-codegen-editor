@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-06-24
+
+### Added
+- "Test in OP2": after a successful build a **Launch OP2** button, plus a
+  **Test in OP2** toolbar button, boot Outpost 2 straight into the mission via
+  `op2launcher.exe` (run from the OPU folder). Falls back to a clear message if
+  `op2launcher.exe` isn't in the OPU folder. (`editor/app/window.py`)
+
+### Changed
+- The built mission DLL is now placed in the **OPU folder only** — where the OPU
+  version of Outpost 2 looks for missions and where `op2launcher.exe` lives —
+  never in the game root. The default output folder is now `<game>\OPU`.
+
 ## [0.2.0] - 2026-06-24
 
 ### Added

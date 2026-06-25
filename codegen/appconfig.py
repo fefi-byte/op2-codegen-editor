@@ -111,7 +111,14 @@ def windows_sdk() -> str:
 
 def output_dir() -> str:
     val = _load().get("output", "output_dir", fallback="").strip()
-    return val or str(game_path())
+    if val:
+        return val
+    # Vorgabe: der OPU-Ordner -- dort sucht die OPU-Version von OP2 nach
+    # Missionen (und dort liegt op2launcher.exe), nie der Spiel-Wurzelordner.
+    # Default: the OPU folder -- where the OPU version of OP2 looks for missions
+    # (and where op2launcher.exe lives), never the game root folder.
+    opu = game_path() / "OPU"
+    return str(opu if opu.is_dir() else game_path())
 
 
 def dll_name() -> str:

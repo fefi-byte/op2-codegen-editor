@@ -1,4 +1,5 @@
 from __future__ import annotations
+import subprocess
 from .common import *
 from .placed_object import PlacedObject
 from .mapview import MapView
@@ -140,6 +141,7 @@ class EditorWindow(QMainWindow):
             (tr("window.tb_triggers"), self.edit_triggers),
             (tr("window.tb_show_code"), self.show_code),
             (tr("window.tb_build"), self.do_build),
+            (tr("window.tb_test_op2"), self._launch_op2),
             (tr("window.tb_clear"), self.clear_objects),
         ]:
             act = QAction(label, self)
@@ -1280,22 +1282,66 @@ class EditorWindow(QMainWindow):
 
     def _build_ok(self, dll):
         self._progress.close()
-        target = Path(self.output_dir) / self.dll_name
+        # DLL nur in den OPU-Ordner legen (Standard-output_dir = OPU) -- dort
+        # sucht die OPU-Version von OP2 nach Missionen und dort liegt
+        # op2launcher.exe; nie in den Spiel-Wurzelordner kopieren.
+        # Put the DLL only in the OPU folder (default output_dir = OPU) -- that
+        # is where the OPU version of OP2 looks for missions and where
+        # op2launcher.exe lives; never copy into the game root folder.
+        targets = []
+        for folder in (Path(self.output_dir), CONTENT_ROOT):
+            t = folder / self.dll_name
+            if t not in targets:
+                targets.append(t)
         try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(dll, target)
+            for t in targets:
+                t.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(dll, t)
         except Exception as e:
             QMessageBox.warning(self, tr("window.copy_failed_title"),
-                                tr("window.copy_failed_text", target=target, e=e))
+                                tr("window.copy_failed_text", target=t, e=e))
             self.statusBar().showMessage(tr("window.status_copy_failed", e=e))
             return
-        self.statusBar().showMessage(tr("window.status_build_ok", target=target))
-        QMessageBox.information(self, tr("window.build_success_title"),
-                                tr("window.build_success_text", n=len(self.objects), target=target))
+        dests = "\n".join(str(t) for t in targets)
+        self.statusBar().showMessage(tr("window.status_build_ok", target=targets[0]))
+        text = tr("window.build_success_text", n=len(self.objects), target=dests)
+        # Bei vorhandenem op2launcher zusaetzlich "OP2 starten" anbieten.
+        # When op2launcher is available, also offer "Launch OP2".
+        if self._op2launcher_path().exists():
+            box = QMessageBox(QMessageBox.Information, tr("window.build_success_title"), text, parent=self)
+            launch_btn = box.addButton(tr("window.launch_op2"), QMessageBox.AcceptRole)
+            box.addButton(QMessageBox.Close)
+            box.exec()
+            if box.clickedButton() is launch_btn:
+                self._launch_op2()
+        else:
+            QMessageBox.information(self, tr("window.build_success_title"), text)
 
     def _build_err(self, msg):
         self._progress.close()
         self.statusBar().showMessage(tr("window.status_build_failed"))
         QMessageBox.critical(self, tr("window.build_failed_title"), msg)
+
+    def _op2launcher_path(self) -> Path:
+        # op2launcher.exe liegt im OPU-Ordner.
+        # op2launcher.exe lives in the OPU folder.
+        return CONTENT_ROOT / "op2launcher.exe"
+
+    def _launch_op2(self):
+        # OP2 ueber op2launcher.exe direkt in die aktuelle Mission-DLL starten
+        # (Aufruf im OPU-Ordner: op2launcher.exe <dll_name>).
+        # Launch OP2 via op2launcher.exe straight into the current mission DLL
+        # (run in the OPU folder: op2launcher.exe <dll_name>).
+        launcher = self._op2launcher_path()
+        if not launcher.exists():
+            QMessageBox.warning(self, tr("window.launcher_missing_title"),
+                                tr("window.launcher_missing_text", path=launcher))
+            return
+        try:
+            subprocess.Popen([str(launcher), self.dll_name], cwd=str(CONTENT_ROOT))
+            self.statusBar().showMessage(tr("window.status_launching_op2", dll=self.dll_name))
+        except Exception as e:
+            QMessageBox.critical(self, tr("window.launcher_failed_title"),
+                                 tr("window.launcher_failed_text", e=e))
 
 
