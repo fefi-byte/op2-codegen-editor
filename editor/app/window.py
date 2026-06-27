@@ -13,6 +13,7 @@ from .dialogs.conditions import ConditionsDialog
 from .dialogs.players import PlayersDialog
 from .dialogs.triggers import TriggersDialog
 from .dialogs.groups import GroupsDialog
+from .dialogs.setup import MissionSetupDialog
 
 
 class EditorWindow(QMainWindow):
@@ -36,12 +37,15 @@ class EditorWindow(QMainWindow):
         self.map = None
         self.map_name = "cm02.map"
         self.mission_name = "Editor Mission"
+        self.mission_type: MissionType = MissionType.Colony
+        self.tech_tree: str = "MULTITEK.TXT"
+        self.diff_setup: DifficultySetup = DifficultySetup()
+        self.variables: list[VariableDef] = []
         self.players: list[PlayerSpec] = [PlayerSpec()]
         self.objects: list[PlacedObject] = []
         self.victories: list[Condition] = []
         self.defeats: list[Condition] = []
         self.triggers: list[TriggerDef] = []
-        self.groups: list[MiningGroupSpec] = []
         self.building_groups: list[BuildingGroupSpec] = []
         self.reinforce_groups: list[ReinforceGroupSpec] = []
         self.node_positions: dict = {}  # Timeline-Knotenpositionen (key -> [x, y])
@@ -88,6 +92,33 @@ class EditorWindow(QMainWindow):
         self.statusBar().showMessage(tr("window.status_ready"))
         self.load_map(self.map_name)
         self._refresh_overview()
+        # Letzte Mission per Dialog wieder oeffnen (nach dem Event-Loop-Start,
+        # damit das Hauptfenster bereits sichtbar ist).
+        QTimer.singleShot(0, self._maybe_reopen_last_mission)
+
+    def _maybe_reopen_last_mission(self):
+        """Bietet beim Start an, die zuletzt geoeffnete Mission wieder zu laden."""
+        try:
+            last = appconfig.last_mission()
+        except Exception:
+            last = ""
+        if not last:
+            return
+        folder = Path(last)
+        if not mission_project.is_mission_folder(folder):
+            # Verzeichnis weg oder umbenannt -> Eintrag verwerfen.
+            try:
+                appconfig.set_last_mission("")
+            except Exception:
+                pass
+            return
+        title = tr("window.dlg_open_mission")
+        text = tr("window.reopen_last_text", name=folder.name)
+        if QMessageBox.question(self, title, text) != QMessageBox.Yes:
+            return
+        proj = folder / "mission.op2proj"
+        if proj.is_file():
+            self.open_project(preset_path=str(proj))
 
     def _build_menu(self):
         m = self.menuBar().addMenu(tr("window.menu_file"))
@@ -141,6 +172,7 @@ class EditorWindow(QMainWindow):
         tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.addToolBar(tb)
         for label, slot in [
+            (tr("window.tb_setup"), self.edit_setup),
             (tr("window.tb_players"), self.edit_players),
             (tr("window.tb_conditions"), self.edit_conditions),
             (tr("window.tb_groups"), self.edit_groups),
@@ -319,10 +351,8 @@ class EditorWindow(QMainWindow):
                             tech=p.tech_level),
                          "players", i)
 
-        groups_total = len(self.groups) + len(self.building_groups) + len(self.reinforce_groups)
+        groups_total = len(self.building_groups) + len(self.reinforce_groups)
         sec_groups = self._ov_add(self.overview, tr("window.ov_groups", n=groups_total))
-        for g in self.groups:
-            self._ov_add(sec_groups, mining_group_summary(g), "groups")
         for g in self.building_groups:
             self._ov_add(sec_groups, building_group_summary(g), "groups")
         for g in self.reinforce_groups:
@@ -430,8 +460,22 @@ class EditorWindow(QMainWindow):
             self.load_map(dlg.combo.currentText())
             self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}")
 
+    def edit_setup(self):
+        dlg = MissionSetupDialog(
+            self, self.mission_name, self.mission_type,
+            self.tech_tree, self.diff_setup, self.variables,
+        )
+        if dlg.exec() == QDialog.Accepted:
+            self.mission_name = dlg.mission_name
+            self.mission_type = dlg.mission_type
+            self.tech_tree = dlg.tech_tree
+            self.diff_setup = dlg.diff_setup
+            self.variables = dlg.variables
+            self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}"
+                                + (f"  [{self.mission_folder.name}]" if self.mission_folder else ""))
+
     def edit_players(self):
-        dlg = PlayersDialog(self, self.players)
+        dlg = PlayersDialog(self, self.players, diff_setup=self.diff_setup)
         if dlg.exec() == QDialog.Accepted:
             self.players = dlg.players
             self._refresh_player_range()
@@ -445,12 +489,13 @@ class EditorWindow(QMainWindow):
         dlg = TriggersDialog(
             self, self.triggers,
             building_groups=self.building_groups,
-            target_groups=self.groups + self.building_groups,
+            target_groups=self.building_groups,
             reinforce_groups=self.reinforce_groups,
-            mining_groups=self.groups,
             objects=self.objects,
             initial_trigger_index=self._pending_trigger_index,
             initial_action_index=self._pending_action_index,
+            diff_setup=self.diff_setup,
+            variables=self.variables,
         )
         self._pending_trigger_index = 0
         self._pending_action_index = -1
@@ -474,17 +519,16 @@ class EditorWindow(QMainWindow):
 
     def edit_groups(self):
         dlg = GroupsDialog(
-            self, self.groups, self.building_groups, self.reinforce_groups,
+            self, self.building_groups, self.reinforce_groups,
             self.objects, len(self.players))
         if dlg.exec() == QDialog.Accepted:
             rect_pick_group = None
             if dlg.rect_pick_request is not None and 0 <= dlg.rect_pick_request < len(dlg.groups):
                 rect_pick_group = dlg.groups[dlg.rect_pick_request]
-            self.groups = dlg.mining_groups()
             self.building_groups = dlg.building_groups()
             self.reinforce_groups = dlg.reinforce_groups()
             self._refresh_overview()
-            total = len(self.groups) + len(self.building_groups) + len(self.reinforce_groups)
+            total = len(self.building_groups) + len(self.reinforce_groups)
             if rect_pick_group is not None:
                 self._begin_rect_pick(rect_pick_group)
             else:
@@ -574,14 +618,8 @@ class EditorWindow(QMainWindow):
         self._rect_pick_item.setZValue(1000)
         self.scene.addItem(self._rect_pick_item)
 
-    # Die drei _rect_drag_*-Methoden multiplexen drei Zieh-Modi:
-    #   (a) startMiningOperation Smelter-"rect" (Rechteck), (b) recordTube/recordWall
-    #   Linien-Zug, (c) das SetRect-Rechteck einer Gruppe.
-    # The three _rect_drag_* methods multiplex three drag modes:
-    #   (a) startMiningOperation smelter "rect" (rectangle), (b) recordTube/recordWall
-    #   line drag, (c) a group's SetRect rectangle.
     def _rect_drag_start(self, tx, ty):
-        if self._action_pick and self._action_pick["kind"] == "startMiningOperation" and self._action_pick.get("mode") == "rect":
+        if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
             tx, ty = self._clamp_tile(tx, ty)
             self._action_pick_start = (tx, ty)
             x, y, w, h = self._rect_from_tiles(tx, ty, tx, ty)
@@ -600,11 +638,11 @@ class EditorWindow(QMainWindow):
         self._update_rect_overlay(x, y, w, h)
 
     def _rect_drag_move(self, tx, ty):
-        if self._action_pick and self._action_pick["kind"] == "startMiningOperation" and self._action_pick.get("mode") == "rect" and self._action_pick_start is not None:
+        if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect" and self._action_pick_start is not None:
             sx, sy = self._action_pick_start
             x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
             self._update_rect_overlay(x, y, w, h)
-            self.coord_label.setText(f"Smelter-Rect: {x}, {y}, {w}x{h}")
+            self.coord_label.setText(f"Bereich: {x}, {y}, {w}x{h}")
             return
         if self._action_pick and self._action_pick_start is not None:
             tx, ty = self._clamp_tile(tx, ty)
@@ -621,15 +659,18 @@ class EditorWindow(QMainWindow):
         self.coord_label.setText(f"SetRect: {x}, {y}, {w}x{h}")
 
     def _rect_drag_finish(self, tx, ty):
-        if self._action_pick and self._action_pick["kind"] == "startMiningOperation" and self._action_pick.get("mode") == "rect":
+        if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
             if self._action_pick_start is None:
                 self._end_action_pick()
                 return
             sx, sy = self._action_pick_start
             x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
-            action = self._mining_action_from_pick(rect_x=x, rect_y=y, rect_width=w, rect_height=h)
-            self._add_action_from_pick(action)
-            self.statusBar().showMessage(tr("window.status_smelter_rect_set", x=x, y=y, w=w, h=h))
+            action = self._action_pick["action"]
+            action.rect_x, action.rect_y = x, y
+            action.rect_width, action.rect_height = w, h
+            self.statusBar().showMessage(f"Bereich gesetzt: ({x},{y}) {w}x{h}")
+            self._pending_trigger_index = self._action_pick.get("trigger_index", 0)
+            self._pending_action_index = self._action_pick.get("action_index", -1)
             self._end_action_pick()
             return
         if self._action_pick and self._action_pick_start is not None:
@@ -678,41 +719,30 @@ class EditorWindow(QMainWindow):
             self.scene.removeItem(item)
         self._action_preview_items = []
 
-    # Startet einen Karten-Auswahlmodus aus einem Trigger-Aktions-Dialog.
-    # Das verbrauchte request-dict-Schema:
-    #   kind: "recordBuilding" | "recordTube" | "recordWall" | "assignToGroup"
-    #         | "startMiningOperation"
-    #   mode (optional): "mine" | "smelter" | "rect" (nur startMiningOperation)
-    #   group_name, building_type, wall_type, mining_group_name: je nach kind
-    #   trigger_index, action_index, player, ore_type, truck_count, Koordinaten usw.
-    # Begins a map-pick mode from a trigger-action dialog.
-    # The consumed request dict schema:
-    #   kind: "recordBuilding" | "recordTube" | "recordWall" | "assignToGroup"
-    #         | "startMiningOperation"
-    #   mode (optional): "mine" | "smelter" | "rect" (startMiningOperation only)
-    #   group_name, building_type, wall_type, mining_group_name: depending on kind
-    #   trigger_index, action_index, player, ore_type, truck_count, coords, etc.
     def _begin_action_pick(self, request):
         self._placement_active = False
         self._clear_placement_preview()
         self._action_pick = request
         self._action_pick_start = None
         self._clear_action_preview()
-        if request["kind"] in ("recordTube", "recordWall") or (
-            request["kind"] == "startMiningOperation" and request.get("mode") == "rect"):
+        if (
+            request["kind"] in ("recordTube", "recordWall")
+            or (request["kind"] == "action_field" and request.get("field") == "rect")
+        ):
             self.view.rect_select_enabled = True
         self.view.setCursor(Qt.CrossCursor)
-        label = {
+        labels = {
             "recordBuilding": tr("window.pick_record_building"),
             "assignToGroup": tr("window.pick_assign_group"),
             "recordTube": tr("window.pick_record_tube"),
             "recordWall": tr("window.pick_record_wall"),
-            "startMiningOperation": {
-                "mine": tr("window.pick_mine"),
-                "smelter": tr("window.pick_smelter"),
-                "rect": tr("window.pick_smelter_rect"),
-            }.get(request.get("mode"), tr("window.pick_mining_op")),
-        }[request["kind"]]
+            "action_field": {
+                "primary": "Klick: Position (X, Y) der Aktion setzen",
+                "secondary": "Klick: zweite Position (X2, Y2) der Aktion setzen",
+                "rect": "Klick: Bereich-Ecke (rect X, rect Y) der Aktion setzen",
+            }.get(request.get("field"), "Klick: Karte fuer Aktion picken"),
+        }
+        label = labels.get(request["kind"], "Klick: Karte fuer Aktion picken")
         self.statusBar().showMessage(tr("window.status_pick_hint", label=label))
 
     def _end_action_pick(self, reopen=True):
@@ -732,12 +762,6 @@ class EditorWindow(QMainWindow):
             else:
                 self._clear_action_preview()
             self._clear_placement_preview()
-        elif self._action_pick and self._action_pick["kind"] == "startMiningOperation":
-            if self._action_pick.get("mode") in ("mine", "smelter") and self.map is not None and 0 <= tx < self.map.width and 0 <= ty < self.map.height:
-                self._draw_mining_operation_preview(tx, ty)
-            elif self._action_pick.get("mode") != "rect":
-                self._clear_action_preview()
-            self._clear_placement_preview()
         elif self._placement_active:
             self._draw_placement_preview(tx, ty)
         else:
@@ -752,25 +776,6 @@ class EditorWindow(QMainWindow):
         rect = QGraphicsRectItem(x0, y0, fw * SCENE_TILE, fh * SCENE_TILE)
         rect.setPen(QPen(QColor(255, 255, 255), 3, Qt.DashLine))
         rect.setBrush(QBrush(QColor(255, 255, 255, 45)))
-        rect.setZValue(1100)
-        self.scene.addItem(rect)
-        self._action_preview_items = [rect]
-
-    def _draw_mining_operation_preview(self, tx, ty):
-        self._clear_action_preview()
-        mode = self._action_pick.get("mode")
-        if mode not in ("mine", "smelter"):
-            return
-        mine_type, smelter_type = MINING_OPERATION_TYPES.get(
-            self._action_pick.get("ore_type", "common"), MINING_OPERATION_TYPES["common"])
-        building_type = mine_type if mode == "mine" else smelter_type
-        fw, fh = STRUCTURE_FOOTPRINTS.get(building_type, (1, 1))
-        color = QColor(255, 220, 80) if mode == "mine" else QColor(160, 255, 160)
-        x0 = (tx - fw // 2) * SCENE_TILE
-        y0 = (ty - fh // 2) * SCENE_TILE
-        rect = QGraphicsRectItem(x0, y0, fw * SCENE_TILE, fh * SCENE_TILE)
-        rect.setPen(QPen(color, 3, Qt.DashLine))
-        rect.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 55)))
         rect.setZValue(1100)
         self.scene.addItem(rect)
         self._action_preview_items = [rect]
@@ -808,22 +813,6 @@ class EditorWindow(QMainWindow):
             rect.setZValue(1100)
             self.scene.addItem(rect)
             self._action_preview_items.append(rect)
-
-    def _mining_action_from_pick(self, **overrides):
-        data = dict(self._action_pick)
-        data.update(overrides)
-        return TriggerAction(
-            kind="startMiningOperation",
-            group_name=data.get("group_name", ""),
-            mining_group_name=data.get("mining_group_name", ""),
-            ore_type=data.get("ore_type", "common"),
-            truck_count=data.get("truck_count", 0),
-            x=data.get("x", 0), y=data.get("y", 0),
-            x2=data.get("x2", 0), y2=data.get("y2", 0),
-            rect_x=data.get("rect_x", 0), rect_y=data.get("rect_y", 0),
-            rect_width=data.get("rect_width", 1), rect_height=data.get("rect_height", 1),
-            player=data.get("player", 0),
-        )
 
     def _add_action_from_pick(self, action):
         idx = self._action_pick["trigger_index"]
@@ -873,15 +862,6 @@ class EditorWindow(QMainWindow):
                 elif action.kind == "recordWall":
                     for tx, ty in self._line_tiles(action.x, action.y, action.x2, action.y2):
                         self._add_planned_rect(tx, ty, 1, 1, QColor(255, 180, 80), Qt.Dense4Pattern)
-                elif action.kind == "startMiningOperation":
-                    mine_type, smelter_type = MINING_OPERATION_TYPES.get(
-                        action.ore_type, MINING_OPERATION_TYPES["common"])
-                    self._add_planned_building(action.x, action.y, mine_type, QColor(255, 220, 80))
-                    self._add_planned_building(action.x2, action.y2, smelter_type, QColor(160, 255, 160))
-                    self._add_planned_rect(
-                        action.rect_x, action.rect_y,
-                        action.rect_width, action.rect_height,
-                        QColor(80, 255, 160), Qt.Dense5Pattern)
 
     def choose_output(self):
         dlg = OutputDialog(self, self.output_dir, self.dll_name)
@@ -910,10 +890,13 @@ class EditorWindow(QMainWindow):
         """Sammelt alle Mission-Daten in ein JSON-serialisierbares Dict."""
         return {
             "mission_name": self.mission_name,
+            "mission_type": int(self.mission_type),
+            "tech_tree": self.tech_tree,
+            "difficulty": asdict(self.diff_setup),
+            "variables": [asdict(v) for v in self.variables],
             "map": self.map_name,
             "players": [asdict(p) for p in self.players],
             "objects": [o.to_dict() for o in self.objects],
-            "groups": [asdict(g) for g in self.groups],
             "building_groups": [asdict(g) for g in self.building_groups],
             "reinforce_groups": [asdict(g) for g in self.reinforce_groups],
             "triggers": [asdict(t) for t in self.triggers],
@@ -948,6 +931,10 @@ class EditorWindow(QMainWindow):
             return False
         self.mission_folder = folder
         self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}  [{folder.name}]")
+        try:
+            appconfig.set_last_mission(str(folder))
+        except Exception:
+            pass
         self.statusBar().showMessage(
             tr("window.status_saved", path=str(folder), n=len(self.objects))
         )
@@ -986,14 +973,18 @@ class EditorWindow(QMainWindow):
                 return
         self._save_to_folder(folder)
 
-    def open_project(self):
-        # Nutzer darf entweder einen Mission-Ordner oder eine `.op2proj`-Datei
-        # waehlen. Datei-Dialog filtert beides.
-        path, _ = QFileDialog.getOpenFileName(
-            self, tr("window.dlg_open_mission"), str(self._missions_dir()),
-            f"OP2 Mission (*.op2proj);;JSON (*.json);;{tr('window.filter_all')} (*.*)")
-        if not path:
-            return
+    def open_project(self, preset_path: str | None = None):
+        # Mit `preset_path` (vom Reopen-Dialog beim Start) ueberspringen wir
+        # den Datei-Dialog. Sonst darf der Nutzer einen Mission-Ordner oder
+        # eine `.op2proj`-Datei waehlen.
+        if preset_path:
+            path = preset_path
+        else:
+            path, _ = QFileDialog.getOpenFileName(
+                self, tr("window.dlg_open_mission"), str(self._missions_dir()),
+                f"OP2 Mission (*.op2proj);;JSON (*.json);;{tr('window.filter_all')} (*.*)")
+            if not path:
+                return
         proj_path = mission_project.find_op2proj(Path(path))
         if proj_path is None:
             QMessageBox.critical(self, tr("window.open_failed_title"), "mission.op2proj nicht gefunden")
@@ -1005,6 +996,20 @@ class EditorWindow(QMainWindow):
             QMessageBox.critical(self, tr("window.open_failed_title"), str(e))
             return
         self.mission_name = data.get("mission_name", "Editor Mission")
+        self.mission_type = MissionType(data.get("mission_type", int(MissionType.Colony)))
+        self.tech_tree = data.get("tech_tree", "MULTITEK.TXT")
+        if "difficulty" in data:
+            try:
+                self.diff_setup = DifficultySetup(**data["difficulty"])
+            except Exception:
+                self.diff_setup = DifficultySetup()
+        if "variables" in data:
+            self.variables = []
+            for vd in data["variables"]:
+                try:
+                    self.variables.append(VariableDef(**vd))
+                except Exception:
+                    pass
         # Knotenpositionen in-place aktualisieren (Timeline haelt eine Referenz darauf)
         # Update node positions in place (the timeline holds a reference to it)
         self.node_positions.clear()
@@ -1026,7 +1031,8 @@ class EditorWindow(QMainWindow):
                 try:
                     td = dict(td)
                     actions = [action_from_dict(a) for a in td.pop("actions", [])]
-                    self.triggers.append(TriggerDef(actions=actions, **td))
+                    checks = [FindUnitCheck(**c) for c in td.pop("unit_checks", [])]
+                    self.triggers.append(TriggerDef(actions=actions, unit_checks=checks, **td))
                 except Exception:
                     continue
         self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}")
@@ -1046,12 +1052,6 @@ class EditorWindow(QMainWindow):
                         break
             self._draw(obj)
             self.objects.append(obj)
-        self.groups = []
-        for gd in data.get("groups", []):
-            try:
-                self.groups.append(MiningGroupSpec(**gd))
-            except Exception:
-                continue
         self.building_groups = []
         for gd in data.get("building_groups", []):
             try:
@@ -1076,13 +1076,17 @@ class EditorWindow(QMainWindow):
         if mission_project.is_mission_folder(parent):
             self.mission_folder = parent
             self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}  [{parent.name}]")
+            try:
+                appconfig.set_last_mission(str(parent))
+            except Exception:
+                pass
         else:
             self.mission_folder = None
         self._redraw_planned_actions()
         self._refresh_overview()
         self.statusBar().showMessage(
             tr("window.status_loaded", path=path, n=len(self.objects),
-               g=len(self.groups) + len(self.building_groups) + len(self.reinforce_groups)))
+               g=len(self.building_groups) + len(self.reinforce_groups)))
 
     def load_map(self, name):
         try:
@@ -1095,7 +1099,6 @@ class EditorWindow(QMainWindow):
             return
         self.map_name = name
         self.objects.clear()
-        self.groups.clear()
         self.building_groups.clear()
         self.reinforce_groups.clear()
         self._next_object_id = 1
@@ -1152,20 +1155,26 @@ class EditorWindow(QMainWindow):
     # (startMiningOperation / recordBuilding / assignToGroup), else placement of the
     # selected catalog item, else click-to-edit an existing object.
     def on_place(self, tx, ty):
-        if self._action_pick and self._action_pick["kind"] == "startMiningOperation":
+        # Generischer "auf Karte setzen"-Pfad fuer Action-Felder (vom Card-Editor):
+        # einfach die Koordinaten ins Action-Objekt schreiben und Trigger-Dialog
+        # wieder oeffnen.
+        if self._action_pick and self._action_pick["kind"] == "action_field":
+            field = self._action_pick["field"]
+            # rect-Modus wird ueber das Rect-Drag-Signal abgehandelt; ein
+            # Single-Click duerfte hier ohnehin nicht ankommen, ist aber
+            # safety-net.
+            if field == "rect":
+                return
             if self.map is None or not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
                 return
-            mode = self._action_pick.get("mode")
-            if mode == "mine":
-                action = self._mining_action_from_pick(x=tx, y=ty)
-                message = tr("window.status_mine_set", x=tx, y=ty)
-            elif mode == "smelter":
-                action = self._mining_action_from_pick(x2=tx, y2=ty)
-                message = tr("window.status_smelter_set", x=tx, y=ty)
-            else:
-                return
-            self._add_action_from_pick(action)
-            self.statusBar().showMessage(message)
+            action = self._action_pick["action"]
+            if field == "primary":
+                action.x, action.y = tx, ty
+            elif field == "secondary":
+                action.x2, action.y2 = tx, ty
+            self.statusBar().showMessage(tr("window.status_action_added", summary=action_summary(action)))
+            self._pending_trigger_index = self._action_pick.get("trigger_index", 0)
+            self._pending_action_index = self._action_pick.get("action_index", -1)
             self._end_action_pick()
             return
         if self._action_pick and self._action_pick["kind"] == "recordBuilding":
@@ -1266,7 +1275,6 @@ class EditorWindow(QMainWindow):
             for it in obj.items:
                 self.scene.removeItem(it)
         self.objects.clear()
-        self.groups.clear()
         self.building_groups.clear()
         self.reinforce_groups.clear()
         self._refresh_overview()
@@ -1298,11 +1306,11 @@ class EditorWindow(QMainWindow):
             elif o.kind == "wall":
                 walls.append(WallTubeSpec(o.map_id, x=o.tile_x, y=o.tile_y))
         return Mission(
-            name=self.mission_name, map=self.map_name, type=MissionType.Colony,
+            name=self.mission_name, map=self.map_name,
+            type=self.mission_type, tech_tree=self.tech_tree,
             num_players=len(self.players),
             players=[PlayerSpec(**asdict(p)) for p in self.players],
             units=units, beacons=beacons, walls_tubes=walls,
-            mining_groups=[MiningGroupSpec(**asdict(g)) for g in self.groups],
             building_groups=[BuildingGroupSpec(**asdict(g)) for g in self.building_groups],
             reinforce_groups=[
                 ReinforceGroupSpec(
@@ -1316,6 +1324,12 @@ class EditorWindow(QMainWindow):
             triggers=list(self.triggers),
             start_message=StartMessage(tr("window.default_start_message")),
             victories=list(self.victories), defeats=list(self.defeats),
+            difficulty=DifficultySetup(
+                hard=self.diff_setup.hard,
+                normal=self.diff_setup.normal,
+                easy=self.diff_setup.easy,
+            ),
+            variables=list(self.variables),
         )
 
     def show_code(self):

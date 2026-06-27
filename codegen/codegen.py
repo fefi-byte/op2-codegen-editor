@@ -22,9 +22,16 @@ from __future__ import annotations
 import re
 
 from mission_model import (
-    ActionCondition, BuildingGroupSpec, Colony, Condition, Mission, MissionType,
-    MiningGroupSpec, PlayerSpec, ReinforceGroupSpec, TriggerAction, TriggerDef,
+    ActionCondition, BuildingGroupSpec, Colony, Condition, DifficultySetup, FindUnitCheck,
+    Mission, MissionType, PlayerSpec, ReinforceGroupSpec, TriggerAction, TriggerDef, VariableDef,
 )
+
+
+def _expr_or_int(v) -> str:
+    """Gibt den Wert als C++-Literal-String zurueck: int oder Ausdruck unveraendert."""
+    if isinstance(v, str):
+        return v
+    return str(int(v))
 
 
 # ---------------------------------------------------------------------------
@@ -135,13 +142,13 @@ def _emit_player_setup(idx: int, p: PlayerSpec) -> list[str]:
     if (p.workers is not None) or (p.scientists is not None) or (p.kids is not None):
         lines.append(f"    Game::player({idx}).setPopulation({w}, {s}, {k});")
 
-    # resources
+    # resources (support int and str expressions)
     if p.common_ore is not None:
-        lines.append(f"    Game::player({idx}).setCommonOre({int(p.common_ore)});")
+        lines.append(f"    Game::player({idx}).setCommonOre({_expr_or_int(p.common_ore)});")
     if p.rare_ore is not None:
-        lines.append(f"    Game::player({idx}).setRareOre({int(p.rare_ore)});")
+        lines.append(f"    Game::player({idx}).setRareOre({_expr_or_int(p.rare_ore)});")
     if p.food is not None:
-        lines.append(f"    Game::player({idx}).setFood({int(p.food)});")
+        lines.append(f"    Game::player({idx}).setFood({_expr_or_int(p.food)});")
 
     # individual researches (on top of tech_level)
     for tech in (p.researches or []):
@@ -359,7 +366,7 @@ def _emit_action_condition_expr(c: ActionCondition) -> str:
     if c.kind == "buildingAtLocation":
         expr = f"(GameMap::unitOnTile({_xy(c.x, c.y)}).type() == {mapid(c.building_type)})"
     elif c.kind == "buildingCount":
-        expr = f"(Game::playerUnitCount({int(c.player)}, {mapid(c.building_type)}) {cmp_op} {int(c.value)})"
+        expr = f"(Game::playerUnitCount({int(c.player)}, {mapid(c.building_type)}) {cmp_op} {_expr_or_int(c.value)})"
     elif c.kind == "playerResource":
         # Map editor resource string -> Player::xxx() reader.
         getter = {
@@ -371,7 +378,7 @@ def _emit_action_condition_expr(c: ActionCondition) -> str:
             "resScientists": "scientists",
             "resColonists": "population",
         }.get(c.resource, "commonOre")
-        expr = f"(Game::player({int(c.player)}).{getter}() {cmp_op} {int(c.value)})"
+        expr = f"(Game::player({int(c.player)}).{getter}() {cmp_op} {_expr_or_int(c.value)})"
     elif c.kind == "hasTech":
         expr = f"Game::player({int(c.player)}).hasTechnology({int(c.tech_id)})"
     elif c.kind == "unitDamage":
@@ -379,7 +386,10 @@ def _emit_action_condition_expr(c: ActionCondition) -> str:
         # this player's units of this type below `value` HP" via the unit
         # range. Hand-emitted lambda; expensive at runtime but rarely used.
         expr = (f"std::ranges::any_of(Game::unitsOf({int(c.player)}), "
-                f"[](Unit u){{ return (u.type() == {mapid(c.building_type)}) && (u.damage() {cmp_op} {int(c.value)}); }})")
+                f"[](Unit u){{ return (u.type() == {mapid(c.building_type)}) && (u.damage() {cmp_op} {_expr_or_int(c.value)}); }})")
+    elif c.kind == "varCheck":
+        var = getattr(c, "var_name", "") or "unknownVar"
+        expr = f"({var} {cmp_op} {_expr_or_int(c.value)})"
     else:
         expr = "true /* TODO: unsupported ActionCondition kind */"
 
@@ -463,27 +473,7 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict) -> list[str
                   else "MapID::None")
         return [
             f"{indent}{var}.setTargCount({mapid(action.unit_type)}, {weapon}, "
-            f"{int(action.target_count)});"
-        ]
-
-    if k == "startMiningOperation":
-        # Look up the named mining group; resolve the mine + smelter via the
-        # tile-occupancy index. The user sets {x,y} = mine, {x2,y2} = smelter
-        # in the editor model.
-        var = ctx["group_vars"].get(action.mining_group_name or action.group_name, None)
-        if not var:
-            return [f"{indent}// TODO startMiningOperation: mining group not declared"]
-        ore = (action.ore_type or "common").lower()
-        # Use the mine + smelter coordinates that the editor stored on the action.
-        return [
-            f"{indent}{{",
-            f"{indent}    Unit _mine    = GameMap::unitOnTile({_xy(action.x, action.y)});",
-            f"{indent}    Unit _smelter = GameMap::unitOnTile({_xy(action.x2, action.y2)});",
-            f"{indent}    if (_mine.id() && _smelter.id())",
-            f"{indent}        {var}.setupMining(_mine, _smelter, "
-            f"{_xy(action.rect_x, action.rect_y)}, "
-            f"{_xy(action.rect_x + action.rect_width, action.rect_y + action.rect_height)});",
-            f"{indent}}}",
+            f"{_expr_or_int(action.target_count)});"
         ]
 
     if k == "assignToGroup":
@@ -501,6 +491,16 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict) -> list[str
             f"{indent}    }}",
             f"{indent}}}, /*oneShot=*/false);",
         ]
+
+    if k == "modVar":
+        var = getattr(action, "var_name", "") or "unknownVar"
+        mode = getattr(action, "mod_mode", "inc") or "inc"
+        if mode == "inc":
+            return [f"{indent}{var}++;"]
+        if mode == "dec":
+            return [f"{indent}{var}--;"]
+        expr = getattr(action, "var_expr", "") or "0"
+        return [f"{indent}{var} = {expr};"]
 
     return [f"{indent}// TODO unsupported action kind: {k}"]
 
@@ -561,7 +561,7 @@ def _emit_trigger_helper(t: TriggerDef, ctx: dict) -> list[str]:
     lines.append(f"static void {helper}() {{")
 
     if t.condition == "time":
-        lines.append(f"    onMark({int(t.marks)},")
+        lines.append(f"    onMark({_expr_or_int(t.marks)},")
         lines.append(cb_str + ",")
         lines.append(f"    /*oneShot=*/{one_shot});")
     elif t.condition == "buildingCount":
@@ -606,6 +606,32 @@ def _emit_trigger_helper(t: TriggerDef, ctx: dict) -> list[str]:
         lines.append(f"            break;")
         lines.append(f"        }}")
         lines.append(f"    }}, /*oneShot=*/false);")
+    elif t.condition == "findUnit":
+        # Pollt alle 10 Ticks, prueft jeden Eintrag der `unit_checks`-Liste
+        # auf "einsatzbereit" (isLive && type match && enabled). Sobald
+        # ALLE Eintraege gleichzeitig ready sind, feuern die Aktionen.
+        checks = list(getattr(t, "unit_checks", None) or [])
+        if not checks:
+            lines.append(f"    // findUnit ohne Eintraege -- nichts zu pruefen")
+            lines.append(f"}}")
+            return lines
+        # oneShot=false; wir disablen den Trigger nach erstem Match manuell,
+        # damit die polling-Schleife wiederholt prueft, aber die Aktionen
+        # nur einmal feuern.
+        oneShot_inline = t.one_shot
+        lines.append(f"    static Trigger _self;")
+        lines.append(f"    _self = onTick(10, [] {{")
+        for i, c in enumerate(checks):
+            lines.append(f"        Unit _u{i} = GameMap::unitOnTile({_xy(c.x, c.y)});")
+            lines.append(f"        bool _ready{i} = _u{i}.isLive() && _u{i}.type() == "
+                         f"{mapid(c.unit_type)} && _u{i}.enabled();")
+        all_ready = " && ".join(f"_ready{i}" for i in range(len(checks)))
+        lines.append(f"        if (!({all_ready})) return;")
+        for line in _emit_action_list(t.actions, "        ", ctx):
+            lines.append(line)
+        if oneShot_inline:
+            lines.append(f"        _self.disable();")
+        lines.append(f"    }}, /*oneShot=*/false);")
     else:
         lines.append(f"    // TODO unsupported trigger condition: {t.condition}")
 
@@ -614,47 +640,33 @@ def _emit_trigger_helper(t: TriggerDef, ctx: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Groups: mining / building / reinforce.
+# Groups: building / reinforce.
 # ---------------------------------------------------------------------------
 
 def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
     """Emit Group variable declarations + setup inside initProc."""
     lines: list[str] = []
-    mining = list(getattr(mission, "mining_groups", None) or [])
     buildings = list(getattr(mission, "building_groups", None) or [])
     reinforces = list(getattr(mission, "reinforce_groups", None) or [])
-    if not (mining or buildings or reinforces):
+    if not (buildings or reinforces):
         return lines
 
     lines.append("")
-    lines.append("    // --- Groups (mining / building / reinforce) ---")
-
-    for g in mining:
-        var = ctx["group_vars"][g.name]
-        lines.append(f"    {var} = createMiningGroup(Game::player({int(g.player)}));")
-        # The actual setupMining (mine + smelter unit handles) is normally
-        # driven from a `startMiningOperation` action once the buildings are
-        # placed. If the editor stored a static mine/smelter pair on the
-        # group itself, wire it up here.
-        if getattr(g, "has_setup", False) and (g.mine_x or g.mine_y or g.smelter_x or g.smelter_y):
-            lines.append(f"    {{")
-            lines.append(f"        Unit _mine    = GameMap::unitOnTile({_xy(g.mine_x, g.mine_y)});")
-            lines.append(f"        Unit _smelter = GameMap::unitOnTile({_xy(g.smelter_x, g.smelter_y)});")
-            lines.append(f"        if (_mine.id() && _smelter.id())")
-            lines.append(f"            {var}.setupMining(_mine, _smelter, "
-                         f"{_xy(g.rect_x, g.rect_y)}, "
-                         f"{_xy(g.rect_x + g.rect_width, g.rect_y + g.rect_height)});")
-            lines.append(f"    }}")
+    lines.append("    // --- Groups (building / reinforce) ---")
 
     for g in buildings:
         var = ctx["group_vars"][g.name]
         lines.append(f"    {var} = createBuildingGroup(Game::player({int(g.player)}));")
         lines.append(f"    {var}.setBuildRect({_xy(g.rect_x, g.rect_y)}, "
                      f"{_xy(g.rect_x + g.rect_width, g.rect_y + g.rect_height)});")
+        lines.extend(_emit_take_units(mission, g, var, label="BuildingGroup"))
 
     for g in reinforces:
         var = ctx["group_vars"][g.name]
         lines.append(f"    {var} = createBuildingGroup(Game::player({int(g.player)}));")
+        # Vehicle-Factories (oder andere Builder-Einheiten) der ReinforceGroup
+        # zuweisen, sonst hat sie keine Quelle fuer Verstaerkungen.
+        lines.extend(_emit_take_units(mission, g, var, label="ReinforceGroup"))
         for t in (getattr(g, "targets", None) or []):
             target_var = ctx["group_vars"].get(t.group_name)
             if target_var:
@@ -662,6 +674,42 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
                              f"{int(getattr(t, 'priority', 1000))});")
 
     return lines
+
+
+def _emit_take_units(mission: Mission, group, var: str, *, label: str) -> list[str]:
+    """Emit a Game::unitsOf-Schleife die im Editor markierte Units der Group zuweist.
+
+    Sucht die UnitSpec-Eintraege mit passender uid in mission.units, sammelt
+    ihre (visible) Tile-Position und generiert einen Loop, der die laufenden
+    Units der passenden Player+Position via Group.takeUnit einschiebt.
+    Funktioniert sowohl fuer Vehicles (Factories sind Buildings) als auch
+    fuer Combat-Units / ConVecs / Trucks.
+    """
+    uids = list(getattr(group, "unit_ids", None) or [])
+    if not uids:
+        return []
+    by_uid = {getattr(u, "uid", ""): u for u in (mission.units or [])
+              if getattr(u, "uid", "")}
+    positions: list[tuple[int, int]] = []
+    for uid in uids:
+        u = by_uid.get(uid)
+        if u is None:
+            continue
+        positions.append((int(u.x), int(u.y)))
+    if not positions:
+        return []
+    out: list[str] = []
+    out.append(f"    {{")
+    out.append(f"        // Einheiten der {label} '{group.name}' zuweisen")
+    out.append(f"        for (Unit _u : Game::unitsOf({int(group.player)})) {{")
+    out.append(f"            Location _loc = _u.location();")
+    conds = " || ".join(
+        f"(_loc.x == {x + 1} && _loc.y == {y + 1})" for (x, y) in positions
+    )
+    out.append(f"            if ({conds}) {var}.takeUnit(_u);")
+    out.append(f"        }}")
+    out.append(f"    }}")
+    return out
 
 
 def _build_codegen_context(mission: Mission) -> dict:
@@ -673,8 +721,6 @@ def _build_codegen_context(mission: Mission) -> dict:
     for i, t in enumerate(mission.triggers or []):
         ctx["trigger_helpers"][t.name] = f"_trigger_{i}_{_ident(t.name)}"
     idx = 0
-    for g in (getattr(mission, "mining_groups", None) or []):
-        ctx["group_vars"][g.name] = f"_grp_{idx}_{_ident(g.name)}"; idx += 1
     for g in (getattr(mission, "building_groups", None) or []):
         ctx["group_vars"][g.name] = f"_grp_{idx}_{_ident(g.name)}"; idx += 1
     for g in (getattr(mission, "reinforce_groups", None) or []):
@@ -710,6 +756,26 @@ def generate_levelmain(mission: Mission) -> str:
     add("using namespace op2;")
     add("")
 
+    # Difficulty constants (always emitted so ExprEdit expressions compile)
+    diff = getattr(mission, "difficulty", None)
+    hard   = diff.hard   if diff else 13
+    normal = diff.normal if diff else 10
+    easy   = diff.easy   if diff else 5
+    add(f"static const int kDiff[] = {{{hard}, {normal}, {easy}}};")
+    add("static const int diff = kDiff[(int)Game::difficulty()];")
+    add("")
+
+    # Custom mission variables declared at file scope
+    variables = getattr(mission, "variables", None) or []
+    for v in variables:
+        init = int(v.initial_value) if v.initial_value is not None else 0
+        if v.var_type == "bool":
+            add(f"static bool {v.name} = {'true' if init else 'false'};")
+        else:
+            add(f"static int {v.name} = {init};")
+    if variables:
+        add("")
+
     # Forward declarations for trigger helpers (so a `createTrigger` action
     # earlier in the file can invoke a trigger declared further down).
     for t in (mission.triggers or []):
@@ -719,18 +785,18 @@ def generate_levelmain(mission: Mission) -> str:
 
     # Group variables live at file scope so any trigger callback can see them.
     # Real value is assigned in initProc -- this is just a forward declaration.
-    for g in (getattr(mission, "mining_groups", None) or []) \
-           + (getattr(mission, "building_groups", None) or []) \
+    for g in (getattr(mission, "building_groups", None) or []) \
            + (getattr(mission, "reinforce_groups", None) or []):
         add(f"static Group {ctx['group_vars'][g.name]};")
-    if mission.mining_groups or mission.building_groups or mission.reinforce_groups:
+    if mission.building_groups or mission.reinforce_groups:
         add("")
 
     # --- Exports ---
     num_players = max(1, len(mission.players or []) or 1)
     add(f'extern "C" __declspec(dllexport) char LevelDesc[]    = {_cpp_string(mission.name)};')
     add(f'extern "C" __declspec(dllexport) char MapName[]      = {_cpp_string(mission.map)};')
-    add(f'extern "C" __declspec(dllexport) char TechtreeName[] = "MULTITEK.TXT";')
+    tech_tree = (getattr(mission, "tech_tree", None) or "MULTITEK.TXT").strip() or "MULTITEK.TXT"
+    add(f'extern "C" __declspec(dllexport) char TechtreeName[] = {_cpp_string(tech_tree)};')
     add(f"extern \"C\" __declspec(dllexport) mission::ModDesc   DescBlock   = "
         f"{{ {_mission_type_literal(mission.type)}, {num_players}, 12, 0 }};")
     add('extern "C" __declspec(dllexport) mission::ModDescEx DescBlockEx = '

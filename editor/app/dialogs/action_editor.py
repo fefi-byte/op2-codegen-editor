@@ -23,7 +23,7 @@ class ConditionEditDialog(QDialog):
 
     Dialog for editing a single When-condition of an "if" action.
     """
-    def __init__(self, parent, condition=None):
+    def __init__(self, parent, condition=None, variables=None, diff_values=None):
         super().__init__(parent)
         self.setWindowTitle(tr("action_editor.dlg_condition_title"))
         self.kind = QComboBox(); fill_combo(self.kind, ACTION_CONDITION_KINDS, "action_conditions")
@@ -35,19 +35,24 @@ class ConditionEditDialog(QDialog):
         self.x = QSpinBox(); self.x.setRange(0, 1023)
         self.y = QSpinBox(); self.y.setRange(0, 1023)
         self.compare = QComboBox(); self.compare.addItems(COMPARE.keys())
-        self.value = QSpinBox(); self.value.setRange(0, 1000000)
+        self.value = ExprEdit(diff_values=diff_values)
+        self.value.setValue(0)
         self.resource = QComboBox(); self.resource.addItems(RESOURCES.keys())
         self.tech_id = QSpinBox(); self.tech_id.setRange(0, 20000)
+        self.var_name = QComboBox()
+        for v in (variables or []):
+            self.var_name.addItem(v.name, v.name)
         self.negate = QCheckBox(tr("action_editor.chk_negate"))
         self.form = QFormLayout()
         self.form.addRow(tr("action_editor.lbl_type"), self.kind)
         self._rows = {"player": self.player, "building": self.building, "x": self.x, "y": self.y,
                       "compare": self.compare, "value": self.value, "resource": self.resource,
-                      "tech_id": self.tech_id}
+                      "tech_id": self.tech_id, "var_name": self.var_name}
         labels = {"player": tr("action_editor.lbl_player"), "building": tr("action_editor.lbl_building"),
                   "x": tr("action_editor.lbl_x"), "y": tr("action_editor.lbl_y"),
                   "compare": tr("action_editor.lbl_compare"), "value": tr("action_editor.lbl_value"),
-                  "resource": tr("action_editor.lbl_resource"), "tech_id": tr("action_editor.lbl_tech_id")}
+                  "resource": tr("action_editor.lbl_resource"), "tech_id": tr("action_editor.lbl_tech_id"),
+                  "var_name": tr("action_editor.lbl_var_name")}
         for k, w in self._rows.items():
             self.form.addRow(labels[k], w)
         self.form.addRow("", self.negate)
@@ -77,6 +82,10 @@ class ConditionEditDialog(QDialog):
         self.resource.setCurrentText({v: k for k, v in RESOURCES.items()}.get(c.resource, "Common Ore"))
         self.tech_id.setValue(c.tech_id)
         self.negate.setChecked(c.negate)
+        vn = getattr(c, 'var_name', '') or ''
+        i = self.var_name.findData(vn)
+        if i >= 0:
+            self.var_name.setCurrentIndex(i)
 
     def result(self):
         return ActionCondition(
@@ -84,7 +93,8 @@ class ConditionEditDialog(QDialog):
             negate=self.negate.isChecked(), player=self.player.value(),
             building_type=self.building.currentData(), x=self.x.value(), y=self.y.value(),
             compare=COMPARE[self.compare.currentText()], value=self.value.value(),
-            resource=RESOURCES[self.resource.currentText()], tech_id=self.tech_id.value())
+            resource=RESOURCES[self.resource.currentText()], tech_id=self.tech_id.value(),
+            var_name=self.var_name.currentData() or "")
 
 
 class ActionEditDialog(QDialog):
@@ -126,15 +136,6 @@ class ActionEditDialog(QDialog):
         for d, m, _ in WALL_ITEMS:
             if m != "mapTube":
                 self.wall.addItem(d, m)
-        self.mining_group = QComboBox()
-        for g in ctx["mining_groups"]:
-            self.mining_group.addItem(f"{g.name} [MiningGroup]", g.name)
-        self.ore = QComboBox(); fill_combo(self.ore, MINING_OPERATION_ORES, "mining_ores")
-        self.rect_x = QSpinBox(); self.rect_x.setRange(0, 1023)
-        self.rect_y = QSpinBox(); self.rect_y.setRange(0, 1023)
-        self.rect_w = QSpinBox(); self.rect_w.setRange(1, 256); self.rect_w.setValue(4)
-        self.rect_h = QSpinBox(); self.rect_h.setRange(1, 256); self.rect_h.setValue(4)
-        self.truck_count = QSpinBox(); self.truck_count.setRange(0, 50)
         self.target_group = QComboBox()
         for g in ctx["target_groups"]:
             self.target_group.addItem(f"{g.name} [{ctx['target_group_types'].get(g.name, 'BuildingGroup')}]", g.name)
@@ -144,10 +145,22 @@ class ActionEditDialog(QDialog):
             self.source_group.addItem(f"{g.name} [ReinforceGroup]", g.name)
         self.vehicle = QComboBox()
         self.priority = QSpinBox(); self.priority.setRange(1, 65535); self.priority.setValue(1000)
-        self.target_count = QSpinBox(); self.target_count.setRange(0, 1000); self.target_count.setValue(1)
+        diff_values = ctx.get("diff_values")
+        self.target_count = ExprEdit(diff_values=diff_values)
+        self.target_count.setValue(1)
         self.assign_group = QComboBox()
         for name, gtype in ctx["all_groups"]:
             self.assign_group.addItem(f"{name} [{gtype}]", name)
+        # modVar: Variable aendern
+        self.var_name = QComboBox()
+        for v in ctx.get("variables", []):
+            self.var_name.addItem(v.name, v.name)
+        self.mod_mode = QComboBox()
+        self.mod_mode.addItem("+1 (Inkrementieren)", "inc")
+        self.mod_mode.addItem("-1 (Dekrementieren)", "dec")
+        self.mod_mode.addItem("Ausdruck …", "expr")
+        self.mod_mode.currentIndexChanged.connect(self._update)
+        self.var_expr = ExprEdit(diff_values=diff_values)
 
         self.form = QFormLayout()
         self.form.addRow(tr("action_editor.lbl_action_type"), self.kind)
@@ -155,11 +168,10 @@ class ActionEditDialog(QDialog):
             "text": self.text, "unit": self.unit, "weapon": self.weapon, "x": self.x, "y": self.y,
             "x2": self.x2, "y2": self.y2, "player": self.player, "target": self.target,
             "group": self.group, "building": self.building, "wall": self.wall,
-            "mining_group": self.mining_group, "ore": self.ore, "rect_x": self.rect_x,
-            "rect_y": self.rect_y, "rect_w": self.rect_w, "rect_h": self.rect_h,
-            "truck_count": self.truck_count, "target_group": self.target_group,
+            "target_group": self.target_group,
             "source_group": self.source_group, "vehicle": self.vehicle, "priority": self.priority,
             "target_count": self.target_count, "assign_group": self.assign_group,
+            "var_name": self.var_name, "mod_mode": self.mod_mode, "var_expr": self.var_expr,
         }
         labels = {"text": tr("action_editor.lbl_text"), "unit": tr("action_editor.lbl_unit"),
                   "weapon": tr("action_editor.lbl_weapon_cargo"), "x": tr("action_editor.lbl_x"),
@@ -167,16 +179,27 @@ class ActionEditDialog(QDialog):
                   "y2": tr("action_editor.lbl_y2"), "player": tr("action_editor.lbl_player"),
                   "target": tr("action_editor.lbl_target_trigger"), "group": "BuildingGroup:",
                   "building": tr("action_editor.lbl_building"), "wall": "Wall:",
-                  "mining_group": "MiningGroup:", "ore": tr("action_editor.lbl_ore"),
-                  "rect_x": tr("action_editor.lbl_rect_x"), "rect_y": tr("action_editor.lbl_rect_y"),
-                  "rect_w": tr("action_editor.lbl_rect_width"), "rect_h": tr("action_editor.lbl_rect_height"),
-                  "truck_count": tr("action_editor.lbl_truck_count"),
                   "target_group": tr("action_editor.lbl_target_group"), "source_group": "ReinforceGroup:",
                   "vehicle": tr("action_editor.lbl_vehicle"), "priority": tr("action_editor.lbl_priority"),
                   "target_count": tr("action_editor.lbl_target_count"),
-                  "assign_group": tr("action_editor.lbl_target_group")}
+                  "assign_group": tr("action_editor.lbl_target_group"),
+                  "var_name": tr("action_editor.lbl_var_name"),
+                  "mod_mode": tr("action_editor.lbl_mod_mode"),
+                  "var_expr": tr("action_editor.lbl_var_expr")}
         for k, w in self._rows.items():
             self.form.addRow(labels[k], w)
+        # "Auf Karte setzen"-Knoepfe: einmal pro Koordinaten-Gruppe.
+        # Klick speichert den Dialog mit `self.pick_field` und schliesst ihn;
+        # die ActionCard reicht das ueber ctx['on_map_pick'] hoch, der
+        # TriggersDialog laesst den Editor die Map-Auswahl durchfuehren und
+        # oeffnet den Trigger-Dialog danach wieder.
+        self.pick_field: str | None = None
+        self.pick_xy_btn = QPushButton("📍 X / Y auf Karte setzen")
+        self.pick_xy_btn.clicked.connect(lambda: self._request_pick("primary"))
+        self.pick_xy2_btn = QPushButton("📍 X2 / Y2 auf Karte setzen")
+        self.pick_xy2_btn.clicked.connect(lambda: self._request_pick("secondary"))
+        self.form.addRow("", self.pick_xy_btn)
+        self.form.addRow("", self.pick_xy2_btn)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
         lay = QVBoxLayout(self); lay.addLayout(self.form); lay.addWidget(btns)
@@ -197,9 +220,8 @@ class ActionEditDialog(QDialog):
         "recordTube": ["group", "x", "y", "x2", "y2"],
         "recordWall": ["group", "wall", "x", "y", "x2", "y2"],
         "setTargCount": ["target_group", "source_group", "vehicle", "priority", "target_count"],
-        "startMiningOperation": ["group", "mining_group", "ore", "x", "y", "x2", "y2",
-                                 "rect_x", "rect_y", "rect_w", "rect_h", "truck_count"],
         "assignToGroup": ["assign_group", "building", "x", "y", "player"],
+        "modVar": ["var_name", "mod_mode", "var_expr"],
     }
 
     def _current_kind(self):
@@ -210,11 +232,56 @@ class ActionEditDialog(QDialog):
         if i >= 0:
             self.kind.setCurrentIndex(i)
 
+    # Pro Aktionstyp die kontextuellen Labels.
+    # Per action kind: contextual labels for the coordinate fields.
+    _LABEL_OVERRIDES = {
+        "recordTube": {
+            "x": "Start X:", "y": "Start Y:", "x2": "Ende X:", "y2": "Ende Y:",
+        },
+        "recordWall": {
+            "x": "Start X:", "y": "Start Y:", "x2": "Ende X:", "y2": "Ende Y:",
+        },
+    }
+
+    def _apply_labels(self, kind):
+        """Setzt die Form-Labels passend zur Aktion."""
+        overrides = self._LABEL_OVERRIDES.get(kind, {})
+        defaults = {
+            "x": tr("action_editor.lbl_x"), "y": tr("action_editor.lbl_y"),
+            "x2": tr("action_editor.lbl_x2"), "y2": tr("action_editor.lbl_y2"),
+        }
+        for key, default in defaults.items():
+            widget = self._rows.get(key)
+            if widget is None:
+                continue
+            label = self.form.labelForField(widget)
+            if label is not None:
+                label.setText(overrides.get(key, default))
+        if kind in ("recordTube", "recordWall"):
+            self.pick_xy_btn.setText("📍 Startpunkt auf Karte setzen")
+            self.pick_xy2_btn.setText("📍 Endpunkt auf Karte setzen")
+        else:
+            self.pick_xy_btn.setText("📍 X / Y auf Karte setzen")
+            self.pick_xy2_btn.setText("📍 X2 / Y2 auf Karte setzen")
+
     def _update(self):
-        fields = self._VIS.get(self._current_kind(), [])
+        kind = self._current_kind()
+        fields = self._VIS.get(kind, [])
         for k, w in self._rows.items():
             self.form.setRowVisible(w, k in fields)
+        # var_expr nur sichtbar wenn modVar + Modus "Ausdruck"
+        if kind == "modVar":
+            self.form.setRowVisible(self.var_expr, self.mod_mode.currentData() == "expr")
+        self._apply_labels(kind)
+        # Pick-Knoepfe nur anbieten wenn die Aktion die Felder ueberhaupt nutzt.
+        self.form.setRowVisible(self.pick_xy_btn,  ("x" in fields) and ("y" in fields))
+        self.form.setRowVisible(self.pick_xy2_btn, ("x2" in fields) and ("y2" in fields))
         self._update_vehicles()
+
+    def _request_pick(self, field: str):
+        """Markiert das gewuenschte Pick-Feld und schliesst den Dialog mit Accept."""
+        self.pick_field = field
+        self.accept()
 
     def _update_vehicles(self):
         gname = self.target_group.currentData()
@@ -249,15 +316,19 @@ class ActionEditDialog(QDialog):
         self._set_combo(self.target_group, a.group_name)
         self._set_combo(self.building, a.building_type)
         self._set_combo(self.wall, a.wall_type)
-        self._set_combo(self.mining_group, a.mining_group_name)
         self._set_combo(self.source_group, a.source_group_name)
         self._update_vehicles()
         self._set_combo(self.vehicle, a.unit_type)
-        self.priority.setValue(a.reinforce_priority); self.target_count.setValue(a.target_count)
-        self.truck_count.setValue(getattr(a, "truck_count", 0))
-        ol = {v: k for k, v in MINING_OPERATION_ORES.items()}.get(a.ore_type)
-        if ol:
-            self.ore.setCurrentIndex(self.ore.findData(ol))
+        self.priority.setValue(a.reinforce_priority)
+        self.target_count.setValue(a.target_count)
+        # modVar
+        vn = getattr(a, 'var_name', '') or ''
+        i = self.var_name.findData(vn)
+        if i >= 0: self.var_name.setCurrentIndex(i)
+        mm = getattr(a, 'mod_mode', 'inc') or 'inc'
+        j = self.mod_mode.findData(mm)
+        if j >= 0: self.mod_mode.setCurrentIndex(j)
+        self.var_expr.setValue(getattr(a, 'var_expr', '') or '')
 
     def result(self):
         k = self._current_kind()
@@ -285,18 +356,15 @@ class ActionEditDialog(QDialog):
                                  source_group_name=self.source_group.currentData(),
                                  unit_type=self.vehicle.currentData(), weapon_type="mapNone",
                                  reinforce_priority=self.priority.value(), target_count=self.target_count.value())
-        if k == "startMiningOperation":
-            return TriggerAction(kind="startMiningOperation", group_name=self.group.currentData(),
-                                 mining_group_name=self.mining_group.currentData(),
-                                 ore_type=MINING_OPERATION_ORES[self.ore.currentData()],
-                                 truck_count=self.truck_count.value(),
-                                 x=self.x.value(), y=self.y.value(), x2=self.x2.value(), y2=self.y2.value(),
-                                 rect_x=self.rect_x.value(), rect_y=self.rect_y.value(),
-                                 rect_width=self.rect_w.value(), rect_height=self.rect_h.value())
         if k == "assignToGroup":
             return TriggerAction(kind="assignToGroup", group_name=self.assign_group.currentData(),
                                  building_type=self.building.currentData(),
                                  x=self.x.value(), y=self.y.value(), player=self.player.value())
+        if k == "modVar":
+            return TriggerAction(kind="modVar",
+                                 var_name=self.var_name.currentData() or "",
+                                 mod_mode=self.mod_mode.currentData() or "inc",
+                                 var_expr=self.var_expr.text())
         return TriggerAction(kind="noop")
 
 
@@ -305,9 +373,10 @@ class ConditionListWidget(QWidget):
 
     When-block: list of conditions plus their AND/OR logic link.
     """
-    def __init__(self, if_action):
+    def __init__(self, if_action, ctx=None):
         super().__init__()
         self.a = if_action
+        self.ctx = ctx or {}
         self.box = QVBoxLayout(self); self.box.setContentsMargins(0, 0, 0, 0)
         self.rebuild()
 
@@ -336,13 +405,17 @@ class ConditionListWidget(QWidget):
         self.a.condition_logic = "or" if idx == 1 else "and"
 
     def _add(self):
-        dlg = ConditionEditDialog(self)
+        dlg = ConditionEditDialog(self,
+                                  variables=self.ctx.get("variables"),
+                                  diff_values=self.ctx.get("diff_values"))
         if dlg.exec() == QDialog.Accepted:
             self.a.conditions.append(dlg.result())
             self.rebuild()
 
     def _edit(self, c):
-        dlg = ConditionEditDialog(self, c)
+        dlg = ConditionEditDialog(self, c,
+                                  variables=self.ctx.get("variables"),
+                                  diff_values=self.ctx.get("diff_values"))
         if dlg.exec() == QDialog.Accepted:
             self.a.conditions[self.a.conditions.index(c)] = dlg.result()
             self.rebuild()
@@ -392,8 +465,12 @@ class ActionListWidget(QWidget):
         else:
             dlg = ActionEditDialog(self, self.ctx, fixed_kind=k)
             if dlg.exec() == QDialog.Accepted:
-                self.actions.append(dlg.result())
+                new_action = dlg.result()
+                self.actions.append(new_action)
                 self.rebuild()
+                cb = self.ctx.get("on_map_pick") if isinstance(self.ctx, dict) else None
+                if dlg.pick_field and callable(cb):
+                    cb(new_action, dlg.pick_field)
 
     def _remove(self, a):
         self.actions.remove(a)
@@ -441,7 +518,7 @@ class ActionCard(QFrame):
 
         if action.kind == "if":
             lay.addWidget(QLabel(tr("action_editor.lbl_if")))
-            lay.addWidget(ConditionListWidget(action))
+            lay.addWidget(ConditionListWidget(action, ctx=ctx))
             lay.addWidget(QLabel(tr("action_editor.lbl_then")))
             lay.addWidget(ActionListWidget(action.then_actions, ctx))
             lay.addWidget(QLabel(tr("action_editor.lbl_else")))
@@ -450,4 +527,9 @@ class ActionCard(QFrame):
     def _edit(self):
         dlg = ActionEditDialog(self, self.ctx, action=self.a)
         if dlg.exec() == QDialog.Accepted:
-            self.parent_list._replace(self.a, dlg.result())
+            new_action = dlg.result()
+            self.parent_list._replace(self.a, new_action)
+            # Map-Pick angefordert? Den Roundtrip uebergeben wir an ctx['on_map_pick'].
+            cb = self.ctx.get("on_map_pick") if isinstance(self.ctx, dict) else None
+            if dlg.pick_field and callable(cb):
+                cb(new_action, dlg.pick_field)

@@ -13,7 +13,37 @@ Recent changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 2. The **code generator** (`codegen/`) turns the mission model into a `.cpp` file.
 3. **CMake / MSVC (VS2026)** compiles the `.cpp` into a 32-bit DLL that Outpost 2 loads directly.
 
-> Note: Phase 1 of the TitanAPI migration produces a working scaffold (CMakeLists.txt + mission.cpp stub from the TitanAPI Template sample). The editor's code generator still emits legacy SDK code, so the generated `mission.cpp` will currently fall back to a Template-style stub. Porting the codegen is the next step.
+## Editor UI
+
+The main window has two side docks around the central map view.
+
+### Left Dock — Placement Panel
+
+Select what to place on the map:
+
+- **Category** — Buildings · Vehicles · Beacons & Walls
+- **Unit list** — all placeable types with their tile footprint
+- **Player** — which player (0–5) owns the object
+- **Unit name** — optional scripting reference (e.g. `mainSmelter`)
+- **Context parameters** that appear depending on the selected type:
+  - *Cargo Truck* — cargo type (ore, food, metal, empty) + amount
+  - *ConVec* — building kit (which structure it carries)
+  - *Mining Beacon* — ore type (random / common / rare) and yield tier (Bar 1–3)
+  - *Combat vehicles & Guard Post* — weapon type
+
+Left-click on the map places the object. Right-click removes an existing object. Middle-drag pans the map; mouse wheel zooms.
+
+### Right Dock — Mission Overview
+
+Live summary of the whole mission, updated after every edit:
+
+- **Flow / Triggers** — all triggers in execution order with flow arrows (⟶) and cycle detection; double-click to jump to the trigger editor
+- **Players** — one line per player (colony, type, tech level)
+- **Groups** — BuildingGroups and ReinforceGroups
+- **Victory / Defeat** — all win/loss conditions at a glance
+- **Objects** — total count of placed units, buildings, beacons and walls
+
+Double-clicking any item in the overview opens its respective editor dialog directly.
 
 ## Repository layout
 

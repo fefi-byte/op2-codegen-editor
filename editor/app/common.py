@@ -30,8 +30,8 @@ from PySide6.QtWidgets import (
     QFileDialog, QFormLayout, QGraphicsRectItem, QGraphicsScene,
     QGraphicsSimpleTextItem, QGraphicsView, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
-    QProgressDialog, QPushButton, QSpinBox, QTabWidget, QToolBar, QTreeWidget,
-    QTreeWidgetItem, QVBoxLayout, QWidget,
+    QProgressDialog, QPushButton, QSpinBox, QTabWidget, QTableWidget, QTableWidgetItem,
+    QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
     QGraphicsItem, QGraphicsPathItem, QGraphicsEllipseItem, QMenu, QFrame, QScrollArea,
 )
 from PySide6.QtGui import QFont, QPainterPath, QPolygonF, QCursor
@@ -48,9 +48,9 @@ from . import i18n
 import build as build_mod
 from codegen import generate_levelmain
 from mission_model import (
-    ActionCondition, BeaconSpec, BuildingGroupSpec, Colony, Condition, MiningGroupSpec,
-    Mission, MissionType, PlayerSpec, ReinforceGroupSpec, ReinforceTargetSpec,
-    StartMessage, TriggerAction, TriggerDef, UnitSpec, WallTubeSpec, action_from_dict,
+    ActionCondition, BeaconSpec, BuildingGroupSpec, Colony, Condition, DifficultySetup,
+    FindUnitCheck, Mission, MissionType, PlayerSpec, ReinforceGroupSpec, ReinforceTargetSpec,
+    StartMessage, TriggerAction, TriggerDef, UnitSpec, VariableDef, WallTubeSpec, action_from_dict,
 )
 from techs import load_techs
 
@@ -168,10 +168,25 @@ MILITARY_VEHICLES = [
     (d, m) for d, m, _ in VEHICLES
     if m in ("mapLynx", "mapPanther", "mapTiger")
 ]
+# BuildingGroup darf alle Builder-Einheiten produzieren -- nicht nur ConVec.
+# Damit kann setTargCount auf einer BuildingGroup einen RoboMiner anfordern,
+# der dann die Mine baut (typischer OP2-Flow ueber Vehicle Factory + ConVec).
+BUILDING_GROUP_VEHICLES = [
+    ("ConVec",        "mapConVec"),
+    ("Robo-Miner",    "mapRoboMiner"),
+    ("Robo-Surveyor", "mapRoboSurveyor"),
+    ("Robo-Dozer",    "mapRoboDozer"),
+    ("Earthworker",   "mapEarthworker"),
+    ("Repair Vehicle","mapRepairVehicle"),
+    ("Cargo Truck",   "mapCargoTruck"),
+    ("Scout",         "mapScout"),
+]
+# ReinforceGroup ist eine BuildingGroup mit Vehicle Factories; sie reicht
+# alle Builder + Combat-Units fuer Reinforcement weiter.
+REINFORCE_GROUP_VEHICLES = BUILDING_GROUP_VEHICLES + MILITARY_VEHICLES
 SET_TARG_VEHICLES_BY_GROUP_TYPE = {
-    "MiningGroup": [("Cargo Truck", "mapCargoTruck")],
-    "BuildingGroup": [("ConVec", "mapConVec")],
-    "ReinforceGroup": [],
+    "BuildingGroup": BUILDING_GROUP_VEHICLES,
+    "ReinforceGroup": REINFORCE_GROUP_VEHICLES,
     "FightGroup": MILITARY_VEHICLES,
 }
 STRUCTURE_FOOTPRINTS = {mid: fp for _, mid, fp in STRUCTURES}
@@ -236,6 +251,10 @@ TRIGGER_CONDITIONS = {
     "Technologie erforscht": ("research", ["player", "tech_id"]),
     "Ressource erreicht": ("resource", ["player", "resource", "amount", "compare"]),
     "Gebäude operativ": ("operational", ["player", "building", "count", "compare"]),
+    # findUnit: pollt mehrere Tiles auf einsatzbereite (enabled) Einheiten;
+    # alle Eintraege werden UND-verknuepft. Die Eintragsliste hat eine eigene
+    # UI-Sektion im Trigger-Dialog ("unit_checks").
+    "Einheit(en) an Position(en) bereit": ("findUnit", ["unit_checks"]),
 }
 ACTION_KINDS = {
     "Leere Aktion (Platzhalter)": "noop",
@@ -247,16 +266,8 @@ ACTION_KINDS = {
     "RecordTube-Linie": "recordTube",
     "RecordWall-Linie": "recordWall",
     "SetTargCount": "setTargCount",
-    "StartMiningOperation": "startMiningOperation",
     "Gebäude einer Gruppe zuweisen": "assignToGroup",
-}
-MINING_OPERATION_ORES = {
-    "Common": "common",
-    "Rare": "rare",
-}
-MINING_OPERATION_TYPES = {
-    "common": ("mapCommonOreMine", "mapCommonOreSmelter"),
-    "rare": ("mapRareOreMine", "mapRareOreSmelter"),
+    "Variable ändern": "modVar",
 }
 
 
@@ -268,6 +279,7 @@ ACTION_CONDITION_KINDS = {
     "Spieler-Ressource": ("playerResource", ["player", "resource", "compare", "value"]),
     "Gebäude-Anzahl": ("buildingCount", ["player", "building", "compare", "value"]),
     "Technologie erforscht": ("hasTech", ["player", "tech_id"]),
+    "Variable prüfen": ("varCheck", ["var_name", "compare", "value"]),
 }
 
 
@@ -292,6 +304,9 @@ def action_condition_summary(c) -> str:
         return tr("sum.cond_count", neg=neg, b=c.building_type, cmp=cmp, v=c.value, p=c.player)
     if c.kind == "hasTech":
         return tr("sum.cond_tech", neg=neg, tech=c.tech_id, p=c.player)
+    if c.kind == "varCheck":
+        var = getattr(c, 'var_name', '') or '?'
+        return f"{neg}{var} {cmp} {c.value}"
     return c.kind
 
 
@@ -338,14 +353,17 @@ def _action_summary_core(a) -> str:
         weapon = "" if a.weapon_type == "mapNone" else f", {a.weapon_type}"
         source = f" via {a.source_group_name} P{a.reinforce_priority}" if a.source_group_name else ""
         return f"{a.group_name}.SetTargCount({a.unit_type}{weapon}) = {a.target_count}{source}"
-    if a.kind == "startMiningOperation":
-        ore = "Rare" if a.ore_type == "rare" else "Common"
-        mining_group = a.mining_group_name or "MiningGroup?"
-        return (f"{mining_group}.StartMiningOperation({ore}, Builder {a.group_name}) "
-                f"Mine ({a.x},{a.y}) -> Smelter ({a.x2},{a.y2}), "
-                f"Rect ({a.rect_x},{a.rect_y}) {a.rect_width}x{a.rect_height}")
     if a.kind == "assignToGroup":
         return tr("sum.act_assign", b=a.building_type, x=a.x, y=a.y, g=a.group_name, p=a.player)
+    if a.kind == "modVar":
+        var = getattr(a, 'var_name', '') or '?'
+        mode = getattr(a, 'mod_mode', 'inc') or 'inc'
+        if mode == 'inc':
+            return f"{var} +1"
+        if mode == 'dec':
+            return f"{var} −1"
+        expr = getattr(a, 'var_expr', '') or '…'
+        return f"{var} = {expr}"
     return a.kind
 
 
@@ -378,17 +396,6 @@ def condition_summary(c: Condition) -> str:
     return k
 
 
-def mining_group_summary(g: MiningGroupSpec) -> str:
-    """Bildet eine Mining-Gruppe auf ein lesbares Listenlabel ab.
-
-    Maps a mining group to a human-readable list label.
-    """
-    if not getattr(g, "has_setup", True):
-        return tr("sum.group_mining_empty", name=g.name, p=g.player, n=len(g.truck_ids))
-    return tr("sum.group_mining", name=g.name, p=g.player, mx=g.mine_x, my=g.mine_y,
-              sx=g.smelter_x, sy=g.smelter_y, n=len(g.truck_ids))
-
-
 def building_group_summary(g: BuildingGroupSpec) -> str:
     """Bildet eine Gebaeude-Gruppe auf ein lesbares Listenlabel ab.
 
@@ -404,4 +411,79 @@ def reinforce_group_summary(g: ReinforceGroupSpec) -> str:
     Maps a reinforce group to a human-readable list label.
     """
     return tr("sum.group_reinforce", name=g.name, p=g.player, f=len(g.unit_ids), t=len(g.targets))
+
+
+class ExprEdit(QWidget):
+    """Zahlenfeld das Integer oder C++-Ausdruck akzeptiert.
+
+    Zeigt eine Vorschau 'Hard: X · Normal: Y · Easy: Z' wenn 'diff' im
+    Text vorkommt und diff_values gesetzt ist.
+    """
+    valueChanged = Signal(object)
+
+    def __init__(self, parent=None, diff_values=None):
+        super().__init__(parent)
+        self._diff = diff_values  # (hard, normal, easy) oder None
+
+        self._edit = QLineEdit()
+        self._preview = QLabel()
+        self._preview.setStyleSheet("color: gray; font-size: 9pt;")
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(1)
+        lay.addWidget(self._edit)
+        lay.addWidget(self._preview)
+        self._preview.setVisible(False)
+
+        self._edit.textChanged.connect(self._on_changed)
+
+    def set_diff_values(self, hard, normal, easy):
+        self._diff = (hard, normal, easy)
+        self._on_changed(self._edit.text())
+
+    def _on_changed(self, text=""):
+        text = self._edit.text().strip()
+        self._update_preview(text)
+        self.valueChanged.emit(self.value())
+
+    def _update_preview(self, text):
+        if not self._diff or 'diff' not in text:
+            self._preview.setVisible(False)
+            return
+        import math
+        safe_locals = {"ceil": math.ceil, "floor": math.floor,
+                       "round": round, "abs": abs, "max": max, "min": min}
+        labels = ('Hard', 'Normal', 'Easy')
+        parts = []
+        for label, dv in zip(labels, self._diff):
+            try:
+                val = eval(text.replace('diff', str(dv)), {"__builtins__": {}}, safe_locals)
+                parts.append(f"{label}: {int(val)}")
+            except Exception:
+                parts.append(f"{label}: ?")
+        self._preview.setText("  ·  ".join(parts))
+        self._preview.setVisible(True)
+
+    def setValue(self, v):
+        if v is None:
+            self._edit.setText("")
+        else:
+            self._edit.setText(str(v))
+
+    def value(self):
+        """Gibt int zurueck wenn reiner Integer, sonst str."""
+        text = self._edit.text().strip()
+        if not text:
+            return 0
+        try:
+            return int(text)
+        except ValueError:
+            return text
+
+    def text(self):
+        return self._edit.text().strip()
+
+    def setPlaceholderText(self, t):
+        self._edit.setPlaceholderText(t)
 

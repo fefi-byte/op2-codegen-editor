@@ -7,11 +7,15 @@ class PlayersDialog(QDialog):
 
     EN: Manage players: colony, human/AI, tech level, colonists, researches.
     """
-    def __init__(self, parent, players):
+    def __init__(self, parent, players, diff_setup=None):
         super().__init__(parent)
         self.setWindowTitle(tr("players.title"))
         self.resize(640, 480)
         self.players = [PlayerSpec(**asdict(p)) for p in players] or [PlayerSpec()]
+        self._diff_values = (
+            (diff_setup.hard, diff_setup.normal, diff_setup.easy)
+            if diff_setup else None
+        )
         self._idx = 0
         self._loading = False
         self.all_techs = load_techs(TECHS_DIR / "multitek.txt")  # (id, name), sortiert
@@ -33,9 +37,11 @@ class PlayersDialog(QDialog):
         self.scientists = QSpinBox(); self.scientists.setRange(0, 5000)
         self.kids = QSpinBox(); self.kids.setRange(0, 5000)
         self.set_res = QCheckBox(tr("players.set_resources"))
-        self.common = QSpinBox(); self.common.setRange(0, 1000000)
-        self.rare = QSpinBox(); self.rare.setRange(0, 1000000)
-        self.food = QSpinBox(); self.food.setRange(0, 1000000)
+        self.common = ExprEdit(diff_values=self._diff_values)
+        self.common.setPlaceholderText("z.B. 2500 oder 2500 * diff / 10")
+        self.rare = ExprEdit(diff_values=self._diff_values)
+        self.rare.setPlaceholderText("z.B. 1000 oder ceil(1000 * diff / 10)")
+        self.food = ExprEdit(diff_values=self._diff_values)
 
         # Forschungen: Auswahl per Name + "Tech hinzufügen" + Liste
         # EN: Researches: selection by name + "Add tech" + list
@@ -70,8 +76,9 @@ class PlayersDialog(QDialog):
         # EN: on every change, write into the current player
         for w in (self.colony, self.ptype):
             w.currentIndexChanged.connect(self._store_current)
-        for w in (self.workers, self.scientists, self.kids,
-                  self.common, self.rare, self.food):
+        for w in (self.workers, self.scientists, self.kids):
+            w.valueChanged.connect(self._store_current)
+        for w in (self.common, self.rare, self.food):
             w.valueChanged.connect(self._store_current)
         for w in (self.init_res, self.set_pop, self.set_res):
             w.toggled.connect(self._store_current)
@@ -123,9 +130,9 @@ class PlayersDialog(QDialog):
         self.scientists.setValue(p.scientists or 0)
         self.kids.setValue(p.kids or 0)
         self.set_res.setChecked(p.common_ore is not None or p.rare_ore is not None or p.food is not None)
-        self.common.setValue(p.common_ore or 0)
-        self.rare.setValue(p.rare_ore or 0)
-        self.food.setValue(p.food or 0)
+        self.common.setValue(p.common_ore if p.common_ore is not None else 0)
+        self.rare.setValue(p.rare_ore if p.rare_ore is not None else 0)
+        self.food.setValue(p.food if p.food is not None else 0)
         self._loading = False
         self._refresh_tech_avail(p.tech_level)
         self._refresh_research_list()
@@ -144,7 +151,7 @@ class PlayersDialog(QDialog):
             workers=self.workers.value() if self.set_pop.isChecked() else None,
             scientists=self.scientists.value() if self.set_pop.isChecked() else None,
             kids=self.kids.value() if self.set_pop.isChecked() else None,
-            common_ore=self.common.value() if self.set_res.isChecked() else None,
+            common_ore=self.common.value() if self.set_res.isChecked() else None,  # int | str
             rare_ore=self.rare.value() if self.set_res.isChecked() else None,
             food=self.food.value() if self.set_res.isChecked() else None,
             researches=researches,

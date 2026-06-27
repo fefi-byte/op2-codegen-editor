@@ -37,6 +37,28 @@ class Colony(IntEnum):
 
 
 @dataclass
+class DifficultySetup:
+    """Schwierigkeits-Multiplikatoren fuer drei Stufen.
+
+    Difficulty multipliers for three levels.
+    """
+    hard: int = 13
+    normal: int = 10
+    easy: int = 5
+
+
+@dataclass
+class VariableDef:
+    """Eine benutzerdefinierte Skript-Variable.
+
+    A user-defined script variable.
+    """
+    name: str
+    var_type: str = "int"     # "int" | "bool"
+    initial_value: int = 0
+
+
+@dataclass
 class PlayerSpec:
     """Konfiguration eines Spielers.
 
@@ -54,11 +76,11 @@ class PlayerSpec:
     kids: int | None = None
     workers: int | None = None
     scientists: int | None = None
-    # Ressourcen (None = nicht explizit setzen)
-    # Resources (None = do not set explicitly)
-    common_ore: int | None = None
-    rare_ore: int | None = None
-    food: int | None = None
+    # Ressourcen (None = nicht explizit setzen; str = Ausdruck mit 'diff')
+    # Resources (None = do not set explicitly; str = expression containing 'diff')
+    common_ore: int | str | None = None
+    rare_ore: int | str | None = None
+    food: int | str | None = None
     # Einzelne Vorab-Forschungen (Tech-IDs) zusaetzlich zu tech_level
     # Individual pre-researches (tech IDs) in addition to tech_level
     researches: list[int] = field(default_factory=list)
@@ -100,11 +122,15 @@ def action_from_dict(d: dict) -> "TriggerAction":
     """Baut eine TriggerAction rekursiv aus einem Dict (inkl. Bedingungen + then/else).
 
     Builds a TriggerAction recursively from a dict (incl. conditions + then/else).
+    Unknown keys (e.g. from older save files) are silently dropped.
     """
+    import dataclasses
     d = dict(d)
     conds = [ActionCondition(**c) for c in d.pop("conditions", [])]
     then = [action_from_dict(a) for a in d.pop("then_actions", [])]
     els = [action_from_dict(a) for a in d.pop("else_actions", [])]
+    valid = {f.name for f in dataclasses.fields(TriggerAction)} - {"conditions", "then_actions", "else_actions"}
+    d = {k: v for k, v in d.items() if k in valid}
     return TriggerAction(conditions=conds, then_actions=then, else_actions=els, **d)
 
 
@@ -139,26 +165,6 @@ class WallTubeSpec:
 
 
 @dataclass
-class MiningGroupSpec:
-    """MiningGroup: Mine, Smelter-Bereich und optionale Cargo Trucks.
-
-    MiningGroup: mine, smelter area and optional cargo trucks.
-    """
-    name: str
-    player: int = 0
-    has_setup: bool = True
-    mine_x: int = 0
-    mine_y: int = 0
-    smelter_x: int = 0
-    smelter_y: int = 0
-    rect_x: int = 0
-    rect_y: int = 0
-    rect_width: int = 4
-    rect_height: int = 4
-    truck_ids: list[str] = field(default_factory=list)
-
-
-@dataclass
 class BuildingGroupSpec:
     """BuildingGroup: Builder-Einheiten und Standardbereich.
 
@@ -171,6 +177,7 @@ class BuildingGroupSpec:
     rect_width: int = 8
     rect_height: int = 8
     unit_ids: list[str] = field(default_factory=list)
+    folder: str = ""
 
 
 @dataclass
@@ -193,17 +200,18 @@ class ReinforceGroupSpec:
     player: int = 0
     unit_ids: list[str] = field(default_factory=list)
     targets: list[ReinforceTargetSpec] = field(default_factory=list)
+    folder: str = ""
 
 
 @dataclass
 class ActionCondition:
     """Eine IF-Bedingung, die eine einzelne Aktion gated (Home-Assistant-Stil).
 
-    kind: buildingAtLocation | unitDamage | playerResource | buildingCount | hasTech
+    kind: buildingAtLocation | unitDamage | playerResource | buildingCount | hasTech | varCheck
 
     An IF condition that gates a single action (Home Assistant style).
 
-    kind: buildingAtLocation | unitDamage | playerResource | buildingCount | hasTech
+    kind: buildingAtLocation | unitDamage | playerResource | buildingCount | hasTech | varCheck
     """
     kind: str
     negate: bool = False
@@ -212,9 +220,10 @@ class ActionCondition:
     x: int = 0
     y: int = 0
     compare: str = "cmpGreaterEqual"
-    value: int = 0
+    value: int | str = 0      # int oder Ausdruck (z.B. "5 * diff / 10")
     resource: str = "resCommonOre"
     tech_id: int = 0
+    var_name: str = ""        # fuer varCheck: Variable die geprueft wird
 
 
 @dataclass
@@ -223,53 +232,44 @@ class TriggerAction:
 
     An action inside the callback function of a trigger.
     """
-    kind: str                 # "message" | "createUnit" | "createTrigger" | "recordBuilding" | "recordTube" | "recordWall" | "setTargCount" | "startMiningOperation"
-                              # "message" | "createUnit" | "createTrigger" | "recordBuilding" | "recordTube" | "recordWall" | "setTargCount" | "startMiningOperation"
-    text: str = ""            # message
-                              # message
-    unit_type: str = "mapScout"   # createUnit
-                                  # createUnit
-    weapon_type: str = "mapNone"  # createUnit / SetTargCount
-                                  # createUnit / SetTargCount
-    target_count: int = 1      # SetTargCount
-                               # SetTargCount
+    kind: str                 # "message" | "createUnit" | "createTrigger" | "recordBuilding" | "recordTube" | "recordWall" | "setTargCount" | "assignToGroup" | "modVar"
+    text: str = ""
+    unit_type: str = "mapScout"
+    weapon_type: str = "mapNone"
+    target_count: int | str = 1   # int oder Ausdruck (z.B. "ceil(5 * diff / 10)")
     x: int = 0
     y: int = 0
     x2: int = 0
     y2: int = 0
-    rect_x: int = 0
-    rect_y: int = 0
-    rect_width: int = 8
-    rect_height: int = 8
     player: int = 0
     target: str = ""          # createTrigger -> Name eines anderen Triggers (Laufzeit-Erstellung)
-                              # createTrigger -> name of another trigger (runtime creation)
     group_name: str = ""      # BuildingGroup-Aktionen
-                              # BuildingGroup actions
-    mining_group_name: str = ""  # MiningGroup fuer StartMiningOperation
-                                 # MiningGroup for StartMiningOperation
     source_group_name: str = ""  # ReinforceGroup, die SetTargCount-Zielgruppe beliefert
-                                 # ReinforceGroup that supplies the SetTargCount target group
     reinforce_priority: int = 1000
-    ore_type: str = "common"
-    truck_count: int = 0      # StartMiningOperation: Ziel-Anzahl Transporter (0 = automatisch)
-                              # StartMiningOperation: target number of trucks (0 = automatic)
-    truck_ids: list[str] = field(default_factory=list)
     building_type: str = "mapCommandCenter"
     wall_type: str = "mapWall"
-    # IF-Bedingungen: Aktion laeuft nur, wenn erfuellt (UND/ODER verknuepft).
-    # IF conditions: action only runs when fulfilled (AND/OR combined).
-    # Bei kind == "if" sind dies die "Wenn"-Bedingungen des Blocks.
-    # For kind == "if" these are the "if" conditions of the block.
     conditions: list["ActionCondition"] = field(default_factory=list)
-    condition_logic: str = "and"   # "and" | "or"
-                                   # "and" | "or"
-    # Nur fuer kind == "if": verschachtelte Aktionen (rekursiv).
-    # Only for kind == "if": nested actions (recursive).
-    then_actions: list["TriggerAction"] = field(default_factory=list)  # Dann
-                                                                       # Then
-    else_actions: list["TriggerAction"] = field(default_factory=list)  # Sonst
-                                                                       # Else
+    condition_logic: str = "and"
+    then_actions: list["TriggerAction"] = field(default_factory=list)
+    else_actions: list["TriggerAction"] = field(default_factory=list)
+    # modVar: Variable modifizieren
+    var_name: str = ""        # Name der Variablen
+    mod_mode: str = "inc"     # "inc" (+1) | "dec" (-1) | "expr" (Ausdruck)
+    var_expr: str = ""        # Ausdruck fuer mod_mode=="expr"
+
+
+@dataclass
+class FindUnitCheck:
+    """Eine Position + erwarteter Unit-Typ fuer den `findUnit`-Trigger.
+
+    Im generierten Code uebersetzt sich jeder Check zu:
+        Unit b = GameMap::unitOnTile({x+1, y+1});
+        bool ready = b.isLive() && b.type() == MapID::<unit_type> && b.enabled();
+    Mehrere Checks innerhalb eines Triggers werden UND-verknuepft.
+    """
+    unit_type: str = "mapCommandCenter"
+    x: int = 0
+    y: int = 0
 
 
 @dataclass
@@ -287,26 +287,15 @@ class TriggerDef:
       research      -> player, tech_id
       resource      -> player, resource, amount, compare
       operational   -> player, building, count, compare
+      findUnit      -> unit_checks  (alle UND-verknuepft, `enabled()`-Check pro Eintrag)
 
     A user-defined trigger: condition + actions.
-
-    `enabled_at_start`: True -> created in InitProc; False -> only comes into
-    being when another trigger creates it via a createTrigger action (runtime).
-    `condition` selects the OP2 trigger function; fields used per condition:
-      time          -> marks
-      point         -> player, x, y
-      rect          -> player, x, y, width, height
-      buildingCount -> player, count, compare
-      vehicleCount  -> player, count, compare
-      research      -> player, tech_id
-      resource      -> player, resource, amount, compare
-      operational   -> player, building, count, compare
     """
     name: str
     enabled_at_start: bool = True
     one_shot: bool = True
     condition: str = "time"
-    marks: int = 100
+    marks: int | str = 100    # int oder Ausdruck (z.B. "600 * diff / 10")
     player: int = 0
     count: int = 1
     compare: str = "cmpGreaterEqual"
@@ -319,6 +308,8 @@ class TriggerDef:
     width: int = 1
     height: int = 1
     actions: list[TriggerAction] = field(default_factory=list)
+    unit_checks: list[FindUnitCheck] = field(default_factory=list)
+    folder: str = ""
 
 
 @dataclass
@@ -388,10 +379,11 @@ class Mission:
     units: list[UnitSpec] = field(default_factory=list)
     beacons: list[BeaconSpec] = field(default_factory=list)
     walls_tubes: list[WallTubeSpec] = field(default_factory=list)
-    mining_groups: list[MiningGroupSpec] = field(default_factory=list)
     building_groups: list[BuildingGroupSpec] = field(default_factory=list)
     reinforce_groups: list[ReinforceGroupSpec] = field(default_factory=list)
     triggers: list[TriggerDef] = field(default_factory=list)
     start_message: StartMessage | None = None
     victories: list[Condition] = field(default_factory=list)
     defeats: list[Condition] = field(default_factory=list)
+    difficulty: DifficultySetup = field(default_factory=DifficultySetup)
+    variables: list[VariableDef] = field(default_factory=list)

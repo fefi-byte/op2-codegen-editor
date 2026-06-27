@@ -1,18 +1,20 @@
 from __future__ import annotations
+import dataclasses
+from collections import defaultdict
 from ..common import *
 
 
 class GroupsDialog(QDialog):
-    """Gruppen verwalten: MiningGroup, BuildingGroup und ReinforceGroup.
+    """Gruppen verwalten: BuildingGroup und ReinforceGroup.
 
-    EN: Manage groups: MiningGroup, BuildingGroup and ReinforceGroup.
+    Gruppen koennen optional in benannte Ordner gruppiert werden (visuell,
+    kein Einfluss auf den generierten Code).
     """
-    def __init__(self, parent, mining_groups, building_groups, reinforce_groups, objects, player_count):
+    def __init__(self, parent, building_groups, reinforce_groups, objects, player_count):
         super().__init__(parent)
         self.setWindowTitle(tr("groups.window_title"))
         self.resize(880, 560)
         self.groups = (
-            [MiningGroupSpec(**asdict(g)) for g in mining_groups] +
             [BuildingGroupSpec(**asdict(g)) for g in building_groups] +
             [
                 ReinforceGroupSpec(
@@ -20,6 +22,7 @@ class GroupsDialog(QDialog):
                     player=g.player,
                     unit_ids=list(g.unit_ids),
                     targets=[ReinforceTargetSpec(**asdict(t)) for t in g.targets],
+                    folder=getattr(g, 'folder', ''),
                 )
                 for g in reinforce_groups
             ]
@@ -29,11 +32,6 @@ class GroupsDialog(QDialog):
         self._loading = False
         self.rect_pick_request: int | None = None
 
-        # Knotenpositionen / platzierte Objekte nach map_id fuer die Gruppen-Dropdowns auswaehlen.
-        # EN: Each comprehension selects placed objects by map_id to populate the group-type dropdowns.
-        self.mines = [o for o in self.objects if o.map_id in ("mapCommonOreMine", "mapRareOreMine")]
-        self.smelters = [o for o in self.objects if o.map_id in ("mapCommonOreSmelter", "mapRareOreSmelter")]
-        self.trucks = [o for o in self.objects if o.map_id == "mapCargoTruck"]
         self.builders = [
             o for o in self.objects
             if o.map_id in ("mapStructureFactory", "mapVehicleFactory", "mapConVec", "mapEarthworker")
@@ -43,21 +41,22 @@ class GroupsDialog(QDialog):
             if o.map_id in ("mapVehicleFactory", "mapArachnidFactory")
         ]
 
-        self.glist = QListWidget()
-        self.glist.currentRowChanged.connect(self._on_select)
-        add_mining = QPushButton(tr("groups.add_mining")); add_mining.clicked.connect(self._add_mining)
+        # --- Gruppen-Liste (QTreeWidget mit Ordner-Unterstützung) ---
+        self.glist = QTreeWidget()
+        self.glist.setHeaderHidden(True)
+        self.glist.currentItemChanged.connect(self._on_item_changed)
         add_building = QPushButton(tr("groups.add_building")); add_building.clicked.connect(self._add_building)
         add_reinforce = QPushButton(tr("groups.add_reinforce")); add_reinforce.clicked.connect(self._add_reinforce)
         rm = QPushButton(tr("groups.remove")); rm.clicked.connect(self._remove)
         left = QVBoxLayout()
         left.addWidget(QLabel(tr("groups.groups_label"))); left.addWidget(self.glist, 1)
-        left.addWidget(add_mining); left.addWidget(add_building); left.addWidget(add_reinforce); left.addWidget(rm)
+        left.addWidget(add_building); left.addWidget(add_reinforce); left.addWidget(rm)
 
         self.name = QLineEdit()
-        self.gtype = QComboBox(); self.gtype.addItems(["MiningGroup", "BuildingGroup", "ReinforceGroup"]); self.gtype.setEnabled(False)
+        self.folder = QLineEdit()
+        self.folder.setPlaceholderText(tr("groups.folder_placeholder"))
+        self.gtype = QComboBox(); self.gtype.addItems(["BuildingGroup", "ReinforceGroup"]); self.gtype.setEnabled(False)
         self.player = QSpinBox(); self.player.setRange(0, max(0, player_count - 1))
-        self.mine = QComboBox()
-        self.smelter = QComboBox()
         self.rect_x = QSpinBox(); self.rect_x.setRange(0, 1023)
         self.rect_y = QSpinBox(); self.rect_y.setRange(0, 1023)
         self.rect_w = QSpinBox(); self.rect_w.setRange(1, 256); self.rect_w.setValue(8)
@@ -70,15 +69,11 @@ class GroupsDialog(QDialog):
         self.target_text.setPlaceholderText(tr("groups.target_placeholder"))
         self.target_text.setMaximumHeight(120)
 
-        self._fill_object_combo(self.mine, self.mines)
-        self._fill_object_combo(self.smelter, self.smelters)
-
         self.form = QFormLayout()
         self.form.addRow(tr("groups.row_name"), self.name)
+        self.form.addRow(tr("groups.lbl_folder"), self.folder)
         self.form.addRow(tr("groups.row_type"), self.gtype)
         self.form.addRow(tr("groups.row_player"), self.player)
-        self.form.addRow(tr("groups.row_mine"), self.mine)
-        self.form.addRow(tr("groups.row_smelter"), self.smelter)
         self.form.addRow(tr("groups.row_rect_x"), self.rect_x)
         self.form.addRow(tr("groups.row_rect_y"), self.rect_y)
         self.form.addRow(tr("groups.row_rect_width"), self.rect_w)
@@ -88,10 +83,10 @@ class GroupsDialog(QDialog):
         self.form.addRow(tr("groups.row_targets"), self.target_text)
 
         self.name.textChanged.connect(self._store_current)
+        self.folder.textChanged.connect(self._store_current)
+        self.folder.editingFinished.connect(self._refresh_list)
         for w in (self.player, self.rect_x, self.rect_y, self.rect_w, self.rect_h):
             w.valueChanged.connect(self._store_current)
-        for w in (self.mine, self.smelter):
-            w.currentIndexChanged.connect(self._store_current)
         self.unit_list.itemChanged.connect(self._store_current)
         self.target_text.textChanged.connect(self._store_current)
 
@@ -102,12 +97,9 @@ class GroupsDialog(QDialog):
 
         self._refresh_list()
         if self.groups:
-            self.glist.setCurrentRow(0)
+            self._select_idx(0)
         else:
             self._set_form_enabled(False)
-
-    def mining_groups(self):
-        return [g for g in self.groups if isinstance(g, MiningGroupSpec)]
 
     def building_groups(self):
         return [g for g in self.groups if isinstance(g, BuildingGroupSpec)]
@@ -115,65 +107,88 @@ class GroupsDialog(QDialog):
     def reinforce_groups(self):
         return [g for g in self.groups if isinstance(g, ReinforceGroupSpec)]
 
-    def _fill_object_combo(self, combo, objects):
-        combo.clear()
-        combo.addItem(tr("groups.combo_empty"), "")
-        for o in objects:
-            combo.addItem(self._object_label(o), o.uid)
-
     def _object_label(self, o):
         name = f"{o.unit_name}: " if o.unit_name else ""
         return f"{name}{o.display} P{o.player} @ ({o.tile_x},{o.tile_y})"
 
     def _summary(self, group):
-        if isinstance(group, MiningGroupSpec):
-            return mining_group_summary(group)
         if isinstance(group, ReinforceGroupSpec):
             return reinforce_group_summary(group)
         return building_group_summary(group)
 
     def _set_form_enabled(self, on):
-        for w in (self.name, self.player, self.mine, self.smelter, self.rect_x,
+        for w in (self.name, self.folder, self.player, self.rect_x,
                   self.rect_y, self.rect_w, self.rect_h, self.unit_list, self.target_text):
             w.setEnabled(on)
 
+    # --- Gruppen-Liste (QTreeWidget) ---
+
     def _refresh_list(self):
         self.glist.blockSignals(True)
-        cur = self.glist.currentRow()
+        prev_idx = self._idx
         self.glist.clear()
-        for group in self.groups:
-            self.glist.addItem(self._summary(group))
-        if 0 <= cur < len(self.groups):
-            self.glist.setCurrentRow(cur)
-        self.glist.blockSignals(False)
 
-    def _on_select(self, row):
-        if not (0 <= row < len(self.groups)):
+        folder_order = []
+        by_folder = defaultdict(list)
+        for i, g in enumerate(self.groups):
+            f = getattr(g, 'folder', '') or ''
+            if f not in by_folder:
+                folder_order.append(f)
+            by_folder[f].append(i)
+
+        found_item = None
+        for folder in folder_order:
+            indices = by_folder[folder]
+            if folder:
+                f_item = QTreeWidgetItem([folder])
+                f_item.setFlags(Qt.ItemIsEnabled)
+                font = f_item.font(0); font.setBold(True); f_item.setFont(0, font)
+                self.glist.addTopLevelItem(f_item)
+                f_item.setExpanded(True)
+            else:
+                f_item = None
+            for i in indices:
+                g = self.groups[i]
+                g_item = QTreeWidgetItem([self._summary(g)])
+                g_item.setData(0, Qt.UserRole, i)
+                if f_item is not None:
+                    f_item.addChild(g_item)
+                else:
+                    self.glist.addTopLevelItem(g_item)
+                if i == prev_idx:
+                    found_item = g_item
+
+        self.glist.blockSignals(False)
+        if found_item:
+            self.glist.setCurrentItem(found_item)
+
+    def _select_idx(self, idx):
+        def find_in(parent):
+            for j in range(parent.childCount()):
+                child = parent.child(j)
+                if child.data(0, Qt.UserRole) == idx:
+                    return child
+                found = find_in(child)
+                if found:
+                    return found
+            return None
+        item = find_in(self.glist.invisibleRootItem())
+        if item:
+            self.glist.setCurrentItem(item)
+
+    def _on_item_changed(self, current, previous):
+        if current is None:
+            self._idx = -1
+            self._set_form_enabled(False)
+            return
+        idx = current.data(0, Qt.UserRole)
+        if idx is None:
             self._idx = -1
             self._set_form_enabled(False)
             return
         self._set_form_enabled(True)
-        self._idx = row
-        self._load(row)
-
-    def _add_mining(self):
-        smelter = self.smelters[0] if self.smelters else None
-        player = smelter.player if smelter else 0
-        rect_x = max(0, smelter.tile_x - 3) if smelter else 0
-        rect_y = max(0, smelter.tile_y - 3) if smelter else 0
-        group = MiningGroupSpec(
-            name=f"MiningGroup{len(self.mining_groups()) + 1}",
-            player=player,
-            has_setup=False,
-            mine_x=0, mine_y=0,
-            smelter_x=0, smelter_y=0,
-            rect_x=rect_x, rect_y=rect_y,
-            rect_width=8, rect_height=8,
-            truck_ids=[o.uid for o in self.trucks if o.player == player],
-        )
-        self.groups.append(group)
-        self._refresh_list()
-        self.glist.setCurrentRow(len(self.groups) - 1)
+        self._idx = idx
+        self._load(idx)
 
     def _add_building(self):
         group = BuildingGroupSpec(
@@ -185,7 +200,7 @@ class GroupsDialog(QDialog):
         )
         self.groups.append(group)
         self._refresh_list()
-        self.glist.setCurrentRow(len(self.groups) - 1)
+        self._select_idx(len(self.groups) - 1)
 
     def _add_reinforce(self):
         group = ReinforceGroupSpec(
@@ -193,22 +208,23 @@ class GroupsDialog(QDialog):
             player=0,
             unit_ids=[o.uid for o in self.reinforce_factories if o.player == 0],
             targets=[
-                ReinforceTargetSpec(group.name, 1500)
-                for group in self.mining_groups() + self.building_groups()
+                ReinforceTargetSpec(g.name, 1500)
+                for g in self.building_groups()
             ],
         )
         self.groups.append(group)
         self._refresh_list()
-        self.glist.setCurrentRow(len(self.groups) - 1)
+        self._select_idx(len(self.groups) - 1)
 
     def _remove(self):
         if not (0 <= self._idx < len(self.groups)):
             return
+        old_idx = self._idx
         del self.groups[self._idx]
         self._idx = -1
         self._refresh_list()
         if self.groups:
-            self.glist.setCurrentRow(min(self.glist.currentRow(), len(self.groups) - 1))
+            self._select_idx(min(old_idx, len(self.groups) - 1))
         else:
             self._set_form_enabled(False)
 
@@ -221,28 +237,15 @@ class GroupsDialog(QDialog):
 
     def _load(self, i):
         group = self.groups[i]
-        is_mining = isinstance(group, MiningGroupSpec)
         is_reinforce = isinstance(group, ReinforceGroupSpec)
         self._loading = True
         self.name.setText(group.name)
-        if is_mining:
-            self.gtype.setCurrentText("MiningGroup")
-        elif is_reinforce:
-            self.gtype.setCurrentText("ReinforceGroup")
-        else:
-            self.gtype.setCurrentText("BuildingGroup")
+        self.folder.setText(getattr(group, 'folder', '') or '')
+        self.gtype.setCurrentText("ReinforceGroup" if is_reinforce else "BuildingGroup")
         self.player.setValue(group.player)
-        self.form.setRowVisible(self.mine, is_mining)
-        self.form.setRowVisible(self.smelter, is_mining)
         for widget in (self.rect_x, self.rect_y, self.rect_w, self.rect_h, self.pick_rect):
             self.form.setRowVisible(widget, not is_reinforce)
         self.form.setRowVisible(self.target_text, is_reinforce)
-        if is_mining:
-            self._select_combo_by_pos(self.mine, self.mines, group.mine_x, group.mine_y)
-            self._select_combo_by_pos(self.smelter, self.smelters, group.smelter_x, group.smelter_y)
-            if not getattr(group, "has_setup", True):
-                self.mine.setCurrentIndex(0)
-                self.smelter.setCurrentIndex(0)
         if not is_reinforce:
             self.rect_x.setValue(group.rect_x)
             self.rect_y.setValue(group.rect_y)
@@ -253,25 +256,14 @@ class GroupsDialog(QDialog):
         self._refresh_units(group)
         self._loading = False
 
-    def _select_combo_by_pos(self, combo, objects, x, y):
-        for i, o in enumerate(objects, start=1):
-            if o.tile_x == x and o.tile_y == y:
-                combo.setCurrentIndex(i)
-                return
-        combo.setCurrentIndex(0)
-
     def _refresh_units(self, group):
         self.unit_list.blockSignals(True)
         self.unit_list.clear()
-        if isinstance(group, MiningGroupSpec):
-            objects = self.trucks
-            selected = set(group.truck_ids)
-        elif isinstance(group, ReinforceGroupSpec):
+        if isinstance(group, ReinforceGroupSpec):
             objects = self.reinforce_factories
-            selected = set(group.unit_ids)
         else:
             objects = self.builders
-            selected = set(group.unit_ids)
+        selected = set(group.unit_ids)
         for o in objects:
             item = QListWidgetItem(self._object_label(o))
             item.setData(Qt.UserRole, o.uid)
@@ -284,23 +276,12 @@ class GroupsDialog(QDialog):
         if self._loading or not (0 <= self._idx < len(self.groups)):
             return
         group = self.groups[self._idx]
-        if isinstance(group, MiningGroupSpec):
-            fallback = "MiningGroup"
-        elif isinstance(group, ReinforceGroupSpec):
-            fallback = "ReinforceGroup"
-        else:
-            fallback = "BuildingGroup"
+        is_reinforce = isinstance(group, ReinforceGroupSpec)
+        fallback = "ReinforceGroup" if is_reinforce else "BuildingGroup"
         group.name = self.name.text().strip() or f"{fallback}{self._idx + 1}"
+        group.folder = self.folder.text().strip()
         group.player = self.player.value()
-        if isinstance(group, MiningGroupSpec):
-            mine = self._object_by_uid(self.mine.currentData())
-            smelter = self._object_by_uid(self.smelter.currentData())
-            group.has_setup = bool(mine and smelter)
-            if mine:
-                group.mine_x, group.mine_y = mine.tile_x, mine.tile_y
-            if smelter:
-                group.smelter_x, group.smelter_y = smelter.tile_x, smelter.tile_y
-        if not isinstance(group, ReinforceGroupSpec):
+        if not is_reinforce:
             group.rect_x = self.rect_x.value()
             group.rect_y = self.rect_y.value()
             group.rect_width = self.rect_w.value()
@@ -310,15 +291,12 @@ class GroupsDialog(QDialog):
             item = self.unit_list.item(i)
             if item.checkState() == Qt.Checked:
                 selected.append(item.data(Qt.UserRole))
-        if isinstance(group, MiningGroupSpec):
-            group.truck_ids = selected
-        else:
-            group.unit_ids = selected
-        if isinstance(group, ReinforceGroupSpec):
+        group.unit_ids = selected
+        if is_reinforce:
             group.targets = self._targets_from_text(self.target_text.toPlainText())
-        item = self.glist.item(self._idx)
-        if item:
-            item.setText(self._summary(group))
+        item = self.glist.currentItem()
+        if item and item.data(0, Qt.UserRole) is not None:
+            item.setText(0, self._summary(group))
 
     def _targets_to_text(self, targets):
         return "\n".join(f"{target.group_name}={target.priority}" for target in targets)
@@ -350,5 +328,3 @@ class GroupsDialog(QDialog):
             if o.uid == uid:
                 return o
         return None
-
-
