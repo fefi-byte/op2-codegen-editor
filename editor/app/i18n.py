@@ -30,6 +30,8 @@ Missing keys are collected (missing_keys()) so that tests can find gaps.
 from __future__ import annotations
 
 import configparser
+import sys
+from pathlib import Path
 
 import appconfig
 
@@ -51,10 +53,18 @@ def _load_lang(code: str) -> dict[str, str]:
     A literal `\\n` in the INI is turned into a real newline.
     """
     cp = configparser.ConfigParser(interpolation=None)
-    # Schluessel case-sensitiv lassen
-    # Keep keys case-sensitive
-    cp.optionxform = str  # Schluessel case-sensitiv lassen
-    cp.read(appconfig.base_dir() / f"lang.{code}.ini", encoding="utf-8")
+    cp.optionxform = str  # Schluessel case-sensitiv lassen / keep keys case-sensitive
+    # Im PyInstaller-Build liegen gebündelte Ressourcen in sys._MEIPASS (_internal/),
+    # user-überschreibbare Dateien neben der EXE (base_dir()). Beide lesen; base_dir()
+    # gewinnt (wird zuletzt gelesen und überschreibt _MEIPASS-Werte).
+    # In a PyInstaller build, bundled resources live in sys._MEIPASS (_internal/);
+    # user-overridable files live next to the EXE (base_dir()). Read both; base_dir()
+    # wins (read last, overrides _MEIPASS values).
+    search = []
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        search.append(Path(sys._MEIPASS) / f"lang.{code}.ini")
+    search.append(appconfig.base_dir() / f"lang.{code}.ini")
+    cp.read(search, encoding="utf-8")
     flat: dict[str, str] = {}
     for section in cp.sections():
         for key, value in cp.items(section):
