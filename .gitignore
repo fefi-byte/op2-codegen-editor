@@ -52,4 +52,4 @@ missions/*/build/
 # PyInstaller (standalone exe build)
 build/
 dist/
-*.spec
+# *.spec absichtlich nicht ignoriert — op2editor.spec und op2editor_entry.py gehoeren ins Repo
