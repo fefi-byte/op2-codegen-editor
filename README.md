@@ -1,4 +1,7 @@
-# OP2 Mission Editor
+# OP2 Mission Editor — `titanapi` branch
+
+> **Experimental branch** that swaps the legacy Outpost2DLL/OP2Helper/HFL SDK for [TitanAPI](https://github.com/leviathan400/TitanAPI), a modern C++23 SDK by leviathan400.
+> The `main` branch still uses the legacy SDK.
 
 A Python-based mission editor for Outpost 2 that generates native C++ mission source code and compiles it to a 32-bit DLL.
 
@@ -8,7 +11,39 @@ Recent changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 1. The **editor GUI** (PySide6) lets you place units, buildings, beacons, walls, configure players, triggers, and AI groups visually.
 2. The **code generator** (`codegen/`) turns the mission model into a `.cpp` file.
-3. **MSBuild / MSVC** compiles the `.cpp` into a 32-bit DLL that Outpost 2 loads directly.
+3. **CMake / MSVC (VS2026)** compiles the `.cpp` into a 32-bit DLL that Outpost 2 loads directly.
+
+## Editor UI
+
+The main window has two side docks around the central map view.
+
+### Left Dock — Placement Panel
+
+Select what to place on the map:
+
+- **Category** — Buildings · Vehicles · Beacons & Walls
+- **Unit list** — all placeable types with their tile footprint
+- **Player** — which player (0–5) owns the object
+- **Unit name** — optional scripting reference (e.g. `mainSmelter`)
+- **Context parameters** that appear depending on the selected type:
+  - *Cargo Truck* — cargo type (ore, food, metal, empty) + amount
+  - *ConVec* — building kit (which structure it carries)
+  - *Mining Beacon* — ore type (random / common / rare) and yield tier (Bar 1–3)
+  - *Combat vehicles & Guard Post* — weapon type
+
+Left-click on the map places the object. Right-click removes an existing object. Middle-drag pans the map; mouse wheel zooms.
+
+### Right Dock — Mission Overview
+
+Live summary of the whole mission, updated after every edit:
+
+- **Flow / Triggers** — all triggers in execution order with flow arrows (⟶) and cycle detection; double-click to jump to the trigger editor
+- **Players** — one line per player (colony, type, tech level)
+- **Groups** — BuildingGroups and ReinforceGroups
+- **Victory / Defeat** — all win/loss conditions at a glance
+- **Objects** — total count of placed units, buildings, beacons and walls
+
+Double-clicking any item in the overview opens its respective editor dialog directly.
 
 ## Repository layout
 
@@ -108,10 +143,10 @@ The compiled DLL is written to the path set in `config.ini`.
 
 ## Cloning
 
-The `LevelTemplate/` folder is a **git submodule** of [OutpostUniverse/LevelTemplate](https://github.com/OutpostUniverse/LevelTemplate), which itself contains the nested SDK submodules (Outpost2DLL, OP2Helper, HFL). Clone with `--recursive`:
+The `TitanAPI/` folder is a **git submodule** of [leviathan400/TitanAPI](https://github.com/leviathan400/TitanAPI). Clone with `--recursive`:
 
 ```powershell
-git clone --recursive https://github.com/fefi-byte/op2-codegen-editor.git
+git clone --recursive -b titanapi https://github.com/fefi-byte/op2-codegen-editor.git
 ```
 
 If you already cloned without `--recursive`, run:
@@ -120,13 +155,9 @@ If you already cloned without `--recursive`, run:
 git submodule update --init --recursive
 ```
 
-## SDK sources
+## SDK source
 
-`LevelTemplate/OP2MissionSDK/` contains the SDK headers and libraries (pulled in via the submodule):
-
-- [Outpost2DLL](https://github.com/OutpostUniverse/Outpost2DLL) — core game API
-- [OP2Helper](https://github.com/OutpostUniverse/OP2Helper) — helper macros
-- [HFL](https://github.com/OutpostUniverse/HFL) — extended unit/player API (UnitEx, PlayerEx, TethysGameEx)
+[TitanAPI](https://github.com/leviathan400/TitanAPI) is a modern C++23 SDK for Outpost 2. The `op2::` facade is header-only — every mission `#include`s straight from `TitanAPI/TitanAPI/include/op2.hpp`, no separate library to link.
 - [odasl](https://github.com/OutpostUniverse/odasl) — audio lib
 
 The SDK sources are bundled directly (no git submodules) so the project builds without any additional clones.

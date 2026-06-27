@@ -165,6 +165,20 @@ def set_show_grid(on: bool) -> None:
     _save(cp)
 
 
+def last_mission() -> str:
+    """Pfad zur zuletzt geoeffneten/gespeicherten Mission (Ordner). Leer = keiner."""
+    return _load().get("ui", "last_mission", fallback="").strip()
+
+
+def set_last_mission(path: str) -> None:
+    """Merkt sich den Mission-Ordner fuer den Reopen-Dialog beim naechsten Start."""
+    cp = _load()
+    if not cp.has_section("ui"):
+        cp.add_section("ui")
+    cp.set("ui", "last_mission", path or "")
+    _save(cp)
+
+
 def set_output(out_dir: str, name: str) -> None:
     """Speichert Ausgabeordner + DLL-Name zurueck in die config.ini.
 
