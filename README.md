@@ -7,6 +7,8 @@ A Python-based mission editor for Outpost 2 that generates native C++ mission so
 
 Recent changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
+**Feature documentation:** [English](EDITOR_DOCS.md) · [Deutsch](EDITOR_DOKU.md)
+
 ## How it works
 
 1. The **editor GUI** (PySide6) lets you place units, buildings, beacons, walls, configure players, triggers, and AI groups visually.
