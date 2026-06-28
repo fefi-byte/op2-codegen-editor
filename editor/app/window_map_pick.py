@@ -1,0 +1,283 @@
+from __future__ import annotations
+
+from .common import *
+
+
+class _MapPickMixin:
+    def _begin_rect_pick(self, group):
+        self._placement_active = False
+        self._clear_placement_preview()
+        self._rect_pick_group = group
+        self._rect_pick_start = None
+        if self._rect_pick_item is not None:
+            self.scene.removeItem(self._rect_pick_item)
+            self._rect_pick_item = None
+        self.view.rect_select_enabled = True
+        self.view.setCursor(Qt.CrossCursor)
+        self.statusBar().showMessage(tr("window.status_setrect_begin", name=group.name))
+
+    def _end_rect_pick(self):
+        self.view.rect_select_enabled = False
+        self.view.setCursor(Qt.ArrowCursor)
+        self._rect_pick_group = None
+        self._rect_pick_start = None
+        if self._rect_pick_item is not None:
+            self.scene.removeItem(self._rect_pick_item)
+            self._rect_pick_item = None
+
+    def _rect_from_tiles(self, x1, y1, x2, y2):
+        if self.map is None:
+            return 0, 0, 1, 1
+        left = max(0, min(x1, x2, self.map.width - 1))
+        right = max(0, min(max(x1, x2), self.map.width - 1))
+        top = max(0, min(y1, y2, self.map.height - 1))
+        bottom = max(0, min(max(y1, y2), self.map.height - 1))
+        return left, top, right - left + 1, bottom - top + 1
+
+    def _clamp_tile(self, tx, ty):
+        if self.map is None:
+            return tx, ty
+        return (
+            max(0, min(tx, self.map.width - 1)),
+            max(0, min(ty, self.map.height - 1)),
+        )
+
+    def _update_rect_overlay(self, x, y, w, h):
+        if self._rect_pick_item is not None:
+            self.scene.removeItem(self._rect_pick_item)
+        self._rect_pick_item = QGraphicsRectItem(
+            x * SCENE_TILE, y * SCENE_TILE, w * SCENE_TILE, h * SCENE_TILE)
+        self._rect_pick_item.setPen(QPen(QColor(255, 255, 255), 3))
+        self._rect_pick_item.setBrush(QBrush(QColor(255, 255, 255, 60)))
+        self._rect_pick_item.setZValue(1000)
+        self.scene.addItem(self._rect_pick_item)
+
+    def _rect_drag_start(self, tx, ty):
+        if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
+            tx, ty = self._clamp_tile(tx, ty)
+            self._action_pick_start = (tx, ty)
+            x, y, w, h = self._rect_from_tiles(tx, ty, tx, ty)
+            self._update_rect_overlay(x, y, w, h)
+            return
+        if self._action_pick and self._action_pick["kind"] in ("recordTube", "recordWall"):
+            tx, ty = self._clamp_tile(tx, ty)
+            self._action_pick_start = (tx, ty)
+            color = QColor(120, 220, 255) if self._action_pick["kind"] == "recordTube" else QColor(255, 180, 80)
+            self._draw_action_line_preview(tx, ty, tx, ty, color)
+            return
+        if self._rect_pick_group is None:
+            return
+        self._rect_pick_start = (tx, ty)
+        x, y, w, h = self._rect_from_tiles(tx, ty, tx, ty)
+        self._update_rect_overlay(x, y, w, h)
+
+    def _rect_drag_move(self, tx, ty):
+        if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect" and self._action_pick_start is not None:
+            sx, sy = self._action_pick_start
+            x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
+            self._update_rect_overlay(x, y, w, h)
+            self.coord_label.setText(f"Bereich: {x}, {y}, {w}x{h}")
+            return
+        if self._action_pick and self._action_pick_start is not None:
+            tx, ty = self._clamp_tile(tx, ty)
+            sx, sy = self._action_pick_start
+            color = QColor(120, 220, 255) if self._action_pick["kind"] == "recordTube" else QColor(255, 180, 80)
+            self._draw_action_line_preview(sx, sy, tx, ty, color)
+            self.coord_label.setText(tr("window.coord_line", sx=sx, sy=sy, tx=tx, ty=ty))
+            return
+        if self._rect_pick_group is None or self._rect_pick_start is None:
+            return
+        sx, sy = self._rect_pick_start
+        x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
+        self._update_rect_overlay(x, y, w, h)
+        self.coord_label.setText(f"SetRect: {x}, {y}, {w}x{h}")
+
+    def _rect_drag_finish(self, tx, ty):
+        if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
+            if self._action_pick_start is None:
+                self._end_action_pick()
+                return
+            sx, sy = self._action_pick_start
+            x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
+            action = self._action_pick["action"]
+            action.rect_x, action.rect_y = x, y
+            action.rect_width, action.rect_height = w, h
+            self.statusBar().showMessage(f"Bereich gesetzt: ({x},{y}) {w}x{h}")
+            self._pending_trigger_index = self._action_pick.get("trigger_index", 0)
+            self._pending_action_index = self._action_pick.get("action_index", -1)
+            self._end_action_pick()
+            return
+        if self._action_pick and self._action_pick_start is not None:
+            tx, ty = self._clamp_tile(tx, ty)
+            sx, sy = self._action_pick_start
+            kind = self._action_pick["kind"]
+            if kind == "recordTube":
+                action = TriggerAction(
+                    kind="recordTube", group_name=self._action_pick["group_name"],
+                    x=sx, y=sy, x2=tx, y2=ty)
+            else:
+                action = TriggerAction(
+                    kind="recordWall", group_name=self._action_pick["group_name"],
+                    wall_type=self._action_pick["wall_type"],
+                    x=sx, y=sy, x2=tx, y2=ty)
+            self._add_action_from_pick(action)
+            self.statusBar().showMessage(tr("window.status_action_added", summary=action_summary(action)))
+            self._end_action_pick()
+            return
+        if self._rect_pick_group is None or self._rect_pick_start is None:
+            self._end_rect_pick()
+            return
+        sx, sy = self._rect_pick_start
+        x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
+        self._rect_pick_group.rect_x = x
+        self._rect_pick_group.rect_y = y
+        self._rect_pick_group.rect_width = w
+        self._rect_pick_group.rect_height = h
+        name = self._rect_pick_group.name
+        self._end_rect_pick()
+        self.statusBar().showMessage(tr("window.status_setrect_done", name=name, x=x, y=y, w=w, h=h))
+        QTimer.singleShot(0, self.edit_groups)
+
+    def _rect_drag_cancel(self):
+        if self._action_pick is not None:
+            self._end_action_pick()
+            self.statusBar().showMessage(tr("window.status_action_canceled"))
+            return
+        if self._rect_pick_group is None:
+            return
+        self._end_rect_pick()
+        self.statusBar().showMessage(tr("window.status_setrect_canceled"))
+
+    def _clear_action_preview(self):
+        for item in self._action_preview_items:
+            self.scene.removeItem(item)
+        self._action_preview_items = []
+
+    def _begin_action_pick(self, request):
+        self._placement_active = False
+        self._clear_placement_preview()
+        self._action_pick = request
+        self._action_pick_start = None
+        self._clear_action_preview()
+        if (
+            request["kind"] in ("recordTube", "recordWall")
+            or (request["kind"] == "action_field" and request.get("field") == "rect")
+        ):
+            self.view.rect_select_enabled = True
+        self.view.setCursor(Qt.CrossCursor)
+        labels = {
+            "recordBuilding": tr("window.pick_record_building"),
+            "assignToGroup": tr("window.pick_assign_group"),
+            "recordTube": tr("window.pick_record_tube"),
+            "recordWall": tr("window.pick_record_wall"),
+            "action_field": {
+                "primary": "Klick: Position (X, Y) der Aktion setzen",
+                "secondary": "Klick: zweite Position (X2, Y2) der Aktion setzen",
+                "rect": "Klick: Bereich-Ecke (rect X, rect Y) der Aktion setzen",
+            }.get(request.get("field"), "Klick: Karte fuer Aktion picken"),
+        }
+        label = labels.get(request["kind"], "Klick: Karte fuer Aktion picken")
+        self.statusBar().showMessage(tr("window.status_pick_hint", label=label))
+
+    def _end_action_pick(self, reopen=True):
+        self.view.rect_select_enabled = False
+        self.view.setCursor(Qt.ArrowCursor)
+        self._action_pick = None
+        self._action_pick_start = None
+        self._clear_action_preview()
+        if reopen:
+            QTimer.singleShot(0, self.edit_triggers)
+
+    def _draw_action_building_preview(self, tx, ty):
+        self._clear_action_preview()
+        building_type = self._action_pick["building_type"]
+        fw, fh = STRUCTURE_FOOTPRINTS.get(building_type, (1, 1))
+        x0 = (tx - fw // 2) * SCENE_TILE
+        y0 = (ty - fh // 2) * SCENE_TILE
+        rect = QGraphicsRectItem(x0, y0, fw * SCENE_TILE, fh * SCENE_TILE)
+        rect.setPen(QPen(QColor(255, 255, 255), 3, Qt.DashLine))
+        rect.setBrush(QBrush(QColor(255, 255, 255, 45)))
+        rect.setZValue(1100)
+        self.scene.addItem(rect)
+        self._action_preview_items = [rect]
+
+    # Liefert die Kacheln einer L-foermigen (achsenparallelen) Linie von (x1,y1)
+    # nach (x2,y2); es wird zuerst entlang der laengeren Achse geschritten.
+    def _line_tiles(self, x1, y1, x2, y2):
+        tiles = []
+        if abs(x2 - x1) >= abs(y2 - y1):
+            step = 1 if x2 >= x1 else -1
+            for x in range(x1, x2 + step, step):
+                tiles.append((x, y1))
+            if y2 != y1:
+                step_y = 1 if y2 >= y1 else -1
+                for y in range(y1 + step_y, y2 + step_y, step_y):
+                    tiles.append((x2, y))
+        else:
+            step = 1 if y2 >= y1 else -1
+            for y in range(y1, y2 + step, step):
+                tiles.append((x1, y))
+            if x2 != x1:
+                step_x = 1 if x2 >= x1 else -1
+                for x in range(x1 + step_x, x2 + step_x, step_x):
+                    tiles.append((x, y2))
+        return tiles
+
+    def _draw_action_line_preview(self, x1, y1, x2, y2, color):
+        self._clear_action_preview()
+        for tx, ty in self._line_tiles(x1, y1, x2, y2):
+            rect = QGraphicsRectItem(tx * SCENE_TILE, ty * SCENE_TILE, SCENE_TILE, SCENE_TILE)
+            rect.setPen(QPen(color, 2, Qt.DashLine))
+            rect.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 55)))
+            rect.setZValue(1100)
+            self.scene.addItem(rect)
+            self._action_preview_items.append(rect)
+
+    def _add_action_from_pick(self, action):
+        idx = self._action_pick["trigger_index"]
+        if 0 <= idx < len(self.triggers):
+            action_index = self._action_pick.get("action_index", -1)
+            actions = self.triggers[idx].actions
+            if 0 <= action_index < len(actions) and actions[action_index].kind == action.kind:
+                actions[action_index] = action
+            else:
+                actions.append(action)
+                action_index = len(actions) - 1
+            self._pending_trigger_index = idx
+            self._pending_action_index = action_index
+        self._redraw_planned_actions()
+
+    def _clear_planned_actions(self):
+        for item in self._planned_items:
+            self.scene.removeItem(item)
+        self._planned_items = []
+
+    def _add_planned_rect(self, x, y, w, h, color, brush_style=Qt.BDiagPattern):
+        rect = QGraphicsRectItem(x * SCENE_TILE, y * SCENE_TILE, w * SCENE_TILE, h * SCENE_TILE)
+        rect.setPen(QPen(color, 2, Qt.DashLine))
+        brush = QBrush(QColor(color.red(), color.green(), color.blue(), 80))
+        brush.setStyle(brush_style)
+        rect.setBrush(brush)
+        rect.setZValue(900)
+        self.scene.addItem(rect)
+        self._planned_items.append(rect)
+
+    def _add_planned_building(self, x, y, building_type, color):
+        fw, fh = STRUCTURE_FOOTPRINTS.get(building_type, (1, 1))
+        self._add_planned_rect(x - fw // 2, y - fh // 2, fw, fh, color)
+
+    def _redraw_planned_actions(self):
+        self._clear_planned_actions()
+        for trigger in self.triggers:
+            for action in trigger.actions:
+                if action.kind == "recordBuilding":
+                    fw, fh = STRUCTURE_FOOTPRINTS.get(action.building_type, (1, 1))
+                    self._add_planned_rect(
+                        action.x - fw // 2, action.y - fh // 2,
+                        fw, fh, QColor(255, 120, 255))
+                elif action.kind == "recordTube":
+                    for tx, ty in self._line_tiles(action.x, action.y, action.x2, action.y2):
+                        self._add_planned_rect(tx, ty, 1, 1, QColor(120, 220, 255), Qt.Dense4Pattern)
+                elif action.kind == "recordWall":
+                    for tx, ty in self._line_tiles(action.x, action.y, action.x2, action.y2):
+                        self._add_planned_rect(tx, ty, 1, 1, QColor(255, 180, 80), Qt.Dense4Pattern)
