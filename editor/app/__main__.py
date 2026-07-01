@@ -13,9 +13,8 @@ def main():
     ``EditorWindow`` and run the event loop.
     """
     app = QApplication(sys.argv)
-    # Eigene Windows-Taskleisten-Identitaet, damit dort das App-Icon statt des
-    # Python-Icons erscheint.
-    # Own Windows taskbar identity so the app icon (not Python's) shows there.
+    from .style import build_stylesheet
+    app.setStyleSheet(build_stylesheet())
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("op2.mission.editor")

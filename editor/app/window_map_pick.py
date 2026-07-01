@@ -53,6 +53,9 @@ class _MapPickMixin:
         self.scene.addItem(self._rect_pick_item)
 
     def _rect_drag_start(self, tx, ty):
+        if self._action_pick and self._action_pick.get("kind") == "lava_paint":
+            self._lava_paint_add(tx, ty)
+            return
         if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
             tx, ty = self._clamp_tile(tx, ty)
             self._action_pick_start = (tx, ty)
@@ -72,6 +75,9 @@ class _MapPickMixin:
         self._update_rect_overlay(x, y, w, h)
 
     def _rect_drag_move(self, tx, ty):
+        if self._action_pick and self._action_pick.get("kind") == "lava_paint":
+            self._lava_paint_add(tx, ty)
+            return
         if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect" and self._action_pick_start is not None:
             sx, sy = self._action_pick_start
             x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
@@ -93,6 +99,9 @@ class _MapPickMixin:
         self.coord_label.setText(f"SetRect: {x}, {y}, {w}x{h}")
 
     def _rect_drag_finish(self, tx, ty):
+        if self._action_pick and self._action_pick.get("kind") == "lava_paint":
+            self._lava_paint_add(tx, ty)
+            return
         if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
             if self._action_pick_start is None:
                 self._end_action_pick()
@@ -136,9 +145,11 @@ class _MapPickMixin:
         name = self._rect_pick_group.name
         self._end_rect_pick()
         self.statusBar().showMessage(tr("window.status_setrect_done", name=name, x=x, y=y, w=w, h=h))
-        QTimer.singleShot(0, self.edit_groups)
+        self.groups_panel.refresh()
 
     def _rect_drag_cancel(self):
+        if self._action_pick is not None and self._action_pick.get("kind") == "lava_paint":
+            return  # Rechtsklick im Lava-Modus wird über tileRemoved behandelt
         if self._action_pick is not None:
             self._end_action_pick()
             self.statusBar().showMessage(tr("window.status_action_canceled"))
@@ -153,7 +164,72 @@ class _MapPickMixin:
             self.scene.removeItem(item)
         self._action_preview_items = []
 
+    def _begin_lava_paint(self, request):
+        self._action_pick = request
+        self._lava_paint_set = {(xy[0], xy[1]) for xy in (request["action"].lava_zone or [])}
+        self._lava_paint_items = []
+        self.view.rect_select_enabled = True
+        self.view.lava_paint_enabled = True
+        self.view.setCursor(Qt.CrossCursor)
+        self._redraw_lava_paint_tiles()
+        self.statusBar().showMessage(
+            "Linksklick/Ziehen: Lavakachel hinzufügen | Rechtsklick: Entfernen | 'Lava Zone'-Button: Fertig")
+
+    def _end_lava_paint(self):
+        action = self._action_pick["action"]
+        action.lava_zone = [list(xy) for xy in sorted(self._lava_paint_set)]
+        action_index = self._action_pick.get("action_index", -1)
+        self.view.rect_select_enabled = False
+        self.view.lava_paint_enabled = False
+        self.view.setCursor(Qt.ArrowCursor)
+        self._clear_lava_paint_items()
+        self._action_pick = None
+        self.trigger_panel.refresh_actions(expand_index=action_index)
+        self._redraw_planned_actions()
+
+    def _lava_paint_add(self, tx, ty):
+        if self.map is None or not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
+            return
+        if (tx, ty) not in self._lava_paint_set:
+            self._lava_paint_set.add((tx, ty))
+            self._save_lava_zone()
+            self._redraw_lava_paint_tiles()
+
+    def _lava_paint_remove(self, tx, ty):
+        if (tx, ty) in self._lava_paint_set:
+            self._lava_paint_set.discard((tx, ty))
+            self._save_lava_zone()
+            self._redraw_lava_paint_tiles()
+
+    def _save_lava_zone(self):
+        self._action_pick["action"].lava_zone = [list(xy) for xy in sorted(self._lava_paint_set)]
+
+    def _clear_lava_paint_items(self):
+        for item in self._lava_paint_items:
+            self.scene.removeItem(item)
+        self._lava_paint_items = []
+
+    def _redraw_lava_paint_tiles(self):
+        self._clear_lava_paint_items()
+        for (tx, ty) in self._lava_paint_set:
+            rect = QGraphicsRectItem(tx * SCENE_TILE, ty * SCENE_TILE, SCENE_TILE, SCENE_TILE)
+            rect.setPen(QPen(QColor(255, 100, 0), 1))
+            rect.setBrush(QBrush(QColor(255, 100, 0, 110)))
+            rect.setZValue(1050)
+            self.scene.addItem(rect)
+            self._lava_paint_items.append(rect)
+
     def _begin_action_pick(self, request):
+        if request["kind"] == "lava_paint":
+            if self._action_pick is not None and self._action_pick.get("kind") == "lava_paint":
+                self._end_lava_paint()
+                return
+            if self._action_pick is not None:
+                self._end_action_pick(reopen=False)
+            self._placement_active = False
+            self._clear_placement_preview()
+            self._begin_lava_paint(request)
+            return
         self._placement_active = False
         self._clear_placement_preview()
         self._action_pick = request
@@ -180,13 +256,14 @@ class _MapPickMixin:
         self.statusBar().showMessage(tr("window.status_pick_hint", label=label))
 
     def _end_action_pick(self, reopen=True):
+        action_index = self._action_pick.get("action_index", -1) if self._action_pick else -1
         self.view.rect_select_enabled = False
         self.view.setCursor(Qt.ArrowCursor)
         self._action_pick = None
         self._action_pick_start = None
         self._clear_action_preview()
         if reopen:
-            QTimer.singleShot(0, self.edit_triggers)
+            self.trigger_panel.refresh_actions(expand_index=action_index)
 
     def _draw_action_building_preview(self, tx, ty):
         self._clear_action_preview()
@@ -281,3 +358,7 @@ class _MapPickMixin:
                 elif action.kind == "recordWall":
                     for tx, ty in self._line_tiles(action.x, action.y, action.x2, action.y2):
                         self._add_planned_rect(tx, ty, 1, 1, QColor(255, 180, 80), Qt.Dense4Pattern)
+                elif (action.kind == "createDisaster"
+                      and getattr(action, "disaster_type", "") == "eruption"):
+                    for xy in getattr(action, "lava_zone", []) or []:
+                        self._add_planned_rect(xy[0], xy[1], 1, 1, QColor(255, 100, 0))

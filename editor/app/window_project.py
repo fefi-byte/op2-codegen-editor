@@ -223,6 +223,8 @@ class _ProjectMixin:
                 pass
         else:
             self.mission_folder = None
+        self.trigger_panel.load()
+        self.groups_panel.load()
         self._redraw_planned_actions()
         self._refresh_overview()
         self.statusBar().showMessage(

@@ -81,6 +81,9 @@ class _PlacementMixin:
             self.statusBar().showMessage(tr("window.status_updated", label=label))
 
     def on_place(self, tx, ty):
+        if self._action_pick and self._action_pick.get("kind") == "lava_paint":
+            self._lava_paint_add(tx, ty)
+            return
         # Generischer "auf Karte setzen"-Pfad fuer Action-Felder (vom Card-Editor).
         if self._action_pick and self._action_pick["kind"] == "action_field":
             field = self._action_pick["field"]
@@ -90,9 +93,20 @@ class _PlacementMixin:
                 return
             action = self._action_pick["action"]
             if field == "primary":
-                action.x, action.y = tx, ty
+                if getattr(action, "kind", "") in {"createDisaster", "createMeteor", "createEarthquake", "createStorm", "createVortex", "createBlight", "unsetBlight"}:
+                    action.x_expr, action.y_expr = tx, ty
+                else:
+                    action.x, action.y = tx, ty
             elif field == "secondary":
-                action.x2, action.y2 = tx, ty
+                if getattr(action, "kind", "") == "createDisaster":
+                    if getattr(action, "disaster_type", "meteor") in {"storm", "vortex"}:
+                        action.x2_expr, action.y2_expr = tx, ty
+                    else:
+                        action.x2, action.y2 = tx, ty
+                elif getattr(action, "kind", "") in {"createStorm", "createVortex"}:
+                    action.x2_expr, action.y2_expr = tx, ty
+                else:
+                    action.x2, action.y2 = tx, ty
             self.statusBar().showMessage(tr("window.status_action_added", summary=action_summary(action)))
             self._pending_trigger_index = self._action_pick.get("trigger_index", 0)
             self._pending_action_index = self._action_pick.get("action_index", -1)
@@ -155,6 +169,9 @@ class _PlacementMixin:
         self.statusBar().showMessage(tr("window.status_placed", label=label, x=tx, y=ty, n=len(self.objects)))
 
     def on_remove(self, tx, ty):
+        if self._action_pick is not None and self._action_pick.get("kind") == "lava_paint":
+            self._lava_paint_remove(tx, ty)
+            return
         if self._action_pick is not None:
             self._end_action_pick()
             self.statusBar().showMessage(tr("window.status_action_canceled"))
@@ -198,5 +215,6 @@ class _PlacementMixin:
         self.objects.clear()
         self.building_groups.clear()
         self.reinforce_groups.clear()
+        self.groups_panel.load()
         self._refresh_overview()
         self.statusBar().showMessage(tr("window.status_objects_cleared"))

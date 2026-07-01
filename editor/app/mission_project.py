@@ -18,6 +18,7 @@ kompilieren, ohne den Editor zu brauchen.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import uuid
@@ -135,10 +136,14 @@ def write_mission_folder(
     _copy_template("CMakeLists.txt.template", folder / "CMakeLists.txt", repl)
     written["cmake"] = folder / "CMakeLists.txt"
 
-    # 7) build.bat + README
+    # 7) build.bat (Windows) + build.sh (Linux) + README
     _copy_template("build.bat.template", folder / "build.bat", repl)
+    build_sh = folder / "build.sh"
+    _copy_template("build.sh.template", build_sh, repl)
+    os.chmod(build_sh, 0o755)
     _copy_template("README.md.template", folder / "README.md", repl)
     written["build_bat"] = folder / "build.bat"
+    written["build_sh"] = build_sh
     written["readme"] = folder / "README.md"
 
     return written

@@ -1,11 +1,39 @@
 from __future__ import annotations
 
 from .common import *
+from .panels.trigger_panel import TriggerPanel
+from .panels.groups_panel import GroupsPanel
 
 
 class _SidebarMixin:
     def _build_sidebar(self):
         dock = QDockWidget(tr("window.dock_place"), self)
+        dock.setMinimumWidth(220)
+
+        # --- Tab 0: Platzieren ---
+        place_widget = self._build_place_widget()
+
+        # --- Tab 1: Trigger ---
+        self.trigger_panel = TriggerPanel(self)
+        self.trigger_panel.map_pick_requested.connect(self._on_trigger_map_pick)
+
+        # --- Tab 2: Gruppen ---
+        self.groups_panel = GroupsPanel(self)
+        self.groups_panel.rect_pick_requested.connect(self._begin_rect_pick)
+
+        self._sidebar_tabs = QTabWidget()
+        self._sidebar_tabs.addTab(place_widget, tr("window.tab_place"))
+        self._sidebar_tabs.addTab(self.trigger_panel, tr("window.tab_triggers"))
+        self._sidebar_tabs.addTab(self.groups_panel, tr("window.tab_groups"))
+
+        dock.setWidget(self._sidebar_tabs)
+        self.addDockWidget(Qt.LeftDockWidgetArea, dock)
+        self._fill_list(self.cat_combo.currentData())
+
+    def _on_trigger_map_pick(self, request: dict):
+        self._begin_action_pick(request)
+
+    def _build_place_widget(self) -> QWidget:
         panel = QWidget()
         lay = QVBoxLayout(panel)
 
@@ -21,27 +49,40 @@ class _SidebarMixin:
         lay.addWidget(self.list, 1)
 
         # Spieler / Player
-        self.player_row = QWidget(); pr = QFormLayout(self.player_row); pr.setContentsMargins(0, 0, 0, 0)
-        self.player_spin = QSpinBox(); self.player_spin.setRange(0, 5)
+        self.player_row = QWidget()
+        pr = QFormLayout(self.player_row)
+        pr.setContentsMargins(0, 0, 0, 0)
+        self.player_spin = QSpinBox()
+        self.player_spin.setRange(0, 5)
         pr.addRow(tr("window.lbl_player"), self.player_spin)
         lay.addWidget(self.player_row)
 
-        self.unit_name_row = QWidget(); nr = QFormLayout(self.unit_name_row); nr.setContentsMargins(0, 0, 0, 0)
+        self.unit_name_row = QWidget()
+        nr = QFormLayout(self.unit_name_row)
+        nr.setContentsMargins(0, 0, 0, 0)
         self.unit_name_edit = QLineEdit()
         self.unit_name_edit.setPlaceholderText(tr("window.unit_name_placeholder"))
         nr.addRow(tr("window.lbl_unit_name"), self.unit_name_edit)
         lay.addWidget(self.unit_name_row)
 
         # Cargo-Truck-Parameter / Cargo truck parameters
-        self.cargo_row = QWidget(); cr = QFormLayout(self.cargo_row); cr.setContentsMargins(0, 0, 0, 0)
-        self.cargo_combo = QComboBox(); fill_combo(self.cargo_combo, TRUCK_CARGO, "truck_cargo")
+        self.cargo_row = QWidget()
+        cr = QFormLayout(self.cargo_row)
+        cr.setContentsMargins(0, 0, 0, 0)
+        self.cargo_combo = QComboBox()
+        fill_combo(self.cargo_combo, TRUCK_CARGO, "truck_cargo")
         self.cargo_combo.setCurrentIndex(self.cargo_combo.findData("Leer"))
-        self.cargo_amount = QSpinBox(); self.cargo_amount.setRange(0, 5000); self.cargo_amount.setValue(1000)
-        cr.addRow(tr("window.lbl_cargo"), self.cargo_combo); cr.addRow(tr("window.lbl_amount"), self.cargo_amount)
+        self.cargo_amount = QSpinBox()
+        self.cargo_amount.setRange(0, 5000)
+        self.cargo_amount.setValue(1000)
+        cr.addRow(tr("window.lbl_cargo"), self.cargo_combo)
+        cr.addRow(tr("window.lbl_amount"), self.cargo_amount)
         lay.addWidget(self.cargo_row)
 
         # ConVec-Bausatz / ConVec kit
-        self.kit_row = QWidget(); kr = QFormLayout(self.kit_row); kr.setContentsMargins(0, 0, 0, 0)
+        self.kit_row = QWidget()
+        kr = QFormLayout(self.kit_row)
+        kr.setContentsMargins(0, 0, 0, 0)
         self.kit_combo = QComboBox()
         self.kit_combo.addItem(tr("window.empty"), None)
         for disp, mid, _ in STRUCTURES:
@@ -50,14 +91,21 @@ class _SidebarMixin:
         lay.addWidget(self.kit_row)
 
         # Beacon-Parameter / Beacon parameters
-        self.beacon_row = QWidget(); br = QFormLayout(self.beacon_row); br.setContentsMargins(0, 0, 0, 0)
-        self.ore_combo = QComboBox(); fill_combo(self.ore_combo, ORE_TYPES, "ore_types")
-        self.yield_combo = QComboBox(); fill_combo(self.yield_combo, YIELDS, "yields")
-        br.addRow(tr("window.lbl_ore_type"), self.ore_combo); br.addRow(tr("window.lbl_yield"), self.yield_combo)
+        self.beacon_row = QWidget()
+        br = QFormLayout(self.beacon_row)
+        br.setContentsMargins(0, 0, 0, 0)
+        self.ore_combo = QComboBox()
+        fill_combo(self.ore_combo, ORE_TYPES, "ore_types")
+        self.yield_combo = QComboBox()
+        fill_combo(self.yield_combo, YIELDS, "yields")
+        br.addRow(tr("window.lbl_ore_type"), self.ore_combo)
+        br.addRow(tr("window.lbl_yield"), self.yield_combo)
         lay.addWidget(self.beacon_row)
 
         # Waffe (Kampffahrzeuge + Guard Post) / Weapon (combat vehicles + Guard Post)
-        self.weapon_row = QWidget(); wr = QFormLayout(self.weapon_row); wr.setContentsMargins(0, 0, 0, 0)
+        self.weapon_row = QWidget()
+        wr = QFormLayout(self.weapon_row)
+        wr.setContentsMargins(0, 0, 0, 0)
         self.weapon_combo = QComboBox()
         for d, m in WEAPONS:
             self.weapon_combo.addItem(d, m)
@@ -65,10 +113,7 @@ class _SidebarMixin:
         lay.addWidget(self.weapon_row)
 
         lay.addWidget(QLabel(tr("window.sidebar_hint")))
-
-        dock.setWidget(panel)
-        self.addDockWidget(Qt.LeftDockWidgetArea, dock)
-        self._fill_list(self.cat_combo.currentData())
+        return panel
 
     def _fill_list(self, category):
         default_kind, items = CATALOG[category]

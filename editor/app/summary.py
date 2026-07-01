@@ -59,6 +59,45 @@ def _action_summary_core(a) -> str:
     if a.kind == "createUnit":
         weapon = "" if a.weapon_type == "mapNone" else f" / {a.weapon_type}"
         return tr("sum.act_createunit", unit=a.unit_type, weapon=weapon, x=a.x, y=a.y, p=a.player)
+    if a.kind == "createMeteor":
+        size_map = {-1: "random", 0: "small", 1: "medium", 2: "large"}
+        size = size_map.get(getattr(a, "size", -1), getattr(a, "size", -1))
+        now = " now" if getattr(a, "now", False) else ""
+        return f"Meteor({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}, {size}{now})"
+    if a.kind == "createDisaster":
+        dtype = getattr(a, "disaster_type", "meteor")
+        if dtype == "meteor":
+            size_map = {-1: "random", 0: "small", 1: "medium", 2: "large"}
+            size = size_map.get(getattr(a, "size", -1), getattr(a, "size", -1))
+            now = " now" if getattr(a, "now", False) else ""
+            return f"Disaster: Meteor({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}, {size}{now})"
+        if dtype == "earthquake":
+            now = " now" if getattr(a, "now", False) else ""
+            return f"Disaster: Earthquake({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}, mag={getattr(a, 'magnitude', 1)}{now})"
+        if dtype == "storm":
+            now = " now" if getattr(a, "now", False) else ""
+            return f"Disaster: Storm(({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}) -> ({getattr(a, 'x2_expr', 0)}, {getattr(a, 'y2_expr', 0)}), t={getattr(a, 'duration', 100)}{now})"
+        if dtype == "vortex":
+            now = " now" if getattr(a, "now", False) else ""
+            return f"Disaster: Vortex(({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}) -> ({getattr(a, 'x2_expr', 0)}, {getattr(a, 'y2_expr', 0)}), t={getattr(a, 'duration', 100)}{now})"
+        if dtype == "blight":
+            return f"Disaster: Blight({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)})"
+        if dtype == "unblight":
+            return f"Disaster: UnsetBlight({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)})"
+        return f"Disaster: {dtype}"
+    if a.kind == "createEarthquake":
+        now = " now" if getattr(a, "now", False) else ""
+        return f"Earthquake({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}, mag={getattr(a, 'magnitude', 1)}{now})"
+    if a.kind == "createStorm":
+        now = " now" if getattr(a, "now", False) else ""
+        return f"Storm(({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}) -> ({getattr(a, 'x2_expr', 0)}, {getattr(a, 'y2_expr', 0)}), t={getattr(a, 'duration', 100)}{now})"
+    if a.kind == "createVortex":
+        now = " now" if getattr(a, "now", False) else ""
+        return f"Vortex(({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}) -> ({getattr(a, 'x2_expr', 0)}, {getattr(a, 'y2_expr', 0)}), t={getattr(a, 'duration', 100)}{now})"
+    if a.kind == "createBlight":
+        return f"Blight({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)})"
+    if a.kind == "unsetBlight":
+        return f"UnsetBlight({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)})"
     if a.kind == "createTrigger":
         return tr("sum.act_createtrigger", target=a.target)
     if a.kind == "recordBuilding":
@@ -83,6 +122,65 @@ def _action_summary_core(a) -> str:
         expr = getattr(a, 'var_expr', '') or '…'
         return f"{var} = {expr}"
     return a.kind
+
+
+_KIND_TITLE = {
+    "noop": "Platzhalter",
+    "if": "Wenn / Dann / Sonst",
+    "message": "Nachricht",
+    "createUnit": "Einheit erzeugen",
+    "createDisaster": "Katastrophe",
+    "createTrigger": "Trigger starten",
+    "recordBuilding": "recordBuilding",
+    "recordTube": "recordTube",
+    "recordWall": "recordWall",
+    "setTargCount": "setTargCount",
+    "assignToGroup": "Gruppe zuweisen",
+    "modVar": "Variable ändern",
+}
+
+
+def action_kind_label(kind: str) -> str:
+    return _KIND_TITLE.get(kind, kind)
+
+
+def action_params_summary(a) -> str:
+    """Kompakte einzeilige Parameterübersicht für eine Aktionskarte (leer für noop/if)."""
+    if a.kind in ("noop", "if"):
+        return ""
+    if a.kind == "message":
+        return f'"{getattr(a, "text", "")}"'
+    if a.kind == "createUnit":
+        weapon = getattr(a, "weapon_type", "mapNone")
+        w = "" if weapon == "mapNone" else f"  Waffe: {weapon}"
+        return f"Einheit: {getattr(a, 'unit_type', '?')}{w}  P{getattr(a, 'player', 0)}  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})"
+    if a.kind == "createDisaster":
+        dtype = getattr(a, "disaster_type", "meteor")
+        x, y = getattr(a, "x_expr", 0), getattr(a, "y_expr", 0)
+        if dtype in ("storm", "vortex"):
+            return f"Typ: {dtype}  ({x},{y}) → ({getattr(a, 'x2_expr', 0)},{getattr(a, 'y2_expr', 0)})"
+        return f"Typ: {dtype}  @ ({x},{y})"
+    if a.kind == "createTrigger":
+        return f"→ {getattr(a, 'target', '?')}"
+    if a.kind == "recordBuilding":
+        return f"{getattr(a, 'group_name', '?')}  ·  {getattr(a, 'building_type', '?')}  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})"
+    if a.kind == "recordTube":
+        return f"{getattr(a, 'group_name', '?')}  ·  ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})"
+    if a.kind == "recordWall":
+        return f"{getattr(a, 'group_name', '?')}  ·  {getattr(a, 'wall_type', '?')}  ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})"
+    if a.kind == "setTargCount":
+        return f"{getattr(a, 'group_name', '?')}  ·  {getattr(a, 'unit_type', '?')}  = {getattr(a, 'target_count', 0)}  P{getattr(a, 'reinforce_priority', 0)}"
+    if a.kind == "assignToGroup":
+        return f"→ {getattr(a, 'group_name', '?')}  ·  {getattr(a, 'building_type', '?')}  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})  P{getattr(a, 'player', 0)}"
+    if a.kind == "modVar":
+        var = getattr(a, "var_name", "") or "?"
+        mode = getattr(a, "mod_mode", "inc") or "inc"
+        if mode == "inc":
+            return f"{var} +1"
+        if mode == "dec":
+            return f"{var} −1"
+        return f"{var} = {getattr(a, 'var_expr', '…') or '…'}"
+    return ""
 
 
 def condition_summary(c: Condition) -> str:

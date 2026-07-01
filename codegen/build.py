@@ -37,6 +37,11 @@ def write_levelmain(cpp: str) -> None:
 
 
 def build() -> Path:
+    if sys.platform != "win32":
+        raise SystemExit(
+            "[FEHLER] Der Legacy-msbuild-Pfad (build()) laeuft nur unter Windows.\n"
+            "Benutze build_folder() fuer den CMake-basierten Build (auch auf Linux)."
+        )
     vsdevcmd = appconfig.vsdevcmd()
     if not vsdevcmd.exists():
         raise SystemExit(
@@ -77,37 +82,80 @@ def build() -> Path:
 
 
 def _find_cmake() -> str:
-    """Sucht cmake.exe -- PATH zuerst, sonst die VS2019+-Installationen."""
-    # 1) PATH
+    """Sucht cmake -- PATH zuerst, auf Windows zusaetzlich VS-Installationen."""
     p = shutil.which("cmake")
     if p:
         return p
-    # 2) VS-Installationen (VS bringt sein eigenes CMake mit unter Common7\IDE\...)
-    candidates = []
-    for vs_year in ("18", "17", "16"):
-        for edition in ("Community", "Professional", "Enterprise", "BuildTools"):
-            candidates.append(
-                Path("C:/Program Files/Microsoft Visual Studio") / vs_year / edition
-                / "Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
-            )
-    # 3) Standalone-Install
-    candidates.append(Path("C:/Program Files/CMake/bin/cmake.exe"))
-    candidates.append(Path("C:/Program Files (x86)/CMake/bin/cmake.exe"))
-    for c in candidates:
-        if c.exists():
-            return str(c)
+    if sys.platform == "win32":
+        candidates = []
+        for vs_year in ("18", "17", "16"):
+            for edition in ("Community", "Professional", "Enterprise", "BuildTools"):
+                candidates.append(
+                    Path("C:/Program Files/Microsoft Visual Studio") / vs_year / edition
+                    / "Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
+                )
+        candidates.append(Path("C:/Program Files/CMake/bin/cmake.exe"))
+        candidates.append(Path("C:/Program Files (x86)/CMake/bin/cmake.exe"))
+        for c in candidates:
+            if c.exists():
+                return str(c)
     raise SystemExit(
-        "[FEHLER] cmake.exe nicht gefunden.\n"
-        "Bitte CMake installieren (oder Visual Studio mit C++/CMake-Komponente) "
-        "und sicherstellen, dass cmake auf dem PATH ist."
+        "[FEHLER] cmake nicht gefunden.\n"
+        "Windows: CMake installieren oder Visual Studio mit C++/CMake-Komponente.\n"
+        "Linux:   sudo apt install cmake  (Debian/Ubuntu)"
+    )
+
+
+def _find_make_tool() -> tuple[str, str]:
+    """Gibt (cmake-Generator, make-Programm) fuer Linux zurueck.
+
+    Bevorzugt Ninja (schneller), faellt auf GNU make zurueck.
+    """
+    for prog, generator in (
+        ("ninja", "Ninja"),
+        ("ninja-build", "Ninja"),
+        ("make", "Unix Makefiles"),
+        ("gmake", "Unix Makefiles"),
+    ):
+        p = shutil.which(prog)
+        if p:
+            return generator, p
+    raise SystemExit(
+        "[FEHLER] Weder ninja noch make gefunden.\n"
+        "Bitte eines installieren:\n"
+        "  Debian/Ubuntu: sudo apt install ninja-build\n"
+        "  Arch/SteamDeck: sudo pacman -S ninja\n"
+        "  Fedora:        sudo dnf install ninja-build"
+    )
+
+
+def _find_mingw32() -> tuple[str, str, str]:
+    """Sucht den MinGW i686-w64-mingw32 Cross-Compiler (fuer Linux-Host).
+
+    Gibt (cc, cxx, windres) zurueck. windres kann leer sein wenn nicht gefunden
+    (CMake faellt dann auf einen generischen RC-Compiler zurueck).
+    """
+    for prefix in ("i686-w64-mingw32", "i686-mingw32"):
+        cc = shutil.which(f"{prefix}-gcc")
+        cxx = shutil.which(f"{prefix}-g++")
+        if cc and cxx:
+            rc = shutil.which(f"{prefix}-windres") or ""
+            return cc, cxx, rc
+    raise SystemExit(
+        "[FEHLER] i686-w64-mingw32-gcc nicht gefunden.\n"
+        "Bitte MinGW-w64 installieren:\n"
+        "  Debian/Ubuntu: sudo apt install mingw-w64\n"
+        "  Fedora:        sudo dnf install mingw32-gcc-c++\n"
+        "  Arch:          sudo pacman -S mingw-w64-gcc"
     )
 
 
 def build_folder(folder: Path) -> Path:
     """Baut eine TitanAPI-Mission via CMake.
 
-    Erwartet `CMakeLists.txt` direkt im Ordner. Gibt den Pfad zur erzeugten
-    DLL unter `build/Release/` zurueck.
+    Erwartet `CMakeLists.txt` direkt im Ordner. Gibt den Pfad zur erzeugten DLL
+    zurueck. Unterstuetzt Windows (MSVC via Visual Studio Generator) und Linux
+    (MinGW i686-w64-mingw32 Cross-Compiler).
     """
     folder = Path(folder)
     cmakelists = folder / "CMakeLists.txt"
@@ -117,11 +165,38 @@ def build_folder(folder: Path) -> Path:
     cmake = _find_cmake()
     build_dir = folder / "build"
     env = {k: v for k, v in os.environ.items() if k.lower() != "outpost2path"}
+
+    # Stale CMakeCache.txt (z.B. von einem früheren Build auf einem anderen OS)
+    # führt zu Pfadkonflikten. Build-Ordner vor dem Configure immer löschen.
+    if (build_dir / "CMakeCache.txt").exists():
+        shutil.rmtree(build_dir)
+
     print(f"[..] cmake configure fuer {folder.name} ...")
-    configure_cmd = [
-        cmake, "-S", str(folder), "-B", str(build_dir),
-        "-G", "Visual Studio 18 2026", "-A", "Win32",
-    ]
+
+    if sys.platform == "win32":
+        configure_cmd = [
+            cmake, "-S", str(folder), "-B", str(build_dir),
+            "-G", "Visual Studio 18 2026", "-A", "Win32",
+        ]
+        build_cmd = [cmake, "--build", str(build_dir), "--config", "Release"]
+        dll_dirs = [build_dir / "Release", build_dir]
+    else:
+        cc, cxx, rc = _find_mingw32()
+        generator, make_prog = _find_make_tool()
+        configure_cmd = [
+            cmake, "-S", str(folder), "-B", str(build_dir),
+            "-G", generator,
+            f"-DCMAKE_MAKE_PROGRAM={make_prog}",
+            f"-DCMAKE_C_COMPILER={cc}",
+            f"-DCMAKE_CXX_COMPILER={cxx}",
+            "-DCMAKE_SYSTEM_NAME=Windows",
+            "-DCMAKE_BUILD_TYPE=Release",
+        ]
+        if rc:
+            configure_cmd.append(f"-DCMAKE_RC_COMPILER={rc}")
+        build_cmd = [cmake, "--build", str(build_dir)]
+        dll_dirs = [build_dir, build_dir / "Release"]
+
     res = subprocess.run(configure_cmd, capture_output=True, text=True, env=env)
     if res.returncode != 0:
         details = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()[-3000:] or "(keine cmake-Ausgabe)"
@@ -131,10 +206,7 @@ def build_folder(folder: Path) -> Path:
         )
 
     print(f"[..] cmake --build (Release) fuer {folder.name} ...")
-    res = subprocess.run(
-        [cmake, "--build", str(build_dir), "--config", "Release"],
-        capture_output=True, text=True, env=env,
-    )
+    res = subprocess.run(build_cmd, capture_output=True, text=True, env=env)
     if res.returncode != 0:
         details = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()[-3000:] or "(keine cmake-Ausgabe)"
         raise SystemExit(
@@ -142,10 +214,14 @@ def build_folder(folder: Path) -> Path:
             f"cmake-Ausgabe (letzte Zeilen):\n{details}"
         )
 
-    release = build_dir / "Release"
-    dll = next(release.glob("*.dll"), None) if release.is_dir() else None
+    dll = None
+    for d in dll_dirs:
+        if d.is_dir():
+            dll = next(d.glob("*.dll"), None)
+            if dll:
+                break
     if not dll:
-        raise SystemExit(f"[FEHLER] Keine DLL gefunden unter: {release}")
+        raise SystemExit(f"[FEHLER] Keine DLL gefunden unter: {build_dir}")
     print(f"[ok] DLL: {dll}  ({dll.stat().st_size} Bytes)")
     return dll
 

@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import subprocess
 
+import numpy as np
+
 from .common import *
 from .placed_object import PlacedObject
 from .build_worker import BuildWorker
 from .cpp_highlight import CppHighlighter
 from . import mission_project
-from .dialogs.map_dialog import MapDialog
 from .dialogs.output_dialog import OutputDialog
 from .dialogs.conditions import ConditionsDialog
 from .dialogs.players import PlayersDialog
-from .dialogs.triggers import TriggersDialog
-from .dialogs.groups import GroupsDialog
 from .dialogs.setup import MissionSetupDialog
 
 
@@ -42,19 +41,14 @@ class _BuildMixin:
         self._action_pick_start = None
         self._action_preview_items = []
         self._planned_items = []
+        self._lava_paint_items = []
+        self._lava_paint_set: set = set()
         self.scene.addPixmap(pix)
         self.scene.setSceneRect(QRectF(pix.rect()))
         self.view.resetTransform()
         self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
         self.statusBar().showMessage(tr("window.status_map_loaded", name=name, w=self.map.width, h=self.map.height))
         self._refresh_overview()
-
-    def choose_map(self):
-        dlg = MapDialog(self, self.res.names(), self.map_name, self.mission_name)
-        if dlg.exec() == QDialog.Accepted:
-            self.mission_name = dlg.name_edit.text().strip() or "Editor Mission"
-            self.load_map(dlg.combo.currentText())
-            self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}")
 
     def choose_output(self):
         dlg = OutputDialog(self, self.output_dir, self.dll_name)
@@ -71,6 +65,7 @@ class _BuildMixin:
         dlg = MissionSetupDialog(
             self, self.mission_name, self.mission_type,
             self.tech_tree, self.diff_setup, self.variables,
+            map_names=self.res.names(), current_map=self.map_name or "",
         )
         if dlg.exec() == QDialog.Accepted:
             self.mission_name = dlg.mission_name
@@ -78,6 +73,8 @@ class _BuildMixin:
             self.tech_tree = dlg.tech_tree
             self.diff_setup = dlg.diff_setup
             self.variables = dlg.variables
+            if dlg.map_name and dlg.map_name != self.map_name:
+                self.load_map(dlg.map_name)
             self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}"
                                 + (f"  [{self.mission_folder.name}]" if self.mission_folder else ""))
 
@@ -90,27 +87,11 @@ class _BuildMixin:
             self.statusBar().showMessage(tr("window.status_players_configured", n=len(self.players)))
 
     def edit_triggers(self):
-        dlg = TriggersDialog(
-            self, self.triggers,
-            building_groups=self.building_groups,
-            target_groups=self.building_groups,
-            reinforce_groups=self.reinforce_groups,
-            objects=self.objects,
-            initial_trigger_index=self._pending_trigger_index,
-            initial_action_index=self._pending_action_index,
-            diff_setup=self.diff_setup,
-            variables=self.variables,
-        )
+        self._sidebar_tabs.setCurrentIndex(1)
+        if self._pending_trigger_index >= 0:
+            self.trigger_panel.select(self._pending_trigger_index, self._pending_action_index)
         self._pending_trigger_index = 0
         self._pending_action_index = -1
-        if dlg.exec() == QDialog.Accepted:
-            self.triggers = dlg.triggers
-            self._refresh_overview()
-            if dlg.map_pick_request is not None:
-                self._begin_action_pick(dlg.map_pick_request)
-            else:
-                self._redraw_planned_actions()
-                self.statusBar().showMessage(tr("window.status_triggers_defined", n=len(self.triggers)))
 
     def edit_conditions(self):
         dlg = ConditionsDialog(self, self.victories, self.defeats)
@@ -122,21 +103,7 @@ class _BuildMixin:
                 tr("window.status_conditions", w=len(self.victories), l=len(self.defeats)))
 
     def edit_groups(self):
-        dlg = GroupsDialog(
-            self, self.building_groups, self.reinforce_groups,
-            self.objects, len(self.players))
-        if dlg.exec() == QDialog.Accepted:
-            rect_pick_group = None
-            if dlg.rect_pick_request is not None and 0 <= dlg.rect_pick_request < len(dlg.groups):
-                rect_pick_group = dlg.groups[dlg.rect_pick_request]
-            self.building_groups = dlg.building_groups()
-            self.reinforce_groups = dlg.reinforce_groups()
-            self._refresh_overview()
-            total = len(self.building_groups) + len(self.reinforce_groups)
-            if rect_pick_group is not None:
-                self._begin_rect_pick(rect_pick_group)
-            else:
-                self.statusBar().showMessage(tr("window.status_groups_defined", n=total))
+        self._sidebar_tabs.setCurrentIndex(2)
 
     def build_mission(self) -> Mission:
         units, beacons, walls = [], [], []

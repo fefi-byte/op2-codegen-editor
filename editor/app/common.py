@@ -7,8 +7,6 @@ import traceback
 from dataclasses import asdict
 from pathlib import Path
 
-import numpy as np
-
 # editor/app
 HERE = Path(__file__).resolve().parent      # editor/app
 # editor

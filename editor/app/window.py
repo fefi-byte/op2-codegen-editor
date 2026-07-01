@@ -77,6 +77,8 @@ class EditorWindow(
 
         self._build_menu()
         self._build_sidebar()
+        self.trigger_panel.load()
+        self.groups_panel.load()
         self._build_overview()
         self._refresh_player_range()
 

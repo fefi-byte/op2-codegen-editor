@@ -1,0 +1,53 @@
+# Find Unit Test
+
+An Outpost 2 mission built on **[TitanAPI](https://github.com/leviathan400/TitanAPI)** (modern C++23 SDK).
+
+## Files in this folder
+
+- `mission.op2proj` — editor project file (JSON, re-open in the editor)
+- `mission.cpp` — generated mission source code (the main file)
+- `op2_mission.hpp`, `op2_log.hpp`, `op2_crash.hpp` — per-mission scaffolding
+- `version.rc.in` — Windows version info resource (filled by CMake)
+- `CMakeLists.txt` — CMake project definition
+- `build.bat` — one-click build script
+- `cm02.map` — the map this mission runs on
+- `MULTITEK.TXT` *(optional)* — custom tech tree, if this mission uses one
+
+## Build requirements
+
+- **CMake 3.21+** on PATH
+- **Visual Studio 2026** with the C++ x86 toolset (C++23 preview)
+- The `TitanAPI` submodule at `../../TitanAPI/`
+
+If you got this folder as part of the full repo, clone with submodules:
+
+```powershell
+git clone --recursive -b titanapi https://github.com/fefi-byte/op2-codegen-editor.git
+```
+
+If you only have this mission folder, clone TitanAPI separately:
+
+```powershell
+git clone https://github.com/leviathan400/TitanAPI.git
+```
+
+…and adjust the `../../TitanAPI/` path in `CMakeLists.txt`.
+
+## Build
+
+```powershell
+build.bat
+```
+
+…or manually:
+
+```powershell
+cmake -S . -B build -G "Visual Studio 18 2026" -A Win32
+cmake --build build --config Release
+```
+
+The mission DLL appears in `build/Release/cFindUnit.dll`.
+
+## Install
+
+Copy the DLL into your Outpost 2 install folder (the `OPU\` subfolder for OPU 1.4.x).

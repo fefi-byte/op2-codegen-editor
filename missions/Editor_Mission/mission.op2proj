@@ -1,0 +1,978 @@
+{
+  "mission_name": "Editor Mission",
+  "mission_type": -1,
+  "tech_tree": "MULTITEK.TXT",
+  "difficulty": {
+    "hard": 13,
+    "normal": 10,
+    "easy": 5
+  },
+  "variables": [
+    {
+      "name": "var1",
+      "var_type": "int",
+      "initial_value": 0
+    },
+    {
+      "name": "var2",
+      "var_type": "bool",
+      "initial_value": 0
+    }
+  ],
+  "map": "cm02.map",
+  "players": [
+    {
+      "colony": 0,
+      "is_human": true,
+      "tech_level": 12,
+      "init_resources": false,
+      "kids": null,
+      "workers": null,
+      "scientists": null,
+      "common_ore": null,
+      "rare_ore": null,
+      "food": null,
+      "researches": []
+    },
+    {
+      "colony": 1,
+      "is_human": false,
+      "tech_level": 4,
+      "init_resources": false,
+      "kids": null,
+      "workers": null,
+      "scientists": null,
+      "common_ore": 8000,
+      "rare_ore": 0,
+      "food": 99999,
+      "researches": []
+    }
+  ],
+  "objects": [
+    {
+      "kind": "structure",
+      "tile_x": 37,
+      "tile_y": 11,
+      "map_id": "mapCommandCenter",
+      "footprint": [
+        3,
+        2
+      ],
+      "display": "Command Center",
+      "player": 1,
+      "params": {},
+      "uid": "obj1",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 43,
+      "tile_y": 5,
+      "map_id": "mapTokamak",
+      "footprint": [
+        2,
+        2
+      ],
+      "display": "Tokamak",
+      "player": 1,
+      "params": {},
+      "uid": "obj3",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 37,
+      "tile_y": 14,
+      "map_id": "mapStructureFactory",
+      "footprint": [
+        4,
+        3
+      ],
+      "display": "Structure Factory",
+      "player": 1,
+      "params": {},
+      "uid": "obj4",
+      "unit_name": "struck"
+    },
+    {
+      "kind": "beacon",
+      "tile_x": 48,
+      "tile_y": 15,
+      "map_id": "mapMiningBeacon",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Mining Beacon",
+      "player": 0,
+      "params": {
+        "ore_type": 0,
+        "yield_bars": -1
+      },
+      "uid": "obj5",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 33,
+      "tile_y": 10,
+      "map_id": "mapVehicleFactory",
+      "footprint": [
+        4,
+        3
+      ],
+      "display": "Vehicle Factory",
+      "player": 1,
+      "params": {},
+      "uid": "obj6",
+      "unit_name": "veh"
+    },
+    {
+      "kind": "structure",
+      "tile_x": 38,
+      "tile_y": 7,
+      "map_id": "mapCommonOreSmelter",
+      "footprint": [
+        4,
+        3
+      ],
+      "display": "Common Ore Smelter",
+      "player": 1,
+      "params": {},
+      "uid": "obj7",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 48,
+      "tile_y": 15,
+      "map_id": "mapCommonOreMine",
+      "footprint": [
+        2,
+        1
+      ],
+      "display": "Common Ore Mine",
+      "player": 1,
+      "params": {},
+      "uid": "obj2",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 45,
+      "tile_y": 8,
+      "map_id": "mapCargoTruck",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Cargo Truck",
+      "player": 1,
+      "params": {
+        "truck_cargo": "truckEmpty",
+        "truck_amount": 1000
+      },
+      "uid": "obj9",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 46,
+      "tile_y": 8,
+      "map_id": "mapCargoTruck",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Cargo Truck",
+      "player": 1,
+      "params": {
+        "truck_cargo": "truckEmpty",
+        "truck_amount": 1000
+      },
+      "uid": "obj10",
+      "unit_name": ""
+    },
+    {
+      "kind": "beacon",
+      "tile_x": 48,
+      "tile_y": 20,
+      "map_id": "mapMiningBeacon",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Mining Beacon",
+      "player": 0,
+      "params": {
+        "ore_type": 0,
+        "yield_bars": 0
+      },
+      "uid": "obj8",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 41,
+      "tile_y": 9,
+      "map_id": "mapConVec",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "ConVec",
+      "player": 1,
+      "params": {},
+      "uid": "obj11",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 28,
+      "tile_y": 11,
+      "map_id": "mapGORF",
+      "footprint": [
+        3,
+        2
+      ],
+      "display": "GORF",
+      "player": 1,
+      "params": {},
+      "uid": "obj12",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 46,
+      "tile_y": 12,
+      "map_id": "mapLightTower",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Light Tower",
+      "player": 1,
+      "params": {},
+      "uid": "obj15",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 29,
+      "tile_y": 8,
+      "map_id": "mapMedicalCenter",
+      "footprint": [
+        2,
+        2
+      ],
+      "display": "Medical Center",
+      "player": 1,
+      "params": {},
+      "uid": "obj16",
+      "unit_name": ""
+    }
+  ],
+  "building_groups": [
+    {
+      "name": "BuildingGroup1",
+      "player": 1,
+      "rect_x": 45,
+      "rect_y": 4,
+      "rect_width": 3,
+      "rect_height": 2,
+      "unit_ids": [
+        "obj4",
+        "obj11"
+      ],
+      "folder": ""
+    }
+  ],
+  "reinforce_groups": [
+    {
+      "name": "ReinforceGroup1",
+      "player": 1,
+      "unit_ids": [
+        "obj6"
+      ],
+      "targets": [
+        {
+          "group_name": "BuildingGroup1",
+          "priority": 1500
+        }
+      ],
+      "folder": ""
+    }
+  ],
+  "triggers": [
+    {
+      "name": "Trigger1",
+      "enabled_at_start": false,
+      "one_shot": false,
+      "condition": "time",
+      "marks": 100,
+      "player": 0,
+      "count": 1,
+      "compare": "cmpGreaterEqual",
+      "tech_id": 0,
+      "resource": "resCommonOre",
+      "amount": 1000,
+      "building": "mapCommandCenter",
+      "x": 0,
+      "y": 0,
+      "width": 4,
+      "height": 4,
+      "actions": [
+        {
+          "kind": "createDisaster",
+          "text": "",
+          "unit_type": "mapScout",
+          "weapon_type": "mapNone",
+          "target_count": 1,
+          "x": 0,
+          "y": 0,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "Trigger1",
+          "group_name": "BuildingGroup1",
+          "source_group_name": "",
+          "reinforce_priority": 1000,
+          "building_type": "mapCommandCenter",
+          "wall_type": "mapWall",
+          "conditions": [],
+          "condition_logic": "and",
+          "then_actions": [],
+          "else_actions": [],
+          "var_name": "var1",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "eruption",
+          "x_expr": 165,
+          "y_expr": 153,
+          "x2_expr": 1,
+          "y2_expr": 1,
+          "size": 0,
+          "magnitude": 1,
+          "duration": 20,
+          "spread_speed": 15,
+          "lava_zone": [
+            [
+              157,
+              159
+            ],
+            [
+              157,
+              160
+            ],
+            [
+              157,
+              161
+            ],
+            [
+              157,
+              162
+            ],
+            [
+              157,
+              163
+            ],
+            [
+              158,
+              158
+            ],
+            [
+              158,
+              159
+            ],
+            [
+              158,
+              160
+            ],
+            [
+              158,
+              161
+            ],
+            [
+              158,
+              162
+            ],
+            [
+              158,
+              163
+            ],
+            [
+              159,
+              158
+            ],
+            [
+              159,
+              159
+            ],
+            [
+              159,
+              160
+            ],
+            [
+              159,
+              161
+            ],
+            [
+              159,
+              162
+            ],
+            [
+              159,
+              163
+            ],
+            [
+              159,
+              164
+            ],
+            [
+              160,
+              157
+            ],
+            [
+              160,
+              158
+            ],
+            [
+              160,
+              159
+            ],
+            [
+              160,
+              160
+            ],
+            [
+              160,
+              161
+            ],
+            [
+              160,
+              162
+            ],
+            [
+              160,
+              163
+            ],
+            [
+              160,
+              164
+            ],
+            [
+              161,
+              157
+            ],
+            [
+              161,
+              158
+            ],
+            [
+              161,
+              159
+            ],
+            [
+              161,
+              160
+            ],
+            [
+              161,
+              161
+            ],
+            [
+              161,
+              162
+            ],
+            [
+              161,
+              163
+            ],
+            [
+              161,
+              164
+            ],
+            [
+              162,
+              156
+            ],
+            [
+              162,
+              157
+            ],
+            [
+              162,
+              158
+            ],
+            [
+              162,
+              159
+            ],
+            [
+              162,
+              160
+            ],
+            [
+              162,
+              161
+            ],
+            [
+              162,
+              162
+            ],
+            [
+              162,
+              163
+            ],
+            [
+              162,
+              164
+            ],
+            [
+              163,
+              155
+            ],
+            [
+              163,
+              156
+            ],
+            [
+              163,
+              157
+            ],
+            [
+              163,
+              158
+            ],
+            [
+              163,
+              159
+            ],
+            [
+              163,
+              160
+            ],
+            [
+              163,
+              161
+            ],
+            [
+              163,
+              162
+            ],
+            [
+              163,
+              163
+            ],
+            [
+              163,
+              164
+            ],
+            [
+              164,
+              154
+            ],
+            [
+              164,
+              155
+            ],
+            [
+              164,
+              156
+            ],
+            [
+              164,
+              157
+            ],
+            [
+              164,
+              158
+            ],
+            [
+              164,
+              159
+            ],
+            [
+              164,
+              160
+            ],
+            [
+              164,
+              161
+            ],
+            [
+              164,
+              162
+            ],
+            [
+              164,
+              163
+            ],
+            [
+              164,
+              164
+            ],
+            [
+              165,
+              154
+            ],
+            [
+              165,
+              155
+            ],
+            [
+              165,
+              156
+            ],
+            [
+              165,
+              157
+            ],
+            [
+              165,
+              158
+            ],
+            [
+              165,
+              159
+            ],
+            [
+              165,
+              160
+            ],
+            [
+              165,
+              161
+            ],
+            [
+              165,
+              162
+            ],
+            [
+              165,
+              163
+            ],
+            [
+              165,
+              164
+            ],
+            [
+              166,
+              155
+            ],
+            [
+              166,
+              156
+            ],
+            [
+              166,
+              157
+            ],
+            [
+              166,
+              158
+            ],
+            [
+              166,
+              159
+            ],
+            [
+              166,
+              160
+            ],
+            [
+              166,
+              161
+            ],
+            [
+              166,
+              162
+            ],
+            [
+              166,
+              163
+            ],
+            [
+              167,
+              156
+            ],
+            [
+              167,
+              157
+            ],
+            [
+              167,
+              158
+            ],
+            [
+              167,
+              159
+            ],
+            [
+              167,
+              160
+            ],
+            [
+              167,
+              161
+            ],
+            [
+              167,
+              162
+            ],
+            [
+              167,
+              163
+            ],
+            [
+              168,
+              156
+            ],
+            [
+              168,
+              157
+            ],
+            [
+              168,
+              158
+            ],
+            [
+              168,
+              159
+            ],
+            [
+              168,
+              160
+            ],
+            [
+              168,
+              161
+            ],
+            [
+              168,
+              162
+            ],
+            [
+              168,
+              163
+            ],
+            [
+              169,
+              155
+            ],
+            [
+              169,
+              156
+            ],
+            [
+              169,
+              157
+            ],
+            [
+              169,
+              158
+            ],
+            [
+              169,
+              159
+            ],
+            [
+              169,
+              160
+            ],
+            [
+              169,
+              161
+            ],
+            [
+              169,
+              162
+            ],
+            [
+              170,
+              155
+            ],
+            [
+              170,
+              156
+            ],
+            [
+              170,
+              157
+            ],
+            [
+              170,
+              158
+            ],
+            [
+              170,
+              159
+            ],
+            [
+              170,
+              160
+            ],
+            [
+              170,
+              161
+            ],
+            [
+              171,
+              154
+            ],
+            [
+              171,
+              155
+            ],
+            [
+              171,
+              156
+            ],
+            [
+              171,
+              157
+            ],
+            [
+              172,
+              154
+            ],
+            [
+              172,
+              155
+            ],
+            [
+              172,
+              156
+            ],
+            [
+              173,
+              153
+            ],
+            [
+              173,
+              154
+            ],
+            [
+              173,
+              155
+            ],
+            [
+              173,
+              156
+            ],
+            [
+              174,
+              152
+            ],
+            [
+              174,
+              153
+            ],
+            [
+              174,
+              154
+            ],
+            [
+              174,
+              155
+            ],
+            [
+              174,
+              156
+            ],
+            [
+              175,
+              152
+            ],
+            [
+              175,
+              153
+            ],
+            [
+              175,
+              154
+            ],
+            [
+              175,
+              155
+            ],
+            [
+              175,
+              156
+            ],
+            [
+              176,
+              152
+            ],
+            [
+              176,
+              153
+            ],
+            [
+              176,
+              154
+            ],
+            [
+              176,
+              155
+            ],
+            [
+              177,
+              152
+            ],
+            [
+              177,
+              153
+            ],
+            [
+              177,
+              154
+            ]
+          ],
+          "now": true
+        },
+        {
+          "kind": "message",
+          "text": "Nachricht\u2026",
+          "unit_type": "mapScout",
+          "weapon_type": "mapNone",
+          "target_count": 1,
+          "x": 0,
+          "y": 0,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "",
+          "group_name": "",
+          "source_group_name": "",
+          "reinforce_priority": 1000,
+          "building_type": "mapCommandCenter",
+          "wall_type": "mapWall",
+          "conditions": [],
+          "condition_logic": "and",
+          "then_actions": [],
+          "else_actions": [],
+          "var_name": "",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "meteor",
+          "x_expr": 0,
+          "y_expr": 0,
+          "x2_expr": 0,
+          "y2_expr": 0,
+          "size": -1,
+          "magnitude": 1,
+          "duration": 100,
+          "spread_speed": 15,
+          "lava_zone": [],
+          "now": false
+        }
+      ],
+      "unit_checks": [],
+      "folder": ""
+    }
+  ],
+  "victories": [],
+  "defeats": [],
+  "node_positions": {}
+}

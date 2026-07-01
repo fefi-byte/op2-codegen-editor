@@ -30,8 +30,41 @@ from mission_model import (
 def _expr_or_int(v) -> str:
     """Gibt den Wert als C++-Literal-String zurueck: int oder Ausdruck unveraendert."""
     if isinstance(v, str):
+        _validate_cpp_expr(v)
         return v
     return str(int(v))
+
+
+def _validate_cpp_expr(expr: str) -> None:
+    """Very small preflight check for obviously broken inline expressions."""
+    text = (expr or "").strip()
+    if not text:
+        return
+    pairs = {")": "(", "]": "[", "}": "{"}
+    opens = set(pairs.values())
+    stack: list[str] = []
+    for ch in text:
+        if ch in opens:
+            stack.append(ch)
+        elif ch in pairs:
+            if not stack or stack[-1] != pairs[ch]:
+                raise ValueError(f"Ungueltiger Ausdruck: {expr}")
+            stack.pop()
+    if stack:
+        raise ValueError(f"Ungueltiger Ausdruck: {expr}")
+
+
+def _visible_expr(v) -> str:
+    """Editor-Tile (0-based) -> sichtbare OP2-Koordinate (1-based), als C++-Ausdruck."""
+    if isinstance(v, str):
+        _validate_cpp_expr(v)
+        return f"(int(({v}) + 1))"
+    return str(int(v) + 1)
+
+
+def _loc_expr(x, y) -> str:
+    """Emit a Location literal that may contain runtime expressions."""
+    return f"Location{{ {_visible_expr(x)}, {_visible_expr(y)} }}"
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +467,110 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict) -> list[str
             f"{_xy(action.x, action.y)}, Game::player({int(action.player)}), {weapon}));"
         ]
 
+    if k == "createDisaster":
+        dtype = getattr(action, "disaster_type", "meteor") or "meteor"
+        if dtype == "meteor":
+            return [
+                f"{indent}op2::ignore(Game::createMeteor("
+                f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, "
+                f"{int(getattr(action, 'size', -1))}, "
+                f"{'true' if getattr(action, 'now', False) else 'false'}));"
+            ]
+        if dtype == "earthquake":
+            return [
+                f"{indent}op2::ignore(Game::createEarthquake("
+                f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, "
+                f"{_expr_or_int(getattr(action, 'magnitude', 1))}, "
+                f"{'true' if getattr(action, 'now', False) else 'false'}));"
+            ]
+        if dtype == "storm":
+            return [
+                f"{indent}op2::ignore(Game::createStorm("
+                f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, "
+                f"{_loc_expr(getattr(action, 'x2_expr', 0), getattr(action, 'y2_expr', 0))}, "
+                f"{_expr_or_int(getattr(action, 'duration', 100))}, "
+                f"{'true' if getattr(action, 'now', False) else 'false'}));"
+            ]
+        if dtype == "vortex":
+            return [
+                f"{indent}op2::ignore(Game::createVortex("
+                f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, "
+                f"{_loc_expr(getattr(action, 'x2_expr', 0), getattr(action, 'y2_expr', 0))}, "
+                f"{_expr_or_int(getattr(action, 'duration', 100))}, "
+                f"{'true' if getattr(action, 'now', False) else 'false'}));"
+            ]
+        if dtype == "eruption":
+            zone = getattr(action, "lava_zone", None) or []
+            lines = []
+            for xy in zone:
+                lines.append(
+                    f"{indent}GameMap::setLavaPossible({_loc_expr(int(xy[0]), int(xy[1]))}, true);"
+                )
+            lines.append(
+                f"{indent}op2::ignore(Game::createEruption("
+                f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, "
+                f"{int(getattr(action, 'spread_speed', 15))}, "
+                f"{'true' if getattr(action, 'now', False) else 'false'}));"
+            )
+            return lines
+        if dtype == "blight":
+            return [
+                f"{indent}Game::createBlight("
+                f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))});"
+            ]
+        if dtype == "unblight":
+            return [
+                f"{indent}Game::unsetBlight("
+                f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))});"
+            ]
+        return [f"{indent}// TODO unsupported disaster type: {dtype}"]
+
+    if k == "createMeteor":
+        return [
+            f"{indent}op2::ignore(Game::createMeteor("
+            f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, "
+            f"{int(getattr(action, 'size', -1))}, "
+            f"{'true' if getattr(action, 'now', False) else 'false'}));"
+        ]
+
+    if k == "createEarthquake":
+        return [
+            f"{indent}op2::ignore(Game::createEarthquake("
+            f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, "
+            f"{_expr_or_int(getattr(action, 'magnitude', 1))}, "
+            f"{'true' if getattr(action, 'now', False) else 'false'}));"
+        ]
+
+    if k == "createStorm":
+        return [
+            f"{indent}op2::ignore(Game::createStorm("
+            f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, "
+            f"{_loc_expr(getattr(action, 'x2_expr', 0), getattr(action, 'y2_expr', 0))}, "
+            f"{_expr_or_int(getattr(action, 'duration', 100))}, "
+            f"{'true' if getattr(action, 'now', False) else 'false'}));"
+        ]
+
+    if k == "createVortex":
+        return [
+            f"{indent}op2::ignore(Game::createVortex("
+            f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, "
+            f"{_loc_expr(getattr(action, 'x2_expr', 0), getattr(action, 'y2_expr', 0))}, "
+            f"{_expr_or_int(getattr(action, 'duration', 100))}, "
+            f"{'true' if getattr(action, 'now', False) else 'false'}));"
+        ]
+
+    if k == "createBlight":
+        return [
+            f"{indent}Game::createBlight("
+            f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))});"
+        ]
+
+    if k == "unsetBlight":
+        return [
+            f"{indent}Game::unsetBlight("
+            f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))});"
+        ]
+
     if k == "createTrigger":
         # Editor model: "createTrigger" creates ANOTHER editor-defined trigger
         # at runtime. In TitanAPI we have first-class trigger handles, so
@@ -539,13 +676,12 @@ def _emit_action_list(actions: list[TriggerAction], indent: str, ctx: dict) -> l
 # Custom Triggers: emit a small helper that creates the trigger + callback.
 # ---------------------------------------------------------------------------
 
-def _emit_trigger_helper(t: TriggerDef, ctx: dict) -> list[str]:
+def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
     """Emit `static void make_<name>() { ... onXXX(..., []{ ...actions... }); }`.
 
     The helper is invoked from initProc for triggers enabled at start, and
     from `createTrigger` actions at runtime for triggers created on demand.
     """
-    helper = ctx["trigger_helpers"][t.name]
     one_shot = "true" if t.one_shot else "false"
     cmp_ = _COMPARE.get(t.compare, "Compare::GreaterEqual")
 
@@ -715,11 +851,15 @@ def _emit_take_units(mission: Mission, group, var: str, *, label: str) -> list[s
 def _build_codegen_context(mission: Mission) -> dict:
     """Collect names -> C++ variable / helper symbols so emitters can cross-reference."""
     ctx: dict = {
-        "trigger_helpers": {},   # trigger name -> "make_<n>"
-        "group_vars": {},        # group name   -> "<g_n>"
+        "trigger_helpers": {},        # trigger name -> first-match helper (for createTrigger)
+        "trigger_helpers_list": [],   # per-index unique helper names
+        "group_vars": {},             # group name   -> "<g_n>"
     }
     for i, t in enumerate(mission.triggers or []):
-        ctx["trigger_helpers"][t.name] = f"_trigger_{i}_{_ident(t.name)}"
+        helper = f"_trigger_{i}_{_ident(t.name)}"
+        ctx["trigger_helpers_list"].append(helper)
+        if t.name not in ctx["trigger_helpers"]:
+            ctx["trigger_helpers"][t.name] = helper
     idx = 0
     for g in (getattr(mission, "building_groups", None) or []):
         ctx["group_vars"][g.name] = f"_grp_{idx}_{_ident(g.name)}"; idx += 1
@@ -761,8 +901,13 @@ def generate_levelmain(mission: Mission) -> str:
     hard   = diff.hard   if diff else 13
     normal = diff.normal if diff else 10
     easy   = diff.easy   if diff else 5
-    add(f"static const int kDiff[] = {{{hard}, {normal}, {easy}}};")
-    add("static const int diff = kDiff[(int)Game::difficulty()];")
+    add(f"static const int kDiff[] = {{{easy}, {normal}, {hard}}};")
+    add("static const int diff = kDiff[(int)Player(0).difficulty()];")
+    add("")
+    add("static int randBetween(int minValue, int maxValue) {")
+    add("    if (maxValue < minValue) std::swap(minValue, maxValue);")
+    add("    return minValue + Game::getRand(maxValue - minValue + 1);")
+    add("}")
     add("")
 
     # Custom mission variables declared at file scope
@@ -778,8 +923,8 @@ def generate_levelmain(mission: Mission) -> str:
 
     # Forward declarations for trigger helpers (so a `createTrigger` action
     # earlier in the file can invoke a trigger declared further down).
-    for t in (mission.triggers or []):
-        add(f"static void {ctx['trigger_helpers'][t.name]}();")
+    for helper in ctx["trigger_helpers_list"]:
+        add(f"static void {helper}();")
     if mission.triggers:
         add("")
 
@@ -845,12 +990,15 @@ def generate_levelmain(mission: Mission) -> str:
     # (see below); here we invoke the ones the editor marked as enabled at
     # start. Disabled-at-start triggers come into existence only when another
     # trigger calls them via a createTrigger action.
-    enabled = [t for t in (mission.triggers or []) if getattr(t, "enabled_at_start", True)]
+    enabled = [
+        (i, t) for i, t in enumerate(mission.triggers or [])
+        if getattr(t, "enabled_at_start", True)
+    ]
     if enabled:
         add("")
         add("    // --- Custom triggers (enabled at start) ---")
-        for t in enabled:
-            add(f"    {ctx['trigger_helpers'][t.name]}();")
+        for i, t in enabled:
+            add(f"    {ctx['trigger_helpers_list'][i]}();")
 
     add("")
     add('    op2::ignore(Game::forceMoraleGood());')
@@ -861,8 +1009,8 @@ def generate_levelmain(mission: Mission) -> str:
     # Custom-trigger helper functions live at file scope so they (a) can be
     # called from a createTrigger action via forward decl and (b) capture
     # the file-scope group vars via the global lookup.
-    for t in (mission.triggers or []):
-        for line in _emit_trigger_helper(t, ctx):
+    for i, t in enumerate(mission.triggers or []):
+        for line in _emit_trigger_helper(t, ctx["trigger_helpers_list"][i], ctx):
             add(line)
         add("")
 

@@ -9,12 +9,20 @@ class MissionSetupDialog(QDialog):
     """
     def __init__(self, parent, mission_name: str, mission_type: MissionType,
                  tech_tree: str, diff_setup: DifficultySetup,
-                 variables: list[VariableDef]):
+                 variables: list[VariableDef],
+                 map_names: list[str] | None = None, current_map: str = ""):
         super().__init__(parent)
         self.setWindowTitle(tr("setup.title"))
         self.resize(560, 580)
 
         # --- Basisdaten ---
+        self.map_combo = QComboBox()
+        for n in (map_names or []):
+            self.map_combo.addItem(n)
+        idx = self.map_combo.findText(current_map)
+        if idx >= 0:
+            self.map_combo.setCurrentIndex(idx)
+
         self.name_edit = QLineEdit(mission_name)
         self.type_combo = QComboBox()
         for mt, label in [
@@ -35,6 +43,7 @@ class MissionSetupDialog(QDialog):
         self.tech_edit = QLineEdit(tech_tree)
 
         form = QFormLayout()
+        form.addRow(tr("setup.lbl_map"), self.map_combo)
         form.addRow(tr("setup.lbl_mission_name"), self.name_edit)
         form.addRow(tr("setup.lbl_mission_type"), self.type_combo)
         form.addRow(tr("setup.lbl_tech_tree"), self.tech_edit)
@@ -114,6 +123,10 @@ class MissionSetupDialog(QDialog):
             self.var_table.removeRow(row)
 
     # --- Ergebnis auslesen ---
+
+    @property
+    def map_name(self) -> str:
+        return self.map_combo.currentText()
 
     @property
     def mission_name(self) -> str:

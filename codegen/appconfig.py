@@ -34,8 +34,17 @@ import configparser
 import sys
 from pathlib import Path
 
-DEFAULT_GAME_PATH = r"D:\Outpost 2"
-DEFAULT_MSVS_PATH = r"C:\Program Files\Microsoft Visual Studio\18\Community"
+import platform as _platform
+
+# On Windows keep sensible install defaults; on Linux there is no universal path
+# (game typically runs under Wine), so leave blank and let the user fill it in.
+if _platform.system() == "Windows":
+    DEFAULT_GAME_PATH = r"D:\Outpost 2"
+    DEFAULT_MSVS_PATH = r"C:\Program Files\Microsoft Visual Studio\18\Community"
+else:
+    DEFAULT_GAME_PATH = ""
+    DEFAULT_MSVS_PATH = ""
+
 DEFAULT_DLL_NAME = "cEditorMission.dll"
 DEFAULT_LANGUAGE = "auto"  # "auto" = Systemsprache erkennen (sonst de/en/...)
                            # "auto" = detect system language (otherwise de/en/...)
@@ -70,8 +79,8 @@ def _save(cp: configparser.ConfigParser) -> None:
 
 
 def game_path() -> Path:
-    return Path(_load().get("paths", "game_path", fallback=DEFAULT_GAME_PATH).strip()
-                or DEFAULT_GAME_PATH)
+    val = _load().get("paths", "game_path", fallback=DEFAULT_GAME_PATH).strip()
+    return Path(val or DEFAULT_GAME_PATH or ".")
 
 
 def msvs_path() -> Path:
@@ -200,7 +209,10 @@ def ensure_default_file() -> None:
     if CONFIG_PATH.exists():
         return
     cp = configparser.ConfigParser(interpolation=None)
-    cp["paths"] = {"game_path": DEFAULT_GAME_PATH, "msvs_path": DEFAULT_MSVS_PATH}
+    paths: dict[str, str] = {"game_path": DEFAULT_GAME_PATH}
+    if _platform.system() == "Windows":
+        paths["msvs_path"] = DEFAULT_MSVS_PATH
+    cp["paths"] = paths
     cp["build"] = {"platform_toolset": "", "windows_sdk": ""}
     cp["output"] = {"output_dir": "", "dll_name": DEFAULT_DLL_NAME}
     cp["ui"] = {"language": DEFAULT_LANGUAGE, "show_grid": "false"}

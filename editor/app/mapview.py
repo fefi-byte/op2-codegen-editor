@@ -44,6 +44,7 @@ class MapView(QGraphicsView):
         self._panning = False
         self._pan_start = None
         self.rect_select_enabled = False
+        self.lava_paint_enabled = False
         self._rect_dragging = False
         # Kachelgitter standardmaessig aus (via set_grid umschaltbar).
         # Tile grid off by default (toggled via set_grid).
@@ -137,8 +138,11 @@ class MapView(QGraphicsView):
             self._rect_dragging = True
             self.rectDragStarted.emit(*self._tile(event.position()))
         elif event.button() == Qt.RightButton and self.rect_select_enabled:
-            self._rect_dragging = False
-            self.rectDragCanceled.emit()
+            if self.lava_paint_enabled:
+                self.tileRemoved.emit(*self._tile(event.position()))
+            else:
+                self._rect_dragging = False
+                self.rectDragCanceled.emit()
         elif event.button() == Qt.LeftButton:
             self.tileClicked.emit(*self._tile(event.position()))
         elif event.button() == Qt.RightButton:

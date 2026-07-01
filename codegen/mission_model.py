@@ -232,7 +232,7 @@ class TriggerAction:
 
     An action inside the callback function of a trigger.
     """
-    kind: str                 # "message" | "createUnit" | "createTrigger" | "recordBuilding" | "recordTube" | "recordWall" | "setTargCount" | "assignToGroup" | "modVar"
+    kind: str                 # "message" | "createUnit" | "createTrigger" | "recordBuilding" | "recordTube" | "recordWall" | "setTargCount" | "assignToGroup" | "modVar" | "createDisaster" | legacy: "createMeteor" | "createEarthquake" | "createStorm" | "createVortex" | "createBlight" | "unsetBlight"
     text: str = ""
     unit_type: str = "mapScout"
     weapon_type: str = "mapNone"
@@ -256,6 +256,18 @@ class TriggerAction:
     var_name: str = ""        # Name der Variablen
     mod_mode: str = "inc"     # "inc" (+1) | "dec" (-1) | "expr" (Ausdruck)
     var_expr: str = ""        # Ausdruck fuer mod_mode=="expr"
+    # Disaster actions: expression-based coordinates, shared by point/path effects.
+    disaster_type: str = "meteor"   # meteor | earthquake | storm | vortex | eruption | blight | unblight
+    x_expr: int | str = 0
+    y_expr: int | str = 0
+    x2_expr: int | str = 0
+    y2_expr: int | str = 0
+    size: int = -1            # -1=random, 0=large, 1=medium, 2=small
+    magnitude: int | str = 1
+    duration: int | str = 100
+    spread_speed: int = 15    # eruption lava spread speed (15=very slow, 45=medium)
+    lava_zone: list = field(default_factory=list)  # [[x, y], ...] tiles for setLavaPossible
+    now: bool = False
 
 
 @dataclass

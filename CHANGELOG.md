@@ -5,6 +5,38 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Linux support**: the editor GUI and the DLL build step now run on Linux
+  (Debian, Ubuntu, Arch, Fedora, Steam Deck). The game is expected to run under
+  Wine; compiled missions are still Win32 DLLs.
+- `requirements.txt` for Python dependencies (`numpy`, `Pillow`, `PySide6`).
+- `build.sh` template — MinGW cross-compile script generated alongside
+  `build.bat` into every mission folder (executable bit set automatically).
+- `codegen/build._find_make_tool()` — auto-detects Ninja or GNU make so
+  CMake can configure on Linux without manual generator selection.
+- `codegen/build._find_mingw32()` — locates the `i686-w64-mingw32` toolchain
+  and provides clear install instructions if missing.
+- CI: `build-linux` job on `ubuntu-latest` validates imports and toolchain on
+  every tag push (`.github/workflows/release.yml`).
+
+### Changed
+- `codegen/build.build_folder()`: branches on platform — Windows uses the VS
+  generator as before; Linux uses Ninja/make with MinGW i686-w64-mingw32.
+  Stale `CMakeCache.txt` from a prior build is deleted automatically before
+  re-configuring.
+- `codegen/appconfig.py`: default paths are empty on Linux; `msvs_path` is
+  omitted from the auto-generated `config.ini` on non-Windows.
+- `CMakeLists.txt.template`: MSVC guard widened to include `MINGW`; compiler
+  flags split into MSVC and MinGW branches (static runtime for MinGW).
+- `op2_crash.hpp`: SEH (`__try`/`__except`) guarded by `#ifdef _MSC_VER`;
+  MinGW gets no-op stubs.
+- `TitanAPI/op2/abi/memory.hpp`: calling-convention templates (`callFast`,
+  `member`, …) enabled for `__MINGW32__` in addition to `_MSC_VER`.
+- `config.example.ini`: Linux `game_path` example added; `msvs_path` marked
+  as Windows-only.
+
 ## [0.2.1] - 2026-06-24
 
 ### Added

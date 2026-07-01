@@ -35,6 +35,7 @@ class _OverviewMixin:
         name = f"Trigger{len(self.triggers) + 1}"
         self.triggers.append(TriggerDef(name=name))
         self._refresh_overview()
+        self.trigger_panel.refresh()
         self.statusBar().showMessage(tr("window.status_trigger_added", name=name))
 
     def _trigger_cond_text(self, t):

@@ -10,7 +10,6 @@ class _MenuMixin:
         a = QAction(tr("window.save_project"), self); a.triggered.connect(self.save_project); m.addAction(a)
         a = QAction(tr("window.save_project_as"), self); a.triggered.connect(self.save_project_as); m.addAction(a)
         m.addSeparator()
-        a = QAction(tr("window.choose_map"), self); a.triggered.connect(self.choose_map); m.addAction(a)
         a = QAction(tr("window.choose_output"), self); a.triggered.connect(self.choose_output); m.addAction(a)
         m.addSeparator()
         a = QAction(tr("window.quit"), self); a.triggered.connect(self.close); m.addAction(a)
@@ -59,16 +58,23 @@ class _MenuMixin:
             (tr("window.tb_setup"), self.edit_setup),
             (tr("window.tb_players"), self.edit_players),
             (tr("window.tb_conditions"), self.edit_conditions),
-            (tr("window.tb_groups"), self.edit_groups),
-            (tr("window.tb_triggers"), self.edit_triggers),
-            (tr("window.tb_show_code"), self.show_code),
-            (tr("window.tb_build"), self.do_build),
-            (tr("window.tb_test_op2"), self._launch_op2),
-            (tr("window.tb_clear"), self.clear_objects),
         ]:
             act = QAction(label, self)
             act.triggered.connect(slot)
             tb.addAction(act)
+        tb.addSeparator()
+        for label, slot in [
+            (tr("window.tb_show_code"), self.show_code),
+            (tr("window.tb_build"), self.do_build),
+            (tr("window.tb_test_op2"), self._launch_op2),
+        ]:
+            act = QAction(label, self)
+            act.triggered.connect(slot)
+            tb.addAction(act)
+        tb.addSeparator()
+        act = QAction(tr("window.tb_clear"), self)
+        act.triggered.connect(self.clear_objects)
+        tb.addAction(act)
 
     def _set_language(self, code):
         appconfig.set_language(code)

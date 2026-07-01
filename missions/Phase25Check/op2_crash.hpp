@@ -11,16 +11,11 @@
 // KERNEL32-only; no <windows.h> (keeps the DLL's import table to KERNEL32, like the rest of TitanAPI). The
 // minimal EXCEPTION_RECORD/POINTERS layouts below match the x86 ABI so we can read the code + address without
 // pulling in the Windows headers.
-//
-// SEH (__try/__except) is MSVC-only. MinGW cross-builds get no-op stubs that simply call fn() directly.
 
+#include <excpt.h>            // __try/__except + GetExceptionInformation
 #include "op2_log.hpp"
 
 namespace op2::crash {
-
-#ifdef _MSC_VER
-
-#include <excpt.h>            // __try/__except + GetExceptionInformation
 
 // Head of the x86 EXCEPTION_RECORD - enough for the exception code + faulting instruction address.
 struct ExceptionRecord  { unsigned long code; unsigned long flags; void* pNext; void* address; };
@@ -56,15 +51,5 @@ inline void guard(const char* where, void (*fn)()) {
     // already logged in the filter expression; swallow and let the game continue
   }
 }
-
-#else // MinGW cross-compile: SEH not available, use no-op stubs
-
-inline void installHandler() {}
-
-inline void guard(const char* /*where*/, void (*fn)()) {
-  fn();
-}
-
-#endif // _MSC_VER
 
 } // namespace op2::crash
