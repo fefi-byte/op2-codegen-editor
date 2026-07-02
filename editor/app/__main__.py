@@ -24,7 +24,7 @@ def main():
     # Application-wide icon (also applies to all dialogs).
     app.setWindowIcon(QIcon(str(ICON_PATH)))
     win = EditorWindow()
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec())
 
 

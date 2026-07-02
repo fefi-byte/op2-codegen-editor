@@ -8,7 +8,7 @@ from .panels.groups_panel import GroupsPanel
 class _SidebarMixin:
     def _build_sidebar(self):
         dock = QDockWidget(tr("window.dock_place"), self)
-        dock.setMinimumWidth(220)
+        dock.setMinimumWidth(300)
 
         # --- Tab 0: Platzieren ---
         place_widget = self._build_place_widget()
@@ -28,6 +28,7 @@ class _SidebarMixin:
 
         dock.setWidget(self._sidebar_tabs)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
+        self.resizeDocks([dock], [320], Qt.Horizontal)
         self._fill_list(self.cat_combo.currentData())
 
     def _on_trigger_map_pick(self, request: dict):

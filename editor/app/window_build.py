@@ -43,6 +43,8 @@ class _BuildMixin:
         self._planned_items = []
         self._lava_paint_items = []
         self._lava_paint_set: set = set()
+        self._lava_paint_drag_start: tuple | None = None
+        self._lava_rect_preview = None
         self.scene.addPixmap(pix)
         self.scene.setSceneRect(QRectF(pix.rect()))
         self.view.resetTransform()

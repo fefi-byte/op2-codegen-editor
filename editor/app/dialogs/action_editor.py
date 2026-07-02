@@ -171,7 +171,8 @@ class ActionInlineForm(QWidget):
         self.spread_speed.setRange(1, 200)
         self.spread_speed.setValue(15)
         self.spread_speed.setToolTip("Ausbreitungsgeschwindigkeit der Lava (15 = sehr langsam, 45 = mittel)")
-        self.lava_zone_btn = QPushButton("🌋 Lava Zone bearbeiten")
+        self._lava_paint_active = False
+        self.lava_zone_btn = QPushButton("Lava Zone bearbeiten")
         self.lava_zone_btn.clicked.connect(lambda: self._request_pick("lava_zone"))
         self.lava_zone_lbl = QLabel("0 Kacheln definiert")
         self.lava_zone_lbl.setStyleSheet("color: #6c7086; font-size: 9pt;")
@@ -469,7 +470,19 @@ class ActionInlineForm(QWidget):
 
     def _request_pick(self, field: str):
         self._save()
+        if field == "lava_zone":
+            self._lava_paint_active = not self._lava_paint_active
+            self._update_lava_zone_btn()
         self.pick_requested.emit(field)
+
+    def _update_lava_zone_btn(self):
+        if self._lava_paint_active:
+            self.lava_zone_btn.setText("Fertig — Lava Zone übernehmen")
+            self.lava_zone_btn.setStyleSheet(
+                "background-color: #c45000; color: white; font-weight: bold; padding: 4px 8px;")
+        else:
+            self.lava_zone_btn.setText("Lava Zone bearbeiten")
+            self.lava_zone_btn.setStyleSheet("")
 
 
 class ConditionListWidget(QWidget):

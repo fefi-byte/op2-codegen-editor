@@ -54,7 +54,9 @@ class _MapPickMixin:
 
     def _rect_drag_start(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
-            self._lava_paint_add(tx, ty)
+            if self.map and 0 <= tx < self.map.width and 0 <= ty < self.map.height:
+                self._lava_paint_drag_start = (tx, ty)
+                self._update_lava_rect_preview(tx, ty, tx, ty)
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
             tx, ty = self._clamp_tile(tx, ty)
@@ -76,7 +78,12 @@ class _MapPickMixin:
 
     def _rect_drag_move(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
-            self._lava_paint_add(tx, ty)
+            if self._lava_paint_drag_start is not None:
+                sx, sy = self._lava_paint_drag_start
+                self._update_lava_rect_preview(sx, sy, tx, ty)
+                self.coord_label.setText(
+                    f"Lava-Rect: ({min(sx,tx)},{min(sy,ty)}) "
+                    f"{abs(tx-sx)+1}x{abs(ty-sy)+1}")
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect" and self._action_pick_start is not None:
             sx, sy = self._action_pick_start
@@ -100,7 +107,13 @@ class _MapPickMixin:
 
     def _rect_drag_finish(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
-            self._lava_paint_add(tx, ty)
+            self._clear_lava_rect_preview()
+            if self._lava_paint_drag_start is not None:
+                sx, sy = self._lava_paint_drag_start
+                self._lava_paint_fill_rect(sx, sy, tx, ty)
+                self._lava_paint_drag_start = None
+            else:
+                self._lava_paint_add(tx, ty)
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
             if self._action_pick_start is None:
@@ -182,6 +195,8 @@ class _MapPickMixin:
         self.view.rect_select_enabled = False
         self.view.lava_paint_enabled = False
         self.view.setCursor(Qt.ArrowCursor)
+        self._clear_lava_rect_preview()
+        self._lava_paint_drag_start = None
         self._clear_lava_paint_items()
         self._action_pick = None
         self.trigger_panel.refresh_actions(expand_index=action_index)
@@ -218,6 +233,40 @@ class _MapPickMixin:
             rect.setZValue(1050)
             self.scene.addItem(rect)
             self._lava_paint_items.append(rect)
+
+    def _lava_paint_fill_rect(self, x1, y1, x2, y2):
+        x_min, x_max = min(x1, x2), max(x1, x2)
+        y_min, y_max = min(y1, y2), max(y1, y2)
+        changed = False
+        for tx in range(x_min, x_max + 1):
+            for ty in range(y_min, y_max + 1):
+                if self.map and 0 <= tx < self.map.width and 0 <= ty < self.map.height:
+                    if (tx, ty) not in self._lava_paint_set:
+                        self._lava_paint_set.add((tx, ty))
+                        changed = True
+        if changed:
+            self._save_lava_zone()
+            self._redraw_lava_paint_tiles()
+
+    def _update_lava_rect_preview(self, x1, y1, x2, y2):
+        self._clear_lava_rect_preview()
+        x_min, x_max = min(x1, x2), max(x1, x2)
+        y_min, y_max = min(y1, y2), max(y1, y2)
+        px = x_min * SCENE_TILE
+        py = y_min * SCENE_TILE
+        pw = (x_max - x_min + 1) * SCENE_TILE
+        ph = (y_max - y_min + 1) * SCENE_TILE
+        item = QGraphicsRectItem(px, py, pw, ph)
+        item.setPen(QPen(QColor(255, 160, 0), 2, Qt.DashLine))
+        item.setBrush(QBrush(QColor(255, 160, 0, 50)))
+        item.setZValue(1060)
+        self.scene.addItem(item)
+        self._lava_rect_preview = item
+
+    def _clear_lava_rect_preview(self):
+        if self._lava_rect_preview is not None:
+            self.scene.removeItem(self._lava_rect_preview)
+            self._lava_rect_preview = None
 
     def _begin_action_pick(self, request):
         if request["kind"] == "lava_paint":
