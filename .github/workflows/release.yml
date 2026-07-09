@@ -89,16 +89,22 @@ jobs:
         run: |
           cd editor
           python -c "
-          import sys
+          import sys, os
           sys.argv = ['app']
-          # Nur Imports prüfen, keine GUI starten
-          import importlib, types
-          # Stub Qt-App damit kein Display nötig ist
-          from unittest.mock import patch, MagicMock
-          with patch('PySide6.QtWidgets.QApplication', MagicMock):
-              pass
+          # codegen/ wird -- wie von editor/app/common.py zur Laufzeit auch
+          # gemacht -- direkt (nicht ueber das Repo-Root) auf den sys.path
+          # gelegt; Module darin werden als bare top-level Namen importiert
+          # (z.B. 'import build', nicht 'from codegen import build').
+          # codegen/ is put directly (not via the repo root) on sys.path --
+          # same as editor/app/common.py does at runtime; modules inside it
+          # are imported as bare top-level names (e.g. 'import build', not
+          # 'from codegen import build').
+          sys.path.insert(0, os.path.abspath('../codegen'))
+          # Nur Imports pruefen, keine GUI starten -- reines Importieren von
+          # PySide6-Modulen braucht kein Display, nur das tatsaechliche
+          # Erzeugen einer QApplication/eines Fensters wuerde eines brauchen.
           from app import mission_project, i18n
-          from codegen import build
+          import build
           print('OK: alle Module importierbar')
           "
 
