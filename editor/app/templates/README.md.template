@@ -17,7 +17,13 @@ An Outpost 2 mission built on **[TitanAPI](https://github.com/leviathan400/Titan
 
 - **CMake 3.21+** on PATH
 - **Visual Studio 2026** with the C++ x86 toolset (C++23 preview)
-- The `TitanAPI` submodule at `../../TitanAPI/`
+- The TitanAPI headers (`op2.hpp` etc.)
+
+`CMakeLists.txt` looks for the TitanAPI headers in this order: (1) wherever the
+editor that generated this project found them (works out of the box if you
+still have that editor install), (2) `../../TitanAPI/TitanAPI/include`
+relative to this folder (works for a full repo checkout), (3) an explicit
+override you pass on the command line.
 
 If you got this folder as part of the full repo, clone with submodules:
 
@@ -25,13 +31,13 @@ If you got this folder as part of the full repo, clone with submodules:
 git clone --recursive -b titanapi https://github.com/fefi-byte/op2-codegen-editor.git
 ```
 
-If you only have this mission folder, clone TitanAPI separately:
+If you only have this mission folder, clone TitanAPI separately and point
+CMake at it:
 
 ```powershell
 git clone https://github.com/leviathan400/TitanAPI.git
+cmake -S . -B build -G "Visual Studio 18 2026" -A Win32 -DTITANAPI_INCLUDE_DIR="<path>\TitanAPI\TitanAPI\include"
 ```
-
-…and adjust the `../../TitanAPI/` path in `CMakeLists.txt`.
 
 ## Build
 

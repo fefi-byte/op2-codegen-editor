@@ -25,6 +25,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import appconfig
+
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 
@@ -97,6 +99,13 @@ def write_mission_folder(
         "__MISSION_NAME__": mission_name,
         "__DLL_BASENAME__": dll_basename,
         "__MAP_FILENAME__": map_name or "on1_01.map",
+        # Absoluter Pfad statt fixem "../../TitanAPI/..." -- funktioniert im
+        # Dev-Checkout genauso wie in einer aus dem Release-ZIP entpackten
+        # Mission (siehe appconfig.titanapi_include_dir()).
+        # Absolute path instead of a fixed "../../TitanAPI/..." -- works in
+        # the dev checkout the same as in a mission extracted from the
+        # release ZIP (see appconfig.titanapi_include_dir()).
+        "__TITANAPI_INCLUDE_DIR__": appconfig.titanapi_include_dir().as_posix(),
     }
 
     # 1) Editor-Projektdatei

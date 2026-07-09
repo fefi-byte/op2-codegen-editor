@@ -65,6 +65,26 @@ def base_dir() -> Path:
 CONFIG_PATH = base_dir() / "config.ini"
 
 
+def titanapi_include_dir() -> Path:
+    """Ordner mit den TitanAPI-Headern (op2.hpp usw.), fuer generierte CMakeLists.txt.
+
+    Im PyInstaller-Build liegen sie gebuendelt unter sys._MEIPASS (_internal/);
+    im Dev-Checkout unter TitanAPI/TitanAPI/include neben codegen/. Ein fixer
+    relativer Pfad (z.B. "../../TitanAPI/...") ist falsch, sobald eine Mission
+    ausserhalb des Repo-Layouts liegt (z.B. im entpackten Release-ZIP).
+
+    Folder containing the TitanAPI headers (op2.hpp etc.), for the generated
+    CMakeLists.txt. In a PyInstaller build they are bundled under sys._MEIPASS
+    (_internal/); in a dev checkout under TitanAPI/TitanAPI/include next to
+    codegen/. A fixed relative path (e.g. "../../TitanAPI/...") breaks as soon
+    as a mission folder lives outside the repo layout (e.g. an extracted
+    release ZIP).
+    """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "TitanAPI" / "TitanAPI" / "include"
+    return base_dir() / "TitanAPI" / "TitanAPI" / "include"
+
+
 def _load() -> configparser.ConfigParser:
     # interpolation=None: Pfade mit '%' werden nicht als Platzhalter missdeutet.
     # interpolation=None: paths containing '%' are not misread as placeholders.

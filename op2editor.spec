@@ -29,6 +29,10 @@ datas = [
     (str(APP / "templates"), "app/templates"),
     # codegen + mapview Python sources
     (str(ROOT / "codegen"), "codegen"),
+    # TitanAPI headers — the generated mission CMakeLists.txt includes them via
+    # a path relative to the mission folder (missions/<Name>/../../TitanAPI/TitanAPI/include),
+    # so they must land next to the EXE at the same relative offset as in the repo.
+    (str(ROOT / "TitanAPI" / "TitanAPI" / "include"), "TitanAPI/TitanAPI/include"),
     # mapview ohne gecachte PNG-Renders (werden zur Laufzeit aus OP2-Pfad geladen)
     *[
         (str(f), "mapview")
