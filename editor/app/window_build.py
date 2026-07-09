@@ -144,6 +144,8 @@ class _BuildMixin:
                 )
                 for g in self.reinforce_groups
             ],
+            fight_groups=[FightGroupSpec(**asdict(g)) for g in self.fight_groups],
+            mining_groups=[MiningGroupSpec(**asdict(g)) for g in self.mining_groups],
             triggers=list(self.triggers),
             start_message=StartMessage(tr("window.default_start_message")),
             victories=list(self.victories), defeats=list(self.defeats),

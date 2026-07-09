@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from .common import *
+from .panels.validation_panel import ValidationPanel
 
 
 class _OverviewMixin:
     def _build_overview(self):
+        self._build_validation_dock()
         dock = QDockWidget(tr("window.dock_overview"), self)
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         panel = QWidget()
@@ -19,6 +21,17 @@ class _OverviewMixin:
         lay.addWidget(self.overview, 1)
         lay.addWidget(QLabel(tr("window.overview_hint")))
         dock.setWidget(panel)
+        # Startbreite der rechten Seitenleiste (Uebersicht + Validierung).
+        # Initial width of the right sidebar (overview + validation).
+        dock.setMinimumWidth(150)
+        self.addDockWidget(Qt.RightDockWidgetArea, dock)
+        self.resizeDocks([dock], [200], Qt.Horizontal)
+
+    def _build_validation_dock(self):
+        dock = QDockWidget(tr("window.dock_validation"), self)
+        dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea)
+        self.validation_panel = ValidationPanel(self)
+        dock.setWidget(self.validation_panel)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
 
     def _ov_add(self, parent, text, kind=None, index=None, sub=None):
@@ -61,6 +74,12 @@ class _OverviewMixin:
     def _refresh_overview(self):
         if not hasattr(self, "overview"):
             return
+        if hasattr(self, "objects_panel"):
+            self.objects_panel.refresh()
+        if hasattr(self, "validation_panel"):
+            self.validation_panel.refresh()
+        if hasattr(self, "_overlay_items"):
+            self._refresh_overlays()
         expanded = {self.overview.topLevelItem(i).text(0).split(" (")[0]
                     for i in range(self.overview.topLevelItemCount())
                     if self.overview.topLevelItem(i).isExpanded()}
@@ -86,12 +105,17 @@ class _OverviewMixin:
                             tech=p.tech_level),
                          "players", i)
 
-        groups_total = len(self.building_groups) + len(self.reinforce_groups)
+        groups_total = (len(self.building_groups) + len(self.reinforce_groups)
+                        + len(self.fight_groups) + len(self.mining_groups))
         sec_groups = self._ov_add(self.overview, tr("window.ov_groups", n=groups_total))
         for g in self.building_groups:
             self._ov_add(sec_groups, building_group_summary(g), "groups")
         for g in self.reinforce_groups:
             self._ov_add(sec_groups, reinforce_group_summary(g), "groups")
+        for g in self.fight_groups:
+            self._ov_add(sec_groups, fight_group_summary(g), "groups")
+        for g in self.mining_groups:
+            self._ov_add(sec_groups, mining_group_summary(g), "groups")
 
         sec_cond = self._ov_add(self.overview,
                                 tr("window.ov_conditions", w=len(self.victories), l=len(self.defeats)))

@@ -47,8 +47,9 @@ import build as build_mod
 from codegen import generate_levelmain
 from mission_model import (
     ActionCondition, BeaconSpec, BuildingGroupSpec, Colony, Condition, DifficultySetup,
-    FindUnitCheck, Mission, MissionType, PlayerSpec, ReinforceGroupSpec, ReinforceTargetSpec,
-    StartMessage, TriggerAction, TriggerDef, UnitSpec, VariableDef, WallTubeSpec, action_from_dict,
+    FightGroupSpec, FindUnitCheck, MiningGroupSpec, Mission, MissionType, PlayerSpec,
+    ReinforceGroupSpec, ReinforceTargetSpec, StartMessage, TriggerAction, TriggerDef,
+    UnitSpec, VariableDef, WallTubeSpec, action_from_dict,
 )
 from techs import load_techs
 

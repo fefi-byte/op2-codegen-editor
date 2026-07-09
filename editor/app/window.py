@@ -10,12 +10,13 @@ from .window_placement import _PlacementMixin
 from .window_map_pick import _MapPickMixin
 from .window_project import _ProjectMixin
 from .window_build import _BuildMixin
+from .window_overlays import _OverlaysMixin
 
 
 class EditorWindow(
     _MenuMixin, _SidebarMixin, _OverviewMixin,
     _PlacementMixin, _MapPickMixin, _ProjectMixin,
-    _BuildMixin, QMainWindow,
+    _BuildMixin, _OverlaysMixin, QMainWindow,
 ):
     def __init__(self):
         super().__init__()
@@ -46,6 +47,8 @@ class EditorWindow(
         self.triggers: list[TriggerDef] = []
         self.building_groups: list[BuildingGroupSpec] = []
         self.reinforce_groups: list[ReinforceGroupSpec] = []
+        self.fight_groups: list[FightGroupSpec] = []
+        self.mining_groups: list[MiningGroupSpec] = []
         self.node_positions: dict = {}
         self.mission_folder: Path | None = None
         self._next_object_id = 1
@@ -56,6 +59,8 @@ class EditorWindow(
         self.dll_name = DEFAULT_DLL_NAME
         self._placement_active = False
         self._placement_preview_items = []
+        self._init_overlays()
+        self._init_undo()
 
         self.scene = QGraphicsScene(self)
         self.view = MapView(self.scene)

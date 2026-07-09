@@ -14,6 +14,16 @@ class _MenuMixin:
         m.addSeparator()
         a = QAction(tr("window.quit"), self); a.triggered.connect(self.close); m.addAction(a)
 
+        edit_menu = self.menuBar().addMenu(tr("window.menu_edit"))
+        undo_act = QAction(tr("window.undo"), self)
+        undo_act.setShortcut("Ctrl+Z")
+        undo_act.triggered.connect(self.undo)
+        edit_menu.addAction(undo_act)
+        redo_act = QAction(tr("window.redo"), self)
+        redo_act.setShortcut("Ctrl+Y")
+        redo_act.triggered.connect(self.redo)
+        edit_menu.addAction(redo_act)
+
         view_menu = self.menuBar().addMenu(tr("window.menu_view"))
         # Kachelgitter-Umschalter; Anfangszustand aus config.ini.
         # Tile-grid toggle; initial state from config.ini.
@@ -24,6 +34,16 @@ class _MenuMixin:
         self.grid_action.setChecked(grid_on)
         self.grid_action.toggled.connect(self._toggle_grid)
         view_menu.addAction(self.grid_action)
+        # Overlays: Trigger-Zonen und Gruppen-Bereiche auf der Karte.
+        # Overlays: trigger zones and group areas on the map.
+        self.trigger_overlay_action = QAction(tr("window.show_trigger_zones"), self)
+        self.trigger_overlay_action.setCheckable(True)
+        self.trigger_overlay_action.toggled.connect(self._toggle_trigger_overlay)
+        view_menu.addAction(self.trigger_overlay_action)
+        self.group_overlay_action = QAction(tr("window.show_group_areas"), self)
+        self.group_overlay_action.setCheckable(True)
+        self.group_overlay_action.toggled.connect(self._toggle_group_overlay)
+        view_menu.addAction(self.group_overlay_action)
         view_menu.addSeparator()
         # Zoom-Voreinstellungen; das Mausrad zoomt weiterhin frei.
         # Zoom presets; the mouse wheel still free-zooms.

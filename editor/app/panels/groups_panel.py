@@ -27,6 +27,12 @@ class GroupsPanel(QWidget):
         add_reinforce = QPushButton(tr("groups.add_reinforce"))
         add_reinforce.clicked.connect(self._add_reinforce)
         apply_role(add_reinforce, "primary")
+        add_fight = QPushButton(tr("groups.add_fight"))
+        add_fight.clicked.connect(self._add_fight)
+        apply_role(add_fight, "primary")
+        add_mining = QPushButton(tr("groups.add_mining"))
+        add_mining.clicked.connect(self._add_mining)
+        apply_role(add_mining, "primary")
         rm_btn = QPushButton(tr("groups.remove"))
         rm_btn.clicked.connect(self._remove)
         apply_role(rm_btn, "danger")
@@ -37,6 +43,8 @@ class GroupsPanel(QWidget):
         left_lay.addWidget(self.glist, 1)
         left_lay.addWidget(add_building)
         left_lay.addWidget(add_reinforce)
+        left_lay.addWidget(add_fight)
+        left_lay.addWidget(add_mining)
         left_lay.addWidget(rm_btn)
 
         # --- Detailformular ---
@@ -44,7 +52,7 @@ class GroupsPanel(QWidget):
         self.folder = QLineEdit()
         self.folder.setPlaceholderText(tr("groups.folder_placeholder"))
         self.gtype = QComboBox()
-        self.gtype.addItems(["BuildingGroup", "ReinforceGroup"])
+        self.gtype.addItems(["BuildingGroup", "ReinforceGroup", "FightGroup", "MiningGroup"])
         self.gtype.setEnabled(False)
         self.player = QSpinBox()
         self.player.setRange(0, 5)
@@ -65,11 +73,15 @@ class GroupsPanel(QWidget):
         self.target_text.setPlaceholderText(tr("groups.target_placeholder"))
         self.target_text.setMaximumHeight(120)
 
+        self.rect_section_label = QLabel(tr("groups.row_build_rect"))
+        self.rect_section_label.setProperty("role", "section")
+
         self.form = QFormLayout()
         self.form.addRow(tr("groups.row_name"), self.name)
         self.form.addRow(tr("groups.lbl_folder"), self.folder)
         self.form.addRow(tr("groups.row_type"), self.gtype)
         self.form.addRow(tr("groups.row_player"), self.player)
+        self.form.addRow(self.rect_section_label)
         self.form.addRow(tr("groups.row_rect_x"), self.rect_x)
         self.form.addRow(tr("groups.row_rect_y"), self.rect_y)
         self.form.addRow(tr("groups.row_rect_width"), self.rect_w)
@@ -107,7 +119,8 @@ class GroupsPanel(QWidget):
 
     def load(self):
         w = self._window
-        self.groups = list(w.building_groups) + list(w.reinforce_groups)
+        self.groups = (list(w.building_groups) + list(w.reinforce_groups)
+                       + list(w.fight_groups) + list(w.mining_groups))
         self._idx = -1
         self.player.setRange(0, max(0, len(w.players) - 1))
         self._refresh_list()
@@ -143,16 +156,40 @@ class GroupsPanel(QWidget):
             if o.map_id in ("mapVehicleFactory", "mapArachnidFactory")
         ]
 
+    def _fight_vehicles(self):
+        military_ids = {m for _, m in MILITARY_VEHICLES}
+        return [o for o in self._window.objects if o.map_id in military_ids]
+
+    def _trucks(self):
+        return [o for o in self._window.objects if o.map_id == "mapCargoTruck"]
+
     def _building_groups(self):
         return [g for g in self.groups if isinstance(g, BuildingGroupSpec)]
 
     def _reinforce_groups(self):
         return [g for g in self.groups if isinstance(g, ReinforceGroupSpec)]
 
+    def _fight_groups(self):
+        return [g for g in self.groups if isinstance(g, FightGroupSpec)]
+
+    def _mining_groups(self):
+        return [g for g in self.groups if isinstance(g, MiningGroupSpec)]
+
     def _sync_to_window(self):
         self._window.building_groups = self._building_groups()
         self._window.reinforce_groups = self._reinforce_groups()
+        self._window.fight_groups = self._fight_groups()
+        self._window.mining_groups = self._mining_groups()
         self._window._refresh_overview()
+        # Bereits offene Aktionsformulare (z.B. eine startMining-Aktion, deren
+        # Gruppen-Dropdown noch den alten Gruppen-Stand zeigt) mit dem
+        # aktuellen Gruppen-Stand neu aufbauen -- sonst taucht eine gerade
+        # erst angelegte Gruppe dort nicht auf, bis man den Trigger wechselt.
+        # Rebuild already-open action forms (e.g. a startMining action whose
+        # group dropdown still shows the old group list) with the current
+        # group state -- otherwise a just-created group won't show up there
+        # until the user switches triggers.
+        self._window.trigger_panel.refresh_actions()
 
     def _object_label(self, o):
         name = f"{o.unit_name}: " if o.unit_name else ""
@@ -161,6 +198,10 @@ class GroupsPanel(QWidget):
     def _summary(self, group):
         if isinstance(group, ReinforceGroupSpec):
             return reinforce_group_summary(group)
+        if isinstance(group, FightGroupSpec):
+            return fight_group_summary(group)
+        if isinstance(group, MiningGroupSpec):
+            return mining_group_summary(group)
         return building_group_summary(group)
 
     def _set_form_enabled(self, on):
@@ -267,6 +308,40 @@ class GroupsPanel(QWidget):
         self._refresh_list()
         self._select_idx(len(self.groups) - 1)
 
+    def _add_fight(self):
+        vehicles = self._fight_vehicles()
+        group = FightGroupSpec(
+            name=f"FightGroup{len(self._fight_groups()) + 1}",
+            player=0,
+            idle_x=0, idle_y=0,
+            idle_width=8, idle_height=8,
+            unit_ids=[o.uid for o in vehicles if o.player == 0],
+        )
+        self.groups.append(group)
+        self._sync_to_window()
+        self._refresh_list()
+        self._select_idx(len(self.groups) - 1)
+
+    def _add_mining(self):
+        smelters = [o for o in self._window.objects
+                    if o.map_id in ("mapCommonOreSmelter", "mapRareOreSmelter")]
+        s = smelters[0] if smelters else None
+        idle_x = max(0, s.tile_x - 4) if s else 0
+        idle_y = max(0, s.tile_y - 3) if s else 0
+        player = s.player if s else 0
+        trucks = self._trucks()
+        group = MiningGroupSpec(
+            name=f"MiningGroup{len(self._mining_groups()) + 1}",
+            player=player,
+            idle_x=idle_x, idle_y=idle_y,
+            idle_width=9, idle_height=7,
+            unit_ids=[o.uid for o in trucks if o.player == player],
+        )
+        self.groups.append(group)
+        self._sync_to_window()
+        self._refresh_list()
+        self._select_idx(len(self.groups) - 1)
+
     def _remove(self):
         if not (0 <= self._idx < len(self.groups)):
             return
@@ -289,15 +364,29 @@ class GroupsPanel(QWidget):
     def _load(self, i):
         group = self.groups[i]
         is_reinforce = isinstance(group, ReinforceGroupSpec)
+        is_fight = isinstance(group, FightGroupSpec)
+        is_mining = isinstance(group, MiningGroupSpec)
+        has_rect = not is_reinforce
         self._loading = True
         self.name.setText(group.name)
         self.folder.setText(getattr(group, 'folder', '') or '')
-        self.gtype.setCurrentText("ReinforceGroup" if is_reinforce else "BuildingGroup")
+        gtype_name = ("MiningGroup" if is_mining else
+                      "FightGroup" if is_fight else
+                      "ReinforceGroup" if is_reinforce else "BuildingGroup")
+        self.gtype.setCurrentText(gtype_name)
         self.player.setValue(group.player)
         for widget in (self.rect_x, self.rect_y, self.rect_w, self.rect_h, self.pick_rect):
-            self.form.setRowVisible(widget, not is_reinforce)
+            self.form.setRowVisible(widget, has_rect)
         self.form.setRowVisible(self.target_text, is_reinforce)
-        if not is_reinforce:
+        rect_label = tr("groups.row_idle_rect") if (is_fight or is_mining) else tr("groups.row_build_rect")
+        self.form.setRowVisible(self.rect_section_label, has_rect)
+        self.rect_section_label.setText(rect_label)
+        if is_fight or is_mining:
+            self.rect_x.setValue(group.idle_x)
+            self.rect_y.setValue(group.idle_y)
+            self.rect_w.setValue(group.idle_width)
+            self.rect_h.setValue(group.idle_height)
+        elif has_rect:
             self.rect_x.setValue(group.rect_x)
             self.rect_y.setValue(group.rect_y)
             self.rect_w.setValue(group.rect_width)
@@ -310,7 +399,14 @@ class GroupsPanel(QWidget):
     def _refresh_units(self, group):
         self.unit_list.blockSignals(True)
         self.unit_list.clear()
-        objects = self._reinforce_factories() if isinstance(group, ReinforceGroupSpec) else self._builders()
+        if isinstance(group, ReinforceGroupSpec):
+            objects = self._reinforce_factories()
+        elif isinstance(group, FightGroupSpec):
+            objects = self._fight_vehicles()
+        elif isinstance(group, MiningGroupSpec):
+            objects = self._trucks()
+        else:
+            objects = self._builders()
         selected = set(group.unit_ids)
         for o in objects:
             item = QListWidgetItem(self._object_label(o))
@@ -325,11 +421,20 @@ class GroupsPanel(QWidget):
             return
         group = self.groups[self._idx]
         is_reinforce = isinstance(group, ReinforceGroupSpec)
-        fallback = "ReinforceGroup" if is_reinforce else "BuildingGroup"
+        is_fight = isinstance(group, FightGroupSpec)
+        is_mining = isinstance(group, MiningGroupSpec)
+        fallback = ("MiningGroup" if is_mining else
+                    "FightGroup" if is_fight else
+                    "ReinforceGroup" if is_reinforce else "BuildingGroup")
         group.name = self.name.text().strip() or f"{fallback}{self._idx + 1}"
         group.folder = self.folder.text().strip()
         group.player = self.player.value()
-        if not is_reinforce:
+        if is_fight or is_mining:
+            group.idle_x = self.rect_x.value()
+            group.idle_y = self.rect_y.value()
+            group.idle_width = self.rect_w.value()
+            group.idle_height = self.rect_h.value()
+        elif not is_reinforce:
             group.rect_x = self.rect_x.value()
             group.rect_y = self.rect_y.value()
             group.rect_width = self.rect_w.value()

@@ -1,236 +1,174 @@
 # OP2 Mission Editor — Funktionsdokumentation
 
-Zuletzt aktualisiert: 2026-06-27
+Alpha-Version. Die Doku bildet den aktuellen Editor-Stand ab.
 
----
+## Inhalt
 
-## Inhaltsverzeichnis
-
-1. [Überblick](#überblick)
-2. [Hauptfenster](#hauptfenster)
-3. [Karten-Ansicht](#karten-ansicht)
-4. [Dialog: Einstellungen (Setup)](#dialog-einstellungen-setup)
-5. [Dialog: Spieler](#dialog-spieler)
-6. [Dialog: Sieg & Niederlage](#dialog-sieg--niederlage)
-7. [Dialog: Gruppen](#dialog-gruppen)
-8. [Dialog: Trigger](#dialog-trigger)
-9. [Dialog: Aktionseditor (IF/Dann/Sonst)](#dialog-aktionseditor-ifdannsonst)
-10. [Ausdrucksfelder (ExprEdit)](#ausdrucksfelder-expresit)
-11. [Codegenerierung](#codegenerierung)
-12. [Projektformat (Save/Load)](#projektformat-saveload)
-
----
-
-## Überblick
-
-Der OP2 Mission Editor ist ein visueller Editor für Missionen des Spiels *Outpost 2: Divided Destiny*. Er erzeugt aus dem visuellen Modell direkt C++23-Quellcode (via TitanAPI) und kann diesen per Klick zu einer DLL kompilieren und die Mission in OP2 starten.
-
-**Technologie:** Python 3 · PySide6 · TitanAPI (C++23, Header-only)
+1. [Hauptfenster](#hauptfenster)
+2. [Karten-Ansicht](#karten-ansicht)
+3. [Panel: Platzieren](#panel-platzieren)
+4. [Panel: Gruppen](#panel-gruppen)
+5. [Panel: Trigger](#panel-trigger)
+6. [Panel: Objekte](#panel-objekte)
+7. [Missions-Übersicht & Validierung](#missions-übersicht--validierung)
+8. [Dialog: Einstellungen](#dialog-einstellungen)
+9. [Dialog: Spieler](#dialog-spieler)
+10. [Dialog: Sieg & Niederlage](#dialog-sieg--niederlage)
+11. [Aktionseditor](#aktionseditor)
+12. [Selbstheilende Gruppen](#selbstheilende-gruppen)
+13. [Ausdrucksfelder](#ausdrucksfelder)
+14. [Codegenerierung](#codegenerierung)
+15. [Projektformat](#projektformat)
 
 ---
 
 ## Hauptfenster
 
-### Toolbar (von links nach rechts)
+![Hauptfenster](docs/images/Main.png)
+
+Drei Bereiche:
+
+- **Linke Seitenleiste** — das gerade aktive Panel: Platzieren / Trigger / Gruppen / Objekte. Umschalten über die Tabs oben.
+- **Mitte** — die Kartenansicht.
+- **Rechte Seitenleiste** — Validierungsbericht (oben) und Missions-Übersicht (unten).
+
+### Toolbar
 
 | Schaltfläche | Funktion |
 |---|---|
-| **Einstellungen** | Missionsname, Typ, Techtree, Schwierigkeit, Variablen |
-| **Spieler** | Kolonie, Mensch/KI, Tech-Level, Ressourcen, Forschungen |
-| **Sieg & Niederlage** | Sieg- und Niederlage-Bedingungen |
-| **Gruppen** | BuildingGroups und ReinforceGroups verwalten |
-| **Trigger** | Trigger mit Bedingungen und Aktionen |
+| **Einstellungen** | Missionsname, -typ, Techtree, Schwierigkeitswerte, eigene Variablen |
+| **Spieler** | Kolonien, Mensch/KI, Tech-Level, Ressourcen, Vorabforschung |
+| **Sieg / Niederlage** | Sieg- und Niederlage-Bedingungen |
 | **Code anzeigen** | Generierten C++-Code mit Syntax-Highlighting anzeigen |
-| **Build → DLL** | C++ kompilieren und DLL in OP2-Ordner kopieren |
-| **In OP2 testen** | Mission direkt in OP2 starten (über op2launcher.exe) |
-| **Objekte leeren** | Alle platzierten Einheiten/Gebäude entfernen |
+| **Build → DLL** | Kompilieren und DLL in den OP2-Ordner kopieren |
+| **In OP2 testen** | OP2 mit dieser Mission direkt starten (via `op2launcher.exe`) |
+| **Objekte leeren** | Alle platzierten Einheiten und Gebäude entfernen |
 
-### Menü
+### Menüs
 
-- **Datei:** Projekt öffnen / speichern / speichern unter · Karte wählen · Ausgabeort · Beenden
-- **Ansicht:** Gitter ein/aus · Zoom 1:1 · Zoom Karte einpassen
-- **Sprache:** Automatisch (System) · Deutsch · English (wirkt beim nächsten Start)
-
-### Linke Seitenleiste — Platzieren
-
-- **Kategorie:** Gebäude · Fahrzeuge · Beacons & Mauern
-- **Einheitenliste** mit Fußabdruck-Anzeige
-- **Spieler-Auswahl** (0–5)
-- **Unit-Name** (optional, für Scripting-Referenzen)
-- Kontextabhängige Parameter:
-  - Cargo-LKW: Frachttyp + Menge
-  - ConVec: Bausatz (welches Gebäude wird gebaut)
-  - Mining Beacon: Erz-Typ (Zufall/Common/Rare) + Ertrag (Bar1–3)
-  - Kampffahrzeuge (Lynx/Panther/Tiger) + Guard Post: Waffe
-
-### Rechte Seitenleiste — Mission-Übersicht
-
-Dynamischer Baum mit folgenden Sektionen:
-
-- **Ablauf / Trigger** — Hierarchie aller Trigger mit Ausführungsreihenfolge (⟶), Zykluserkennung
-- **Spieler** — Zusammenfassung aller Spieler-Konfigurationen
-- **Gruppen** — Liste aller BuildingGroups und ReinforceGroups
-- **Sieg/Niederlage** — Sieg- und Niederlage-Bedingungen
-- **Objekte** — Anzahl platzierter Einheiten, Gebäude, Beacons, Wände
-
-Doppelklick auf Einträge öffnet den jeweiligen Bearbeiten-Dialog.
+- **Datei** — Projekt öffnen / speichern / speichern unter · Karte wählen · Ausgabeort · Beenden
+- **Bearbeiten** — Rückgängig / Wiederholen der Platzierungs-Schritte
+- **Ansicht** — Gitter ein/aus · Zoom 1:1 · Karte einpassen
+- **Sprache** — Automatisch (System) · Deutsch · English (greift beim nächsten Start)
 
 ---
 
 ## Karten-Ansicht
 
-### Mausbedienung
+### Maus
 
-| Aktion | Funktion |
+| Aktion | Wirkung |
 |---|---|
-| Linksklick | Objekt platzieren (wenn Auswahl aktiv) oder Objekt-Eigenschaften bearbeiten |
-| Rechtsklick | Objekt entfernen |
-| Mitteltaste ziehen | Karte verschieben (Pan) |
-| Mausrad | Zoom (1,25× / 0,8× pro Schritt) |
-| Linksklick ziehen | Rechteck aufziehen (für SetRect / Tube-/Walllinien) |
+| **Linksklick** | Ausgewähltes Objekt platzieren; ohne Auswahl das Objekt auf dieser Kachel zum Bearbeiten öffnen |
+| **Rechtsklick** | Objekt entfernen |
+| **Mitteltaste ziehen** | Karte verschieben |
+| **Mausrad** | Zoom |
+| **Linksklick ziehen** | Rechteck aufziehen (für flächige Aktionen und Gruppen-Bereiche) oder eine gerade Linie (für Tube/Wall-Picker — auf X- oder Y-Achse gelockt, damit Linien gerade bleiben) |
 
-### Visuelle Elemente
+### Visuelle Hinweise
 
-- **Platzierungsvorschau:** Gestricheltes Rechteck + Label zeigt wo das Objekt landen würde
-- **Aktionslinie:** L-förmige Linie für Tube-/Wall-Recordaufnahmen
-- **Aktionsbereich:** Transparentes Rechteck für flächige Aktionen
-- **Spielerfarben:** 6 unterschiedliche Farben (Blau/Rot/Grün/Gelb/Lila/Cyan)
-- **Beacon-Farbe:** Orange
-- **Wand-/Tubefarbe:** Grau
-- **Kachel-Gitter:** Optionales 1px-Linienraster (über Ansicht-Menü)
+- **Platzierungs-Vorschau** — gestrichelter Fußabdruck am Cursor
+- **Aktionslinien-Vorschau** — die Kacheln, die eine recordTube/recordWall-Aktion legen würde
+- **Aktionsbereichs-Vorschau** — das Rechteck einer flächigen Aktion, sichtbar solange die Aktion aufgeklappt ist
+- **Spielerfarben** — sechs Farben (blau / rot / grün / gelb / lila / cyan)
+- **Beacons** in Orange, **Mauern / Rohre** in Grau
+- Optionales 1-px-Kachelgitter (Ansicht-Menü)
 
 ---
 
-## Dialog: Einstellungen (Setup)
+## Panel: Platzieren
 
-Öffnet sich über **Einstellungen** in der Toolbar.
+Linke Seitenleiste → Tab **Place**.
 
-### Basisdaten
+- **Kategorie** — Gebäude · Fahrzeuge · Beacons & Mauern
+- **Einheiten-Liste** mit Fußabdruck-Anzeige
+- **Spieler** — 0 – 5
+- **Unit-Name** *(optional)* — gibt der Einheit einen im Skript sichtbaren Namen (z. B. `mainSmelter`), sodass Aktionen sie direkt statt per Kachel-Position referenzieren können
+- Kontextabhängige Parameter je Einheit:
+  - Cargo Truck: Frachttyp + Menge
+  - ConVec: Bausatz (welches Gebäude er trägt)
+  - Mining Beacon: Erz-Typ (Zufall / Common / Rare) + Ertragsstufe
+  - Kampffahrzeuge + Guard Post: Waffe
 
-| Feld | Beschreibung |
-|---|---|
-| Missionsname | Wird in OP2 in der Missionsliste angezeigt |
-| Missionstyp | Colony, AutoDemo, Tutorial, Multi-Varianten (Land Rush, Space Race, …) |
-| Techtree-Datei | Pfad zur Technologie-Datei (Standard: `MULTITEK.TXT`) |
-
-### Schwierigkeit
-
-Drei Zahlenwerte (Hard / Normal / Easy, Standard: 13 / 10 / 5).
-
-Diese Werte stehen als `diff`-Variable in allen **Ausdrucksfeldern** zur Verfügung. Beispiel: Ein Triggerzeitpunkt von `ceil(600 * diff / 10)` ergibt 780 Marks auf Hard, 600 auf Normal, 300 auf Easy.
-
-### Benutzerdefinierte Variablen
-
-Tabelle mit Spalten **Name · Typ · Startwert**:
-
-- **Typ:** `int` oder `bool`
-- **Startwert:** Integer-Zahl (für `bool`: 0 = false, alles andere = true)
-- Die Variablen werden als `static`-Variablen im generierten C++ deklariert
-- Sie können in `modVar`-Aktionen geändert und mit `varCheck`-Bedingungen geprüft werden
+Linksklick platziert, Rechtsklick entfernt.
 
 ---
 
-## Dialog: Spieler
+## Panel: Gruppen
 
-Öffnet sich über **Spieler** in der Toolbar.
+Linke Seitenleiste → Tab **Groups**.
 
-### Spielerliste
+![Gruppen-Panel](docs/images/Groups.png)
 
-Links: Liste aller Spieler mit Kurzinfo. Schaltflächen „Spieler hinzufügen" und „Entfernen".
-
-### Spieler-Konfiguration
-
-| Feld | Beschreibung |
-|---|---|
-| Kolonie | Eden oder Plymouth |
-| Typ | Mensch oder KI |
-| Tech-Level | 0–12 (12 = alle Techs aus Techtree automatisch verfügbar) |
-| Startressourcen setzen | Schaltet das initResources-Flag ein |
-| Kolonisten explizit setzen | Setzt Arbeiter / Wissenschaftler / Kinder auf genaue Zahlen |
-| Ressourcen explizit setzen | Setzt Common Ore / Rare Ore / Nahrung auf genaue Werte (auch Ausdrücke möglich) |
-| Vorab erforscht | Einzelne Technologien per Name auswählen und hinzufügen |
-
-Ressourcenfelder (Common Ore, Rare Ore, Nahrung) unterstützen **Ausdrucksfelder** mit Schwierigkeitsvorschau.
-
----
-
-## Dialog: Sieg & Niederlage
-
-Öffnet sich über **Sieg & Niederlage** in der Toolbar.
-
-### Bedingungstypen
-
-| Typ | Felder |
-|---|---|
-| Zeit überstehen | Marks |
-| Letzter Überlebender | Spieler |
-| Raumschiff bauen | Spieler |
-| Kein Command Center | Spieler |
-| Gebäude-Anzahl | Spieler, Gebäudetyp, Vergleich, Anzahl |
-| Fahrzeug-Anzahl | Spieler, Vergleich, Anzahl |
-| Technologie erforscht | Spieler, Tech-ID |
-| Ressource erreicht | Spieler, Ressource, Vergleich, Menge |
-| Gebäude operativ | Spieler, Gebäudetyp, Vergleich, Anzahl |
-
-Jede Bedingung hat ein Beschreibungsfeld für den Anzeigetext im Spiel.
-
-Es können beliebig viele Sieg- und Niederlage-Bedingungen kombiniert werden.
-
----
-
-## Dialog: Gruppen
-
-Öffnet sich über **Gruppen** in der Toolbar.
-
-Gruppen erscheinen als Baum (optional mit Ordner-Gruppierung).
+Vier Gruppentypen, je mit eigenem Anlege-Knopf:
 
 ### BuildingGroup
 
-Eine BuildingGroup verwaltet einen Satz Gebäude, die automatisch wiedergebaut werden sollen.
+Baut Gebäude in einem Rechteck automatisch neu, sobald die Baueinheiten (ConVec, Robo-Miner, …) verfügbar sind.
 
-| Feld | Beschreibung |
+| Feld | Zweck |
 |---|---|
-| Name | Eindeutiger Bezeichner |
-| Ordner | Optionaler Ordnername zur Gliederung |
-| Spieler | Welcher Spieler besitzt die Gruppe |
-| Rect X/Y/Breite/Höhe | Bereich auf der Karte (0–1023), in dem Gebäude gesucht werden |
-| Einheiten | Checkboxen für Gebäude- und Fahrzeugtypen der Gruppe |
-
-**SetRect auf Karte ziehen:** Rechteck per Maus auf der Karte aufziehen anstatt Koordinaten eintippen.
+| Name / Ordner | Bezeichner und optionale Gruppierung |
+| Spieler | Besitzer |
+| Baubereich (X / Y / Breite / Höhe) | Bereich, in dem die Gruppe baut — direkt auf der Karte per **Drag SetRect on map** aufziehbar |
+| Einheiten | Ankreuzliste der platzierten Baueinheiten, die zur Gruppe gehören |
 
 ### ReinforceGroup
 
-Eine ReinforceGroup versorgt andere Gruppen mit Einheiten (Vehicle Factories).
+Versorgt andere Gruppen mit Nachschub-Fahrzeugen aus ihren Fabriken.
 
-| Feld | Beschreibung |
+| Feld | Zweck |
 |---|---|
-| Reinforce-Ziele | Textfeld: ein Zielgruppen-Name pro Zeile, Format `GruppenName=Priorität` |
-| Einheiten | Checkboxen für Factory-Typen |
+| Reinforce-Ziele | Eine Zielgruppe pro Zeile: `GruppenName=Priorität`. Prioritäten müssen ≥ 1 sein (die Engine hängt bei 0). |
+| Einheiten | Ankreuzliste der Fabriken, die zur Gruppe gehören |
+
+### FightGroup
+
+Vordefinierte Kampfgruppe. Angriffswellen (`sendAttackWave`) und Gruppen-Befehle referenzieren sie per Name.
+
+| Feld | Zweck |
+|---|---|
+| Idle-Bereich | Rückzugs-/Sammelbereich auf der Karte |
+| Einheiten | Ankreuzliste militärischer Fahrzeuge, die zur Gruppe gehören |
+
+### MiningGroup
+
+Vordefinierte Erz-Trupp-Gruppe. Eine `startMining`-Aktion verknüpft eine Mine + Smelter und setzt eine Truck-Sollstärke.
+
+| Feld | Zweck |
+|---|---|
+| Abladebereich | Bereich, in dem die Trucks abladen / warten — die Trucks müssen bei `setupMining()` INNERHALB dieses Rechtecks stehen, typischerweise um den Smelter herum |
+| Einheiten | Ankreuzliste der Cargo Trucks, die zur Gruppe gehören |
+
+Gruppen werden als Baum mit optionaler Ordnergruppierung angezeigt. Jedes Panel, das Gruppen referenziert (Aktions-Dropdowns, Trigger-Dropdowns), aktualisiert sich automatisch, sobald du eine Gruppe hinzufügst oder entfernst.
 
 ---
 
-## Dialog: Trigger
+## Panel: Trigger
 
-Öffnet sich über **Trigger** in der Toolbar oder per „Trigger +"-Knopf in der Übersicht.
+Linke Seitenleiste → Tab **Triggers**.
 
-### Trigger-Liste
+![Trigger-Panel](docs/images/Trigger.png)
 
-Baum mit Ordner-Gruppierung. Jeder Trigger zeigt Bedingungstyp und Aktionenanzahl.
+Zwei Bereiche übereinander:
 
-### Trigger-Eigenschaften
+1. **Trigger-Liste** mit **Add trigger** / **Remove trigger** nebeneinander.
+2. Darunter zwei Tabs zum ausgewählten Trigger: **Auslöser** (Ursache + Einstellungen) und **Aktionen** (die Aktionsliste).
 
-| Feld | Beschreibung |
+### Trigger-Einstellungen (Tab „Auslöser")
+
+| Feld | Zweck |
 |---|---|
-| Name | Eindeutiger Bezeichner |
-| Ordner | Optionaler Ordnername zur Gliederung |
-| Beim Start aktiv | Trigger wird sofort in initProc registriert |
-| Nur einmal auslösen | Trigger wird nach dem ersten Auslösen deaktiviert (oneShot) |
+| Name / Ordner | Bezeichner und optionale Gruppierung |
+| Beim Start aktiv | Wird in `initProc` registriert — sonst erst zur Laufzeit per `createTrigger`-Aktion erzeugt |
+| Nur einmal auslösen | Wird nach dem ersten Feuern automatisch deaktiviert |
+| Auslöser | Was den Trigger feuern lässt (siehe unten) |
 
-### Trigger-Bedingungen
+### Auslöser-Typen
 
-| Typ | Felder |
+| Auslöser | Weitere Felder |
 |---|---|
-| Zeit (Marks) | Marks (Ausdrucksfeld mit Schwierigkeitsvorschau) |
+| Zeit (Marks) | Marks (Ausdruck, schwierigkeitsabhängig) |
 | Punkt erreicht | Spieler, X, Y |
 | Rechteck betreten | Spieler, X, Y, Breite, Höhe |
 | Gebäude-Anzahl | Spieler, Gebäudetyp, Vergleich, Anzahl |
@@ -238,167 +176,268 @@ Baum mit Ordner-Gruppierung. Jeder Trigger zeigt Bedingungstyp und Aktionenanzah
 | Technologie erforscht | Spieler, Tech-ID |
 | Ressource erreicht | Spieler, Ressource, Vergleich, Menge |
 | Gebäude operativ | Spieler, Gebäudetyp, Vergleich, Anzahl |
-| Einheit finden | Liste von Einheits-Prüfungen (Typ, X, Y) |
+| Einheit gefunden | Liste von `(Einheitstyp, X, Y)`-Prüfungen — pollt alle 10 Ticks, feuert wenn *alle* Prüfungen gleichzeitig passen. Nützlich für „warte bis Mine UND Smelter gebaut wurden". |
 
-### Aktionsliste
+### Tab „Aktionen"
 
-Unterhalb der Bedingung: Liste aller Aktionen des Triggers. Aktionen können per „+ Aktion hinzufügen" ergänzt, bearbeitet oder entfernt werden.
-
-IF-Blöcke können beliebig tief verschachtelt werden.
+Die Aktionsliste des ausgewählten Triggers. Aktionen können hinzugefügt, bearbeitet, entfernt und umsortiert werden. Wenn/für-Blöcke lassen sich beliebig tief verschachteln.
 
 ---
 
-## Dialog: Aktionseditor (IF/Dann/Sonst)
+## Panel: Objekte
 
-Erscheint beim Hinzufügen oder Bearbeiten einer Aktion.
+Linke Seitenleiste → Tab **Objects**. Flache Liste jeder platzierten Einheit, jedes Gebäudes, jedes Beacons und jeder Wand/Rohres. Praktisch für Massenbearbeitung / Aufräumen.
+
+---
+
+## Missions-Übersicht & Validierung
+
+Rechte Seitenleiste, immer sichtbar:
+
+- **Validierung** *(oben)* — Live-Fehler-/Warnungs-Bericht. Aktualisiert sich bei jeder Änderung. Beispiele: unbenutzte Variable, referenzierte Gruppe existiert nicht, keine Sieg-/Niederlagebedingung gesetzt. Zählung am unteren Rand (`0 errors, 3 warnings`).
+- **Missions-Übersicht** *(unten)* — dynamischer Baum mit der ganzen Mission auf einen Blick:
+  - **Flow / Trigger** — Ausführungsreihenfolge der Trigger mit Flusspfeilen (⟶) und Zykluserkennung
+  - **Spieler** — eine Zeile pro Spieler
+  - **Gruppen** — alle BuildingGroups / ReinforceGroups / FightGroups / MiningGroups
+  - **Sieg / Niederlage**
+  - **Objekte** — Gesamtanzahl platzierter Objekte
+
+Doppelklick auf einen Eintrag öffnet den passenden Editor.
+
+---
+
+## Dialog: Einstellungen
+
+Toolbar → **Einstellungen**.
+
+### Basisdaten
+
+| Feld | Beschreibung |
+|---|---|
+| Missionsname | Wird in der OP2-Missionsliste angezeigt |
+| Missionstyp | Colony · AutoDemo · Tutorial · Multi (Land Rush, Space Race, Resource Race, Midas, Last One Standing) |
+| Techtree-Datei | Pfad zur Technologie-Datei (Standard: `MULTITEK.TXT`) |
+
+### Schwierigkeit
+
+Drei Ganzzahlen (Hard / Normal / Easy — Standard 13 / 10 / 5). Stehen als Bezeichner `diff` in allen [Ausdrucksfeldern](#ausdrucksfelder) zur Verfügung.
+
+### Eigene Variablen
+
+Tabelle mit **Name · Typ (int/bool) · Startwert**. Werden als `static` im generierten C++ deklariert, überleben Spielstände, und können:
+
+- per `modVar`-Aktion geändert werden
+- per `varCheck`-Bedingung geprüft werden
+- in Ausdrucksfeldern referenziert werden
+
+---
+
+## Dialog: Spieler
+
+Toolbar → **Spieler**.
+
+| Feld | Beschreibung |
+|---|---|
+| Kolonie | Eden oder Plymouth |
+| Typ | Mensch oder KI |
+| Tech-Level | 0 – 12 (12 = alle Technologien automatisch verfügbar) |
+| Startressourcen setzen | Aktiviert das initResources-Flag |
+| Kolonisten explizit setzen | Arbeiter / Wissenschaftler / Kinder |
+| Ressourcen explizit setzen | Common Ore / Rare Ore / Nahrung (Ausdrucksfelder) |
+| Vorab erforscht | Einzelne Technologien per Name hinzufügen |
+
+---
+
+## Dialog: Sieg & Niederlage
+
+Toolbar → **Sieg / Niederlage**.
+
+Dieselben Bedingungstypen wie Trigger-Auslöser (Zeit überstehen, Letzter Überlebender, Raumschiff bauen, kein CC, Gebäude-/Fahrzeug-Anzahl, Tech, Ressource, Gebäude operativ). Jede Bedingung hat ein Beschreibungsfeld — das ist der Zieltext, der im Spiel angezeigt wird.
+
+Beliebig viele Sieg- und Niederlage-Bedingungen kombinierbar.
+
+---
+
+## Aktionseditor
+
+Jede Aktion, die einem Trigger hinzugefügt wird, öffnet das Inline-Aktionsformular.
 
 ### Aktionstypen
 
-| Typ | Felder | Codegen-Ausgabe |
-|---|---|---|
-| Leere Aktion (noop) | — | `// (empty action)` |
-| Nachricht anzeigen | Text | `Game::addMessage(...)` |
-| Einheit erzeugen | Einheitstyp, Waffe, X, Y, Spieler | `Game::createUnit(...)` |
-| Anderen Trigger erstellen | Ziel-Trigger | Ruft Trigger-Helper auf |
-| RecordBuilding | Gruppe, Gebäudetyp, X, Y | `group.recordBuilding(...)` |
-| RecordTube-Linie | Gruppe, X→X2, Y→Y2 | `Game::createTube(...)` |
-| RecordWall-Linie | Gruppe, Wall-Typ, X→X2, Y→Y2 | `Game::createWall(...)` |
-| SetTargCount | Gruppe, Einheit, Waffe, Zielanzahl (Expr) | `group.setTargCount(...)` |
-| Gebäude einer Gruppe zuweisen | Gruppe, Gebäudetyp, X, Y, Spieler | `onTick(10, [...takeUnit])` |
-| Variable ändern | Variable, Modus (inc/dec/expr), Ausdruck | `var++` / `var--` / `var = expr` |
-| Wenn / Dann / Sonst | Bedingungen, Dann-Aktionen, Sonst-Aktionen | `if (cond) { ... } else { ... }` |
+| Typ | Zweck |
+|---|---|
+| **Leere Aktion (noop)** | Platzhalter |
+| **Wenn / Dann / Sonst** | Bedingungsblock. Kann optional eine **Schleife** tragen (`count` — N-mal wiederholen; `forEach` — über Einheiten iterieren, Quelle: alle / je Spieler / je Typ / im Rechteck / nur Fahrzeuge / nur Gebäude). Dann-/Sonst-Zweige beliebig tief verschachtelbar. Karte hat einen farbigen Rahmen (blau = einfaches If, sky = count, pink = forEach). |
+| **Nachricht anzeigen** | Text an den Spieler |
+| **Einheit erzeugen** | Liste von Einheit + Waffe + X + Y — die Aktion kann mehrere Einheiten in einem Rutsch spawnen |
+| **Katastrophe auslösen** | Meteor / Erdbeben / Sturm / Vortex / Blight / Blight entfernen / Eruption. Position per Ausdruck (z. B. `randBetween(20, 40)`) |
+| **Anderen Trigger erstellen** | Erzeugt zur Laufzeit einen anderen definierten Trigger |
+| **RecordBuilding** | Liste von `(Gebäudetyp, Fracht, X, Y)`, die einer BuildingGroup aufgenommen werden |
+| **RecordTube-Linie** | Liste von `(X, Y) → (X2, Y2)`-Liniensegmenten (im Codegen pro Kachel expandiert) |
+| **RecordWall-Linie** | Wie oben, mit Wall-Typ je Eintrag |
+| **SetTargCount** | Liste von `(Einheit, Waffe, Anzahl)` — Sollstärke, die eine verknüpfte ReinforceGroup dauerhaft produziert |
+| **Gebäude einer Gruppe zuweisen** | Hängt ein Gebäude an Position (X, Y) an eine Gruppe an — pollt bis es auftaucht |
+| **Variable ändern** | inc / dec / Ausdruck zuweisen |
+| **Mining starten** | Verknüpft Mine + Smelter mit einer MiningGroup und setzt eine Truck-Sollstärke. Siehe unten. |
+| **Angriffswelle senden** | Füllt eine vordefinierte FightGroup mit Fahrzeugen und schickt sie los |
+| **Gruppen-Befehl** | Angreifen / Bewachen / Patrouille / Einheit hinzufügen/entfernen / Idle-Bereich setzen / … je nach Gruppentyp |
+| **Einheiten-Befehl** | move / patrol / repair / transfer / stop / selbstzerstören / … auf eine benannte Einheit oder die aktuelle Schleifen-Einheit |
+| **Gebiet verteidigen** | Makro: patrouillieren + angreifen in gegebenem Rechteck |
+| **Gebäude reparieren** | Makro: ein ConVec repariert dauerhaft alles Beschädigte im Rechteck |
 
-### IF-Bedingungen (für Aktions-Gating)
+### Wenn-Bedingungen (Aktions-Gating)
 
-Jede Aktion kann durch eine oder mehrere Bedingungen gesichert werden (AND/OR):
+Jede Blatt-Aktion kann durch eine oder mehrere Bedingungen abgesichert werden (UND / ODER):
 
 | Typ | Felder |
 |---|---|
 | Gebäude an Position vorhanden | Spieler, Gebäudetyp, X, Y |
-| Gebäude-Schaden | Spieler, Gebäudetyp, Vergleich, Wert (Expr) |
-| Spieler-Ressource | Spieler, Ressource, Vergleich, Wert (Expr) |
-| Gebäude-Anzahl | Spieler, Gebäudetyp, Vergleich, Wert (Expr) |
+| Gebäude-Schaden | Spieler, Gebäudetyp, Vergleich, Wert |
+| Spieler-Ressource | Spieler, Ressource, Vergleich, Wert |
+| Gebäude-Anzahl | Spieler, Gebäudetyp, Vergleich, Wert |
 | Technologie erforscht | Spieler, Tech-ID |
-| Variable prüfen | Variable (aus Variablenliste), Vergleich, Wert (Expr) |
+| Variable prüfen | Variable, Vergleich, Wert |
+| Schleifen-Einheit Typ / Schaden / Fracht / Befehl | (nur innerhalb einer forEach-Schleife) — prüft die aktuelle Schleifen-Einheit |
 
-Jede Bedingung kann mit **Negieren (NICHT)** invertiert werden.
+Jede Bedingung hat ein **Negieren (NICHT)**-Häkchen. Bei verschachtelten Schleifen wählt das Feld `loop_level`, welche Ebene gemeint ist.
+
+### Die `startMining`-Aktion im Detail
+
+Zwei Nutzungsarten, eine Aktion:
+
+1. **Direkter Modus** — Mine und Smelter existieren bereits. Per „Mine (platziert)" / „Smelter (platziert)"-Dropdown auswählen (füllt X/Y automatisch) oder Koordinaten eintippen. Aktion in einen sofort feuernden Trigger packen (`Zeit (Marks) = 0`).
+2. **Warten-Modus** — KI/Spieler muss sie erst bauen. Trigger mit Auslöser = **Einheit gefunden** anlegen, zwei Checks hinzufügen: einen für die Mine-Kachel + Mine-Typ, einen für die Smelter-Kachel + Smelter-Typ. Dieselbe `startMining`-Aktion in dessen Aktionsliste packen. Das Aktions-Formular zeigt sogar einen Live-Hinweis mit den passenden Koordinaten:
+
+  > 💡 Um erst zu starten, wenn Mine und Smelter gebaut wurden: Lege einen Trigger mit Auslöser „Einheit gefunden" an und füge zwei Prüfungen hinzu — Einheitentyp der Mine bei Position (X, Y) und Einheitentyp des Smelters bei Position (X2, Y2). Packe diese Mining-Aktion in dessen Aktionsliste.
+
+**Aktion in einer forEach-Schleife?** „Mine" oder „Smelter" von „-- Position (X/Y) --" auf *„Schleifen-Einheit (aktuelle Schleife)"* / *„Schleifen-Einheit (äußere Schleife)"* umstellen — dann nutzt die Aktion, was auch immer die Schleife gerade durchläuft, ohne feste Koordinaten. Benannte Einheiten (Feld „Unit name") sind ebenfalls auswählbar.
+
+Der Zielwert („Transporter") ist ein `Group::setTargCount(CargoTruck, ...)`-Wert, den eine verknüpfte ReinforceGroup dauerhaft nachliefert.
 
 ---
 
-## Ausdrucksfelder (ExprEdit)
+## Selbstheilende Gruppen
 
-Überall wo früher ein einfaches Zahlenfeld stand, gibt es jetzt **Ausdrucksfelder**, die entweder:
+Die Engine baut zerstörte Strukturen automatisch an derselben Kachel wieder auf. Wenn Fabrik, Mine oder Smelter einer Gruppe zerstört und neu gebaut wird, muss die Gruppe erneut mit dem neuen Gebäude verknüpft werden — sonst bleibt sie funktionsunfähig.
 
-- eine **ganze Zahl** akzeptieren (`600`), oder
-- einen **C++-Ausdruck** mit dem Bezeichner `diff` und eigenen Variablen (`ceil(600 * diff / 10)`)
+Der Editor erledigt das automatisch: jede generierte Mission bekommt **einen einzigen missionsweiten Timer** `onTick(1 Mark, …, /*oneShot=*/false)`, dessen Callback der Reihe nach durchläuft:
+
+- jedes BuildingGroup-/ReinforceGroup-/MiningGroup-Roster (`takeUnit` erneut ausführen für lebende Einheiten auf den zugewiesenen Kacheln — inklusive Neubauten)
+- jede positionsbasierte `startMining`-Aktion (erneut `setupMining` + `setTargCount` ausführen, sobald Mine + Smelter existieren)
+
+Kostet genau **einen** der 64 Callback-Slots der Engine — unabhängig davon, wie viele Gruppen oder Mining-Aktionen die Mission hat. Kein Opt-in, keine Konfiguration — ist für jede Mission an.
+
+---
+
+## Ausdrucksfelder
+
+Überall, wo ein numerisches Eingabefeld schwierigkeitsabhängig sein kann, ersetzt ein **Ausdrucksfeld** die einfache Spinbox. Es akzeptiert entweder:
+
+- eine ganze Zahl (`600`) oder
+- einen C++-Ausdruck mit dem Bezeichner `diff` und eigenen Variablen (`ceil(600 * diff / 10)`)
+
+Verfügbare Funktionen: `ceil`, `floor`, `round`, `abs`, `max`, `min`. Verfügbarer Zufall: `getRand(N)`, `randBetween(a, b)`.
 
 ### Schwierigkeits-Vorschau
 
-Wenn `diff` im Ausdruck vorkommt, erscheint direkt unter dem Feld eine Live-Vorschau:
+Kommt `diff` im Ausdruck vor, erscheint darunter eine Live-Vorschau der berechneten Werte je Schwierigkeit:
 
 ```
 Hard: 780  ·  Normal: 600  ·  Easy: 300
 ```
 
-(berechnet mit den Werten aus dem Setup-Dialog)
+Werte stammen aus dem Hard/Normal/Easy-Tripel im Einstellungen-Dialog.
 
-### Unterstützte Funktionen im Ausdruck
+### Wo Ausdrucksfelder verwendet werden
 
-`ceil`, `floor`, `round`, `abs`, `max`, `min`
-
-### Felder mit Ausdrucksunterstützung
-
-- Trigger-Marks (Zeitbedingung)
-- SetTargCount-Zielanzahl
-- Spieler-Ressourcen (Common Ore, Rare Ore, Nahrung)
+- Trigger-Marks (Zeit-Auslöser)
+- setTargCount-Zielwert
+- Spieler-Ressourcen (Common Ore / Rare Ore / Nahrung)
 - ActionCondition-Wert (playerResource, buildingCount, unitDamage, varCheck)
+- Katastrophen-Position (X/Y als Ausdruck, z. B. `randBetween(20, 40)`)
 
 ---
 
 ## Codegenerierung
 
-Der Editor generiert aus dem Modell eine einzelne C++23-Quelldatei (`mission.cpp`).
+Der Editor erzeugt eine einzige, in sich geschlossene `mission.cpp` für die TitanAPI-Fassade.
 
-### Ausgabe-Struktur
+### Dateistruktur
 
-```
-// mission.cpp -- generated ...
+```cpp
+// mission.cpp -- generated from the editor model
 #include "op2.hpp"
-...
+#include "op2/trigger.hpp"
+#include "op2/base.hpp"
+#include "op2/groups.hpp"
+// ...
 using namespace op2;
 
-static const int kDiff[] = {13, 10, 5};
-static const int diff = kDiff[(int)Game::difficulty()];
+static const int kDiff[] = {5, 10, 13};
+static const int diff = kDiff[(int)Player(0).difficulty()];
 
-static int meinVar = 0;          // Benutzerdefinierte Variablen
-static bool flagAktiv = false;
+struct MissionSave {                     // POD, per GetSaveRegions() registriert
+    int  cbCount = 0;
+    unsigned char cbSlot[64] = {};
+    int  meinZaehler = 0;                // eigene Variablen
+    bool _mining_armed_0 = false;        // startMining-„armed"-Flags
+    Group _grp_0_BG1{};                  // Gruppen-Handles
+    Unit  _unit_mainSmelter{};           // benannte Einheiten-Handles
+};
+static MissionSave g_save;
+static int&  meinZaehler   = g_save.meinZaehler;
+static Group& _grp_0_BG1   = g_save._grp_0_BG1;
+// ...
 
-static void make_MeinTrigger();  // Forward-Deklarationen
-static Group g_0;                // Gruppen-Variablen
-
-extern "C" ... LevelDesc[]       // OP2-DLL-Exporte
-extern "C" ... MapName[]
-extern "C" ... TechtreeName[]
-extern "C" ... DescBlock         // Missionstyp, Spieleranzahl
-extern "C" ... DescBlockEx
+extern "C" __declspec(dllexport) char LevelDesc[]    = "...";
+extern "C" __declspec(dllexport) char MapName[]      = "...";
+extern "C" __declspec(dllexport) char TechtreeName[] = "MULTITEK.TXT";
 
 static void initProc() {
     // Spieler-Setup
-    // Base Layout (Gebäude, Fahrzeuge, Beacons, Wände)
-    // Gruppen-Initialisierung
-    // Start-Nachricht
+    // Base Layout
+    // Gruppen-Erzeugung + Roster-Übernahme (einmalig)
+    // ein gemeinsamer onTick(kTicksPerMark, ...) für die Selbstheilung
+    // Startnachricht
     // Sieg-/Niederlage-Bedingungen
-    // Trigger aktivieren
+    // beim Start aktive Trigger-Helper
 }
-
-static void make_MeinTrigger() {
-    onMark(ceil(600 * diff / 10), [] {
-        if (meinVar >= 3) {
-            Game::addMessage("Gewonnen!");
-        }
-    }, /*oneShot=*/true);
-}
-
-static void aiProc() {}
-
-extern "C" InitProc() { crash::guard("InitProc", &initProc); }
-extern "C" AIProc()   { crash::guard("AIProc",   &aiProc); }
 ```
 
 ### Koordinaten
 
-Der Editor verwendet 0-basierte Koordinaten. Die Codegenerierung addiert automatisch +1 auf X und Y, da OP2 1-basierte Kachelkoordinaten erwartet.
+Editor-Kacheln sind 0-basiert, TitanAPI-Kacheln 1-basiert. Der Generator addiert automatisch +1 auf jedes X/Y. Jedes ausgegebene `{ x, y }` entspricht der Anzeige in der OP2-Statuszeile.
+
+### Spielstand-Sicherheit
+
+Der komplette persistente Zustand (Variablen, Gruppen-Handles, Unit-Handles, `startMining`-armed-Flags, Callback-Slot-Tabelle) liegt in einem einzigen POD-Struct `MissionSave`, das per `GetSaveRegions()` registriert wird. OP2 ruft `InitProc` beim Laden eines Spielstands **nicht** erneut auf — stattdessen wird der Struct byte-genau restauriert und die Callback-Slot-Tabelle daraus wiederhergestellt.
 
 ---
 
-## Projektformat (Save/Load)
+## Projektformat
 
-Ein Projekt wird als **Ordner** gespeichert, der alle Dateien enthält:
+Ein Projekt ist ein Ordner:
 
 ```
-MeinProjekt/
-├── project.json      ← alle Editor-Daten
-├── mission.cpp       ← generierter C++-Code
-└── mission.dll       ← kompilierte DLL (nach Build)
+MeineMission/
+├── project.json     — alle Editor-Felder
+├── mission.cpp      — zuletzt generierter C++-Code (bei jedem Build überschrieben)
+└── mission.dll      — kompilierte Missions-DLL
 ```
 
-### `project.json` — Felder
+### `project.json`-Felder
 
-| Feld | Inhalt |
+| Schlüssel | Inhalt |
 |---|---|
-| `mission_name` | Missionsname |
-| `mission_type` | Integer (MissionType-Enum) |
-| `tech_tree` | Techtree-Dateiname |
+| `mission_name`, `mission_type`, `tech_tree`, `map` | Basisidentität |
 | `difficulty` | `{hard, normal, easy}` |
 | `variables` | Liste von `{name, var_type, initial_value}` |
-| `map` | Kartendateiname |
-| `players` | Liste aller Spieler-Konfigurationen |
-| `objects` | Liste aller platzierten Einheiten/Gebäude |
-| `building_groups` | BuildingGroup-Definitionen |
-| `reinforce_groups` | ReinforceGroup-Definitionen |
-| `triggers` | Trigger-Definitionen (inkl. verschachtelter Aktionen) |
-| `victories` | Sieg-Bedingungen |
-| `defeats` | Niederlage-Bedingungen |
-| `node_positions` | Timeline-Knotenpositionen (visuelles Layout) |
+| `players` | Vollständige PlayerSpec je Spieler |
+| `objects` | Alle platzierten Einheiten / Gebäude |
+| `beacons`, `walls_tubes` | Kartenobjekte |
+| `building_groups`, `reinforce_groups`, `fight_groups`, `mining_groups` | Die vier Gruppentypen |
+| `triggers` | Trigger-Definitionen inkl. verschachtelter Aktionen, Bedingungen und Schleifen |
+| `victories`, `defeats` | Sieg- / Niederlage-Bedingungen |
+| `node_positions` | Timeline-Knotenpositionen (visueller Zustand) |
 
-Alle Felder sind abwärtskompatibel: Unbekannte Schlüssel werden beim Laden ignoriert, fehlende Schlüssel erhalten ihre Standardwerte.
+Alle Felder sind abwärtskompatibel: unbekannte Schlüssel werden beim Laden ignoriert, fehlende Schlüssel bekommen ihren Dataclass-Standardwert. Alte Missionen ohne vordefinierte FightGroups oder MiningGroups werden beim Öffnen automatisch migriert (siehe `_migrate_wave_fight_groups`, `_migrate_start_mining_groups`).

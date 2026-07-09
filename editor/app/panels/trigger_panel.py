@@ -35,8 +35,10 @@ class TriggerPanel(QWidget):
         list_lbl.setProperty("role", "section")
         left_lay.addWidget(list_lbl)
         left_lay.addWidget(self.tlist, 1)
-        left_lay.addWidget(add_btn)
-        left_lay.addWidget(rm_btn)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(add_btn)
+        btn_row.addWidget(rm_btn)
+        left_lay.addLayout(btn_row)
 
         # --- Bedingung-Felder ---
         self.name = QLineEdit()
@@ -134,9 +136,6 @@ class TriggerPanel(QWidget):
         cs_lay = QVBoxLayout(cond_section)
         cs_lay.setContentsMargins(0, 4, 0, 0)
         cs_lay.setSpacing(2)
-        lbl_cond = QLabel(tr("triggers.lbl_section_condition"))
-        lbl_cond.setProperty("role", "section")
-        cs_lay.addWidget(lbl_cond)
         cs_lay.addWidget(cond_scroll)
 
         # --- Aktionsliste ---
@@ -144,18 +143,24 @@ class TriggerPanel(QWidget):
         act_layout = QVBoxLayout(act_widget)
         act_layout.setContentsMargins(0, 4, 0, 0)
         act_layout.setSpacing(2)
-        lbl_acts = QLabel(tr("triggers.lbl_section_actions"))
-        lbl_acts.setProperty("role", "section")
-        act_layout.addWidget(lbl_acts)
         self.act_scroll = QScrollArea()
         self.act_scroll.setWidgetResizable(True)
         act_layout.addWidget(self.act_scroll)
 
+        # Bedingung und Aktionen als eigene Tabs statt gestapelter Bereiche --
+        # dadurch bekommt die jeweils aktive Ansicht (v.a. die Aktionsliste)
+        # deutlich mehr Hoehe.
+        # Condition and actions as separate tabs instead of stacked sections --
+        # this gives whichever view is active (especially the action list)
+        # much more vertical space.
+        detail_tabs = QTabWidget()
+        detail_tabs.addTab(cond_section, tr("triggers.lbl_section_condition"))
+        detail_tabs.addTab(act_widget, tr("triggers.lbl_section_actions"))
+
         splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(left)
-        splitter.addWidget(cond_section)
-        splitter.addWidget(act_widget)
-        splitter.setSizes([150, 200, 300])
+        splitter.addWidget(detail_tabs)
+        splitter.setSizes([150, 450])
 
         root = QVBoxLayout(self)
         root.setContentsMargins(4, 4, 4, 4)
@@ -178,6 +183,7 @@ class TriggerPanel(QWidget):
 
     def refresh_actions(self, expand_index: int = -1):
         if 0 <= self._idx < len(self._window.triggers):
+            self._window.clear_action_area_preview()
             t = self._window.triggers[self._idx]
             w = ActionListWidget(t.actions, self._action_ctx())
             self.act_scroll.setWidget(w)
@@ -197,25 +203,74 @@ class TriggerPanel(QWidget):
 
     def _action_ctx(self):
         w = self._window
+        # setTargCount ist eine Group-Basismethode -- gilt fuer alle drei
+        # Gruppentypen, nicht nur BuildingGroup.
+        # setTargCount is a base Group method -- applies to all three group
+        # types, not just BuildingGroup.
         target_group_types = {
-            g.name: ("BuildingGroup" if isinstance(g, BuildingGroupSpec) else "FightGroup")
-            for g in w.building_groups
+            **{g.name: "BuildingGroup" for g in w.building_groups},
+            **{g.name: "ReinforceGroup" for g in w.reinforce_groups},
+            **{g.name: "FightGroup" for g in w.fight_groups},
         }
+        target_groups = list(w.building_groups) + list(w.reinforce_groups) + list(w.fight_groups)
         all_groups = (
             [(g.name, "BuildingGroup") for g in w.building_groups]
             + [(g.name, "ReinforceGroup") for g in w.reinforce_groups]
         )
+        # FightGroups sind jetzt vordefinierte Gruppen (Gruppen-Panel), keine
+        # spontanen Wellen-Gruppen mehr -- direkt aus w.fight_groups lesen.
+        # FightGroups are now predefined groups (Groups panel), no more
+        # ad-hoc wave groups -- read directly from w.fight_groups.
+        wave_groups = [g.name for g in w.fight_groups]
+        # Alle befehligbaren Gruppen mit Typ (fuer den Gruppen-Befehl)
+        # All commandable groups with their type (for the group command)
+        all_command_groups = (
+            [(g.name, "FightGroup") for g in w.fight_groups]
+            + [(g.name, "BuildingGroup") for g in w.building_groups]
+            + [(g.name, "ReinforceGroup") for g in w.reinforce_groups]
+        )
+        # Benannte platzierte Einheiten (fuer den Einheiten-Befehl)
+        # Named placed units (for the unit command)
+        named_units = [(o.unit_name, o.map_id) for o in w.objects
+                       if getattr(o, "unit_name", "")]
+        # Platzierte Mine-/Smelter-Gebaeude (fuer die Mine-/Smelter-Auswahl der
+        # startMining-Aktion -- Bequemlichkeit statt X/Y-Koordinaten eintippen).
+        # Placed mine/smelter buildings (for startMining's mine/smelter picker
+        # -- convenience instead of typing X/Y coordinates).
+        mine_objects = [o for o in w.objects
+                        if o.map_id in ("mapCommonOreMine", "mapRareOreMine")]
+        smelter_objects = [o for o in w.objects
+                           if o.map_id in ("mapCommonOreSmelter", "mapRareOreSmelter")]
         return {
             "triggers": w.triggers,
+            "wave_groups": wave_groups,
+            "fight_groups": wave_groups,
+            "all_command_groups": all_command_groups,
+            "named_units": named_units,
             "building_groups": w.building_groups,
             "reinforce_groups": w.reinforce_groups,
-            "target_groups": w.building_groups,
+            "fight_group_specs": w.fight_groups,
+            "mining_groups": w.mining_groups,
+            "mine_objects": mine_objects,
+            "smelter_objects": smelter_objects,
+            "target_groups": target_groups,
             "target_group_types": target_group_types,
             "all_groups": all_groups,
             "on_map_pick": self._on_action_map_pick,
+            "on_area_preview": self._on_area_preview,
             "variables": w.variables,
             "diff_values": self._diff_values(),
         }
+
+    def _on_area_preview(self, action):
+        """Bereiche der aufgeklappten Aktion auf der Karte zeigen (None = weg).
+
+        Show the expanded action's areas on the map (None = clear)."""
+        w = self._window
+        if action is None:
+            w.clear_action_area_preview()
+        else:
+            w.show_action_area_preview(action)
 
     def _on_action_map_pick(self, action, field: str):
         triggers = self._window.triggers
@@ -309,6 +364,13 @@ class TriggerPanel(QWidget):
             self._idx = -1
             self._set_form_enabled(False)
             return
+        # Waehrend des Umschaltens keine Stores zulassen: Signale der noch mit
+        # den ALTEN Werten gefuellten Widgets wuerden sonst den NEUEN Trigger
+        # ueberschreiben (self._idx zeigt bereits auf ihn).
+        # Block stores while switching: signals from widgets still holding the
+        # OLD values would otherwise overwrite the NEW trigger (self._idx
+        # already points at it).
+        self._loading = True
         self._set_form_enabled(True)
         self._idx = idx
         self._load(idx)
@@ -338,10 +400,12 @@ class TriggerPanel(QWidget):
     def _load(self, i):
         triggers = self._window.triggers
         t = triggers[i]
+        self._loading = True
         dv = self._diff_values()
         if dv:
+            # set_diff_values loest valueChanged aus -> muss im Guard laufen
+            # set_diff_values emits valueChanged -> must run inside the guard
             self.marks.set_diff_values(*dv)
-        self._loading = True
         self.name.setText(t.name)
         self.folder.setText(getattr(t, 'folder', '') or '')
         self.at_start.setChecked(t.enabled_at_start)
@@ -370,6 +434,7 @@ class TriggerPanel(QWidget):
         self.unit_checks_layout.addWidget(self.unit_checks_widget)
         self._loading = False
         self._update_cond_fields()
+        self._window.clear_action_area_preview()
         self.act_scroll.setWidget(ActionListWidget(t.actions, self._action_ctx()))
 
     def _store_current(self):

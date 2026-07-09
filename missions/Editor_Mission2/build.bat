@@ -1,0 +1,31 @@
+@echo off
+REM Build script for mission "Editor Mission" (TitanAPI / CMake).
+REM Requires: CMake 3.21+ and Visual Studio 2026 (or newer) with C++ x86 toolset.
+
+setlocal
+
+REM --- 1) Locate cmake ---
+where /q cmake
+if errorlevel 1 (
+    echo ERROR: cmake.exe not on PATH. Install CMake and re-run.
+    exit /b 1
+)
+
+REM --- 2) Configure + build ---
+cd /d "%~dp0"
+cmake -S . -B build -G "Visual Studio 18 2026" -A Win32
+if errorlevel 1 (
+    echo ERROR: CMake configuration failed.
+    exit /b 1
+)
+
+cmake --build build --config Release
+if errorlevel 1 (
+    echo.
+    echo Build failed.
+    exit /b 1
+)
+
+echo.
+echo Build successful. DLL is in: %~dp0build\Release\cEditorMission.dll
+endlocal

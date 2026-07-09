@@ -6,6 +6,68 @@ from .dialogs.object_edit import ObjectEditDialog
 
 
 class _PlacementMixin:
+    # --- Undo/Redo fuer Platzieren & Loeschen ---
+    # --- Undo/redo for placing & removing ---
+    def _init_undo(self):
+        self._undo_stack: list[tuple[str, PlacedObject]] = []
+        self._redo_stack: list[tuple[str, PlacedObject]] = []
+
+    def _push_undo(self, op: str, obj: PlacedObject):
+        if not hasattr(self, "_undo_stack"):
+            self._init_undo()
+        self._undo_stack.append((op, obj))
+        if len(self._undo_stack) > 200:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+
+    def _clear_undo(self):
+        if hasattr(self, "_undo_stack"):
+            self._undo_stack.clear()
+            self._redo_stack.clear()
+
+    def undo(self):
+        if not getattr(self, "_undo_stack", None):
+            self.statusBar().showMessage(tr("window.status_nothing_to_undo"))
+            return
+        op, obj = self._undo_stack.pop()
+        self._apply_inverse(op, obj)
+        self._redo_stack.append((op, obj))
+
+    def redo(self):
+        if not getattr(self, "_redo_stack", None):
+            self.statusBar().showMessage(tr("window.status_nothing_to_redo"))
+            return
+        op, obj = self._redo_stack.pop()
+        self._apply_forward(op, obj)
+        self._undo_stack.append((op, obj))
+
+    def _apply_inverse(self, op: str, obj: PlacedObject):
+        if op == "place":
+            self._delete_object_silent(obj)
+            self.statusBar().showMessage(tr("window.status_undo_place", display=obj.display))
+        else:  # "remove" rueckgaengig -> Objekt wiederherstellen
+            self._restore_object_silent(obj)
+            self.statusBar().showMessage(tr("window.status_undo_remove", display=obj.display))
+        self._refresh_overview()
+
+    def _apply_forward(self, op: str, obj: PlacedObject):
+        if op == "place":
+            self._restore_object_silent(obj)
+        else:
+            self._delete_object_silent(obj)
+        self._refresh_overview()
+
+    def _delete_object_silent(self, obj: PlacedObject):
+        if obj in self.objects:
+            for item in obj.items:
+                self.scene.removeItem(item)
+            self.objects.remove(obj)
+
+    def _restore_object_silent(self, obj: PlacedObject):
+        if obj not in self.objects:
+            self._draw(obj)
+            self.objects.append(obj)
+
     def _clear_placement_preview(self):
         for item in self._placement_preview_items:
             self.scene.removeItem(item)
@@ -93,20 +155,30 @@ class _PlacementMixin:
                 return
             action = self._action_pick["action"]
             if field == "primary":
-                if getattr(action, "kind", "") in {"createDisaster", "createMeteor", "createEarthquake", "createStorm", "createVortex", "createBlight", "unsetBlight"}:
+                if getattr(action, "kind", "") == "createDisaster":
                     action.x_expr, action.y_expr = tx, ty
                 else:
                     action.x, action.y = tx, ty
             elif field == "secondary":
-                if getattr(action, "kind", "") == "createDisaster":
-                    if getattr(action, "disaster_type", "meteor") in {"storm", "vortex"}:
-                        action.x2_expr, action.y2_expr = tx, ty
-                    else:
-                        action.x2, action.y2 = tx, ty
-                elif getattr(action, "kind", "") in {"createStorm", "createVortex"}:
+                if (getattr(action, "kind", "") == "createDisaster"
+                        and getattr(action, "disaster_type", "meteor") in {"storm", "vortex"}):
                     action.x2_expr, action.y2_expr = tx, ty
                 else:
                     action.x2, action.y2 = tx, ty
+            elif field == "attack1":
+                action.attack_x, action.attack_y = tx, ty
+            elif field == "attack2":
+                action.attack_x2, action.attack_y2 = tx, ty
+            elif field == "patrol_point":
+                # Mehrere Klicks erlaubt; Rechtsklick beendet den Pick.
+                # Multiple clicks allowed; right-click ends the pick.
+                pts = list(getattr(action, "patrol_points", None) or [])
+                if len(pts) < 8:
+                    pts.append([tx, ty])
+                    action.patrol_points = pts
+                    self.statusBar().showMessage(
+                        f"Wegpunkt {len(pts)}/8 gesetzt: ({tx},{ty}) — Rechtsklick beendet")
+                return  # Pick aktiv lassen / keep pick active
             self.statusBar().showMessage(tr("window.status_action_added", summary=action_summary(action)))
             self._pending_trigger_index = self._action_pick.get("trigger_index", 0)
             self._pending_action_index = self._action_pick.get("action_index", -1)
@@ -164,6 +236,7 @@ class _PlacementMixin:
         obj = PlacedObject(kind, tx, ty, mid, fp, disp, player, params, self._new_object_uid(), unit_name)
         self._draw(obj)
         self.objects.append(obj)
+        self._push_undo("place", obj)
         self._refresh_overview()
         label = unit_name or disp
         self.statusBar().showMessage(tr("window.status_placed", label=label, x=tx, y=ty, n=len(self.objects)))
@@ -184,6 +257,7 @@ class _PlacementMixin:
             for item in obj.items:
                 self.scene.removeItem(item)
             self.objects.remove(obj)
+            self._push_undo("remove", obj)
             self._refresh_overview()
             self.statusBar().showMessage(tr("window.status_removed", display=obj.display, n=len(self.objects)))
 
@@ -213,8 +287,10 @@ class _PlacementMixin:
             for it in obj.items:
                 self.scene.removeItem(it)
         self.objects.clear()
+        self._clear_undo()
         self.building_groups.clear()
         self.reinforce_groups.clear()
+        self.fight_groups.clear()
         self.groups_panel.load()
         self._refresh_overview()
         self.statusBar().showMessage(tr("window.status_objects_cleared"))

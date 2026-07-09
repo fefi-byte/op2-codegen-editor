@@ -3,19 +3,17 @@ from __future__ import annotations
 # Footprints from building.txt (X-size, Y-size).
 # map_ids match TitanAPI MapID enum: MapID::Xxx -> "mapXxx".
 
-STRUCTURES = [
-    # Power
+# Alphabetically sorted so the placement panel is predictable.
+STRUCTURES = sorted([
     ("Command Center",       "mapCommandCenter",      (3, 2)),
     ("Tokamak",              "mapTokamak",             (2, 2)),
     ("MHD Generator",        "mapMHDGenerator",        (2, 2)),
     ("Solar Power Array",    "mapSolarPowerArray",     (3, 2)),
     ("Geothermal Plant",     "mapGeothermalPlant",     (2, 1)),
-    # Production
     ("Structure Factory",    "mapStructureFactory",    (4, 3)),
     ("Vehicle Factory",      "mapVehicleFactory",      (4, 3)),
     ("Arachnid Factory",     "mapArachnidFactory",     (2, 2)),
     ("Consumer Factory",     "mapConsumerFactory",     (3, 3)),
-    # Mining & Storage
     ("Common Ore Mine",      "mapCommonOreMine",       (2, 1)),
     ("Rare Ore Mine",        "mapRareOreMine",         (2, 1)),
     ("Common Ore Smelter",   "mapCommonOreSmelter",    (4, 3)),
@@ -23,35 +21,29 @@ STRUCTURES = [
     ("Common Storage",       "mapCommonStorage",       (1, 2)),
     ("Rare Storage",         "mapRareStorage",         (1, 2)),
     ("Magma Well",           "mapMagmaWell",           (2, 1)),
-    # Research
     ("Basic Lab",            "mapBasicLab",            (2, 2)),
     ("Standard Lab",         "mapStandardLab",         (3, 2)),
     ("Advanced Lab",         "mapAdvancedLab",         (3, 3)),
     ("Observatory",          "mapObservatory",         (2, 2)),
-    # Residential & Population
     ("Residence",            "mapResidence",           (2, 2)),
     ("Reinforced Residence", "mapReinforcedResidence", (3, 2)),
     ("Advanced Residence",   "mapAdvancedResidence",   (3, 3)),
     ("Nursery",              "mapNursery",             (2, 2)),
     ("University",           "mapUniversity",          (2, 2)),
     ("Medical Center",       "mapMedicalCenter",       (2, 2)),
-    # Food & Services
     ("Agridome",             "mapAgridome",            (3, 2)),
     ("GORF",                 "mapGORF",                (3, 2)),
-    # Community
     ("Recreation Facility",  "mapRecreationFacility",  (2, 2)),
     ("Forum",                "mapForum",               (2, 2)),
     ("Trade Center",         "mapTradeCenter",         (2, 2)),
     ("DIRT",                 "mapDIRT",                (3, 2)),
-    # Military & Defense
     ("Guard Post",           "mapGuardPost",           (1, 1)),
     ("Light Tower",          "mapLightTower",          (1, 1)),
     ("Meteor Defense",       "mapMeteorDefense",       (2, 2)),
     ("Garage",               "mapGarage",              (3, 2)),
     ("Robot Command",        "mapRobotCommand",        (2, 2)),
-    # Space
     ("Spaceport",            "mapSpaceport",           (5, 4)),
-]
+], key=lambda s: s[0].lower())
 
 VEHICLES = [
     # Utility
@@ -207,25 +199,19 @@ ACTION_KINDS = {
     "SetTargCount":                      "setTargCount",
     "Gebäude einer Gruppe zuweisen":     "assignToGroup",
     "Variable ändern":                   "modVar",
+    "Mining starten (Makro)":            "startMining",
+    "Angriffswelle senden (Makro)":      "sendAttackWave",
+    "Gruppen-Befehl":                    "fightGroupCmd",
+    "Einheiten-Befehl":                  "unitCmd",
+    "Gebiet verteidigen (Makro)":        "defendArea",
+    "Gebäude reparieren (Makro)":        "repairBuildings",
 }
 
 # IF conditions per action: display name -> (kind, [fields])
-METEOR_SIZES = {
-    "Zufaellig": -1,
-    "Klein": 0,
-    "Mittel": 1,
-    "Gross": 2,
-}
-
-DISASTER_TYPES = {
-    "Meteor": "meteor",
-    "Erdbeben": "earthquake",
-    "Sturm": "storm",
-    "Vortex": "vortex",
-    "Vulkan (Eruption)": "eruption",
-    "Blight setzen": "blight",
-    "Blight entfernen": "unblight",
-}
+# Ordered lists of internal ids. Display labels come from i18n at usage
+# time (tr("meteor_sizes.<id>") / tr("disaster_types.<id>")).
+METEOR_SIZES = [-1, 0, 1, 2]
+DISASTER_TYPES = ["meteor", "earthquake", "storm", "vortex", "eruption", "blight", "unblight"]
 
 # IF conditions per action: display name -> (kind, [fields])
 ACTION_CONDITION_KINDS = {
@@ -235,4 +221,33 @@ ACTION_CONDITION_KINDS = {
     "Gebäude-Anzahl":                ("buildingCount",      ["player", "building", "compare", "value"]),
     "Technologie erforscht":         ("hasTech",            ["player", "tech_id"]),
     "Variable prüfen":               ("varCheck",           ["var_name", "compare", "value"]),
+    # Bedingungen auf die Schleifen-Einheit `unit` (nur in forEach-Schleifen)
+    # Conditions on the forEach loop unit `unit`
+    "Schleifen-Einheit: Typ ist":        ("loopUnitType",   ["unit", "loop_level"]),
+    "Schleifen-Einheit: Schaden":        ("loopUnitDamage", ["compare", "value", "loop_level"]),
+    "Schleifen-Einheit: Fracht/Waffe":   ("loopUnitCargo",  ["unit", "loop_level"]),
+    "Schleifen-Einheit: Befehl ist":     ("loopUnitCommand", ["command", "loop_level"]),
+}
+
+# Auswahl fuer "Schleifen-Einheit: Befehl ist" -> Anzeige -> abi::CommandType-Name.
+# Choices for "loop unit: command is" -> display -> abi::CommandType name.
+UNIT_COMMAND_STATES = {
+    "Kein Befehl (Nop)":       "Nop",
+    "Bewegen (Move)":          "Move",
+    "Stopp":                   "Stop",
+    "Leerlauf (Idle)":         "Idle",
+    "Aktiv (Unidle)":          "Unidle",
+    "Angreifen (Attack)":      "Attack",
+    "Bewachen (Guard)":        "Guard",
+    "Patrouillieren (Patrol)": "Patrol",
+    "Reparieren (RepairObj)":  "RepairObj",
+    "Umprogrammieren (Reprogram)": "Reprogram",
+    "Demontieren (Dismantle)": "Dismantle",
+    "Bauen (Build)":           "Build",
+    "Im Bau (Develop)":        "Develop",
+    "Abriss (UnDevelop)":      "UnDevelop",
+    "Docken (Dock)":           "Dock",
+    "Übergeben (Transfer)":    "Transfer",
+    "Erforschen (Research)":   "Research",
+    "Selbstzerstörung":        "SelfDestruct",
 }

@@ -33,7 +33,6 @@ NODE_COLORS = {
 WIRE_COLORS = {
     "createTrigger": QColor(120, 200, 255),
     "assignToGroup": QColor(255, 210, 90),
-    "startMiningOperation": QColor(255, 170, 70),
     "setTargCount": QColor(140, 230, 140),
     "recordBuilding": QColor(200, 200, 200),
     "recordTube": QColor(120, 220, 255),
@@ -246,16 +245,14 @@ class TimelineView(QGraphicsView):
 
         Returns the node key an action points at (or None).
 
-        createTrigger -> Ziel-Trigger; startMiningOperation -> Mining-Gruppe;
+        createTrigger -> Ziel-Trigger;
         assignToGroup/setTargCount/recordBuilding/recordTube/recordWall -> Gruppe.
-        createTrigger -> target trigger; startMiningOperation -> mining group;
+        createTrigger -> target trigger;
         assignToGroup/setTargCount/recordBuilding/recordTube/recordWall -> group.
         """
         k = action.kind
         if k == "createTrigger" and action.target:
             return f"trigger:{action.target}"
-        if k == "startMiningOperation" and action.mining_group_name:
-            return name_to_key.get(action.mining_group_name)
         if k in ("assignToGroup", "setTargCount", "recordBuilding", "recordTube", "recordWall"):
             return name_to_key.get(action.group_name)
         return None

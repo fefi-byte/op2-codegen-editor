@@ -2,6 +2,24 @@ from __future__ import annotations
 
 from .common import *
 
+# Action-Felder, die per Rechteck-Drag gesetzt werden. Wert: (x, y, x2, y2)-
+# Attributnamen auf der TriggerAction.
+# Action fields set via rect drag. Value: (x, y, x2, y2) attribute names.
+_RECT_PICK_FIELDS = {
+    "staging_rect": ("x", "y", "x2", "y2"),
+    "area_rect": ("x", "y", "x2", "y2"),
+    "attack_rect": ("attack_x", "attack_y", "attack_x2", "attack_y2"),
+    "idle_rect": ("idle_x", "idle_y", "idle_x2", "idle_y2"),
+}
+
+# Action-Felder, die per Linien-Drag gesetzt werden (nur X- oder nur
+# Y-Richtung, keine Diagonalen) -- fuer die Listenzeilen von recordTube/
+# recordWall. Ziel sind immer die generischen x/y/x2/y2-Attribute.
+# Action fields set via line drag (X or Y direction only, no diagonals) --
+# for recordTube/recordWall list rows. Always targets the generic x/y/x2/y2
+# attributes.
+_LINE_PICK_FIELDS = {"tube_line", "wall_line"}
+
 
 class _MapPickMixin:
     def _begin_rect_pick(self, group):
@@ -42,6 +60,16 @@ class _MapPickMixin:
             max(0, min(ty, self.map.height - 1)),
         )
 
+    def _axis_lock(self, sx, sy, tx, ty):
+        """Zwingt (tx,ty) auf dieselbe X- oder Y-Achse wie (sx,sy) -- keine
+        Diagonalen, damit Tube-/Wall-Linien immer gerade bleiben.
+
+        Forces (tx,ty) onto the same X or Y axis as (sx,sy) -- no diagonals,
+        so tube/wall lines always stay straight."""
+        if abs(tx - sx) >= abs(ty - sy):
+            return tx, sy
+        return sx, ty
+
     def _update_rect_overlay(self, x, y, w, h):
         if self._rect_pick_item is not None:
             self.scene.removeItem(self._rect_pick_item)
@@ -58,11 +86,20 @@ class _MapPickMixin:
                 self._lava_paint_drag_start = (tx, ty)
                 self._update_lava_rect_preview(tx, ty, tx, ty)
             return
-        if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
+        if self._action_pick and self._action_pick["kind"] == "action_field" \
+                and self._action_pick.get("field") in ({"rect"} | set(_RECT_PICK_FIELDS)):
             tx, ty = self._clamp_tile(tx, ty)
             self._action_pick_start = (tx, ty)
             x, y, w, h = self._rect_from_tiles(tx, ty, tx, ty)
             self._update_rect_overlay(x, y, w, h)
+            return
+        if self._action_pick and self._action_pick["kind"] == "action_field" \
+                and self._action_pick.get("field") in _LINE_PICK_FIELDS:
+            tx, ty = self._clamp_tile(tx, ty)
+            self._action_pick_start = (tx, ty)
+            color = (QColor(120, 220, 255) if self._action_pick["field"] == "tube_line"
+                     else QColor(255, 180, 80))
+            self._draw_action_line_preview(tx, ty, tx, ty, color)
             return
         if self._action_pick and self._action_pick["kind"] in ("recordTube", "recordWall"):
             tx, ty = self._clamp_tile(tx, ty)
@@ -85,11 +122,24 @@ class _MapPickMixin:
                     f"Lava-Rect: ({min(sx,tx)},{min(sy,ty)}) "
                     f"{abs(tx-sx)+1}x{abs(ty-sy)+1}")
             return
-        if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect" and self._action_pick_start is not None:
+        if self._action_pick and self._action_pick["kind"] == "action_field" \
+                and self._action_pick.get("field") in ({"rect"} | set(_RECT_PICK_FIELDS)) \
+                and self._action_pick_start is not None:
             sx, sy = self._action_pick_start
             x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
             self._update_rect_overlay(x, y, w, h)
             self.coord_label.setText(f"Bereich: {x}, {y}, {w}x{h}")
+            return
+        if self._action_pick and self._action_pick["kind"] == "action_field" \
+                and self._action_pick.get("field") in _LINE_PICK_FIELDS \
+                and self._action_pick_start is not None:
+            tx, ty = self._clamp_tile(tx, ty)
+            sx, sy = self._action_pick_start
+            tx, ty = self._axis_lock(sx, sy, tx, ty)
+            color = (QColor(120, 220, 255) if self._action_pick["field"] == "tube_line"
+                     else QColor(255, 180, 80))
+            self._draw_action_line_preview(sx, sy, tx, ty, color)
+            self.coord_label.setText(tr("window.coord_line", sx=sx, sy=sy, tx=tx, ty=ty))
             return
         if self._action_pick and self._action_pick_start is not None:
             tx, ty = self._clamp_tile(tx, ty)
@@ -115,16 +165,39 @@ class _MapPickMixin:
             else:
                 self._lava_paint_add(tx, ty)
             return
-        if self._action_pick and self._action_pick["kind"] == "action_field" and self._action_pick.get("field") == "rect":
+        if self._action_pick and self._action_pick["kind"] == "action_field" \
+                and self._action_pick.get("field") in ({"rect"} | set(_RECT_PICK_FIELDS)):
             if self._action_pick_start is None:
                 self._end_action_pick()
                 return
             sx, sy = self._action_pick_start
             x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
             action = self._action_pick["action"]
-            action.rect_x, action.rect_y = x, y
-            action.rect_width, action.rect_height = w, h
+            field = self._action_pick.get("field")
+            if field == "rect":
+                action.rect_x, action.rect_y = x, y
+                action.rect_width, action.rect_height = w, h
+            else:
+                ax, ay, ax2, ay2 = _RECT_PICK_FIELDS[field]
+                setattr(action, ax, x); setattr(action, ay, y)
+                setattr(action, ax2, x + w - 1); setattr(action, ay2, y + h - 1)
             self.statusBar().showMessage(f"Bereich gesetzt: ({x},{y}) {w}x{h}")
+            self._pending_trigger_index = self._action_pick.get("trigger_index", 0)
+            self._pending_action_index = self._action_pick.get("action_index", -1)
+            self._end_action_pick()
+            return
+        if self._action_pick and self._action_pick["kind"] == "action_field" \
+                and self._action_pick.get("field") in _LINE_PICK_FIELDS:
+            if self._action_pick_start is None:
+                self._end_action_pick()
+                return
+            tx, ty = self._clamp_tile(tx, ty)
+            sx, sy = self._action_pick_start
+            tx, ty = self._axis_lock(sx, sy, tx, ty)
+            action = self._action_pick["action"]
+            action.x, action.y = sx, sy
+            action.x2, action.y2 = tx, ty
+            self.statusBar().showMessage(f"Linie gesetzt: ({sx},{sy}) -> ({tx},{ty})")
             self._pending_trigger_index = self._action_pick.get("trigger_index", 0)
             self._pending_action_index = self._action_pick.get("action_index", -1)
             self._end_action_pick()
@@ -151,11 +224,18 @@ class _MapPickMixin:
             return
         sx, sy = self._rect_pick_start
         x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
-        self._rect_pick_group.rect_x = x
-        self._rect_pick_group.rect_y = y
-        self._rect_pick_group.rect_width = w
-        self._rect_pick_group.rect_height = h
-        name = self._rect_pick_group.name
+        group = self._rect_pick_group
+        # FightGroup speichert den Bereich als Idle-Rect (idle_x/y/width/height)
+        # statt rect_x/y/width/height wie Building-/ReinforceGroup.
+        # FightGroup stores the area as an idle rect (idle_x/y/width/height)
+        # instead of rect_x/y/width/height like Building/Reinforce groups.
+        if isinstance(group, FightGroupSpec):
+            group.idle_x, group.idle_y = x, y
+            group.idle_width, group.idle_height = w, h
+        else:
+            group.rect_x, group.rect_y = x, y
+            group.rect_width, group.rect_height = w, h
+        name = group.name
         self._end_rect_pick()
         self.statusBar().showMessage(tr("window.status_setrect_done", name=name, x=x, y=y, w=w, h=h))
         self.groups_panel.refresh()
@@ -286,7 +366,8 @@ class _MapPickMixin:
         self._clear_action_preview()
         if (
             request["kind"] in ("recordTube", "recordWall")
-            or (request["kind"] == "action_field" and request.get("field") == "rect")
+            or (request["kind"] == "action_field"
+                and request.get("field") in ({"rect"} | set(_RECT_PICK_FIELDS) | _LINE_PICK_FIELDS))
         ):
             self.view.rect_select_enabled = True
         self.view.setCursor(Qt.CrossCursor)
@@ -299,6 +380,13 @@ class _MapPickMixin:
                 "primary": "Klick: Position (X, Y) der Aktion setzen",
                 "secondary": "Klick: zweite Position (X2, Y2) der Aktion setzen",
                 "rect": "Klick: Bereich-Ecke (rect X, rect Y) der Aktion setzen",
+                "staging_rect": "Sammelbereich aufziehen (Klick + Ziehen)",
+                "attack_rect": "Angriffsbereich aufziehen (Klick + Ziehen)",
+                "idle_rect": "Idle-Bereich aufziehen (Klick + Ziehen)",
+                "area_rect": "Zielbereich aufziehen (Klick + Ziehen)",
+                "patrol_point": "Wegpunkte anklicken (bis 8) — Rechtsklick beendet",
+                "tube_line": "Rohrleitung aufziehen (nur X oder Y, Klick + Ziehen)",
+                "wall_line": "Mauerabschnitt aufziehen (nur X oder Y, Klick + Ziehen)",
             }.get(request.get("field"), "Klick: Karte fuer Aktion picken"),
         }
         label = labels.get(request["kind"], "Klick: Karte fuer Aktion picken")

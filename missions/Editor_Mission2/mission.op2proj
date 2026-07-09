@@ -1,0 +1,274 @@
+{
+  "mission_name": "Editor Mission",
+  "mission_type": -1,
+  "tech_tree": "MULTITEK.TXT",
+  "difficulty": {
+    "hard": 13,
+    "normal": 10,
+    "easy": 5
+  },
+  "variables": [],
+  "map": "cm01.map",
+  "players": [
+    {
+      "colony": 0,
+      "is_human": true,
+      "tech_level": 12,
+      "init_resources": true,
+      "kids": null,
+      "workers": null,
+      "scientists": null,
+      "common_ore": null,
+      "rare_ore": null,
+      "food": null,
+      "researches": []
+    },
+    {
+      "colony": 1,
+      "is_human": false,
+      "tech_level": 12,
+      "init_resources": false,
+      "kids": null,
+      "workers": null,
+      "scientists": null,
+      "common_ore": 10000,
+      "rare_ore": 10000,
+      "food": 0,
+      "researches": []
+    }
+  ],
+  "objects": [
+    {
+      "kind": "structure",
+      "tile_x": 71,
+      "tile_y": 63,
+      "map_id": "mapTokamak",
+      "footprint": [
+        2,
+        2
+      ],
+      "display": "Tokamak",
+      "player": 1,
+      "params": {},
+      "uid": "obj1",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 70,
+      "tile_y": 70,
+      "map_id": "mapCommandCenter",
+      "footprint": [
+        3,
+        2
+      ],
+      "display": "Command Center",
+      "player": 1,
+      "params": {},
+      "uid": "obj2",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 66,
+      "tile_y": 70,
+      "map_id": "mapCommonOreSmelter",
+      "footprint": [
+        4,
+        3
+      ],
+      "display": "Common Ore Smelter",
+      "player": 1,
+      "params": {},
+      "uid": "obj3",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 61,
+      "tile_y": 70,
+      "map_id": "mapRareOreSmelter",
+      "footprint": [
+        4,
+        3
+      ],
+      "display": "Rare Ore Smelter",
+      "player": 1,
+      "params": {},
+      "uid": "obj4",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 68,
+      "tile_y": 63,
+      "map_id": "mapTokamak",
+      "footprint": [
+        2,
+        2
+      ],
+      "display": "Tokamak",
+      "player": 1,
+      "params": {},
+      "uid": "obj5",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 66,
+      "tile_y": 74,
+      "map_id": "mapVehicleFactory",
+      "footprint": [
+        4,
+        3
+      ],
+      "display": "Vehicle Factory",
+      "player": 1,
+      "params": {},
+      "uid": "obj6",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 61,
+      "tile_y": 74,
+      "map_id": "mapVehicleFactory",
+      "footprint": [
+        4,
+        3
+      ],
+      "display": "Vehicle Factory",
+      "player": 1,
+      "params": {},
+      "uid": "obj7",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 61,
+      "tile_y": 66,
+      "map_id": "mapStructureFactory",
+      "footprint": [
+        4,
+        3
+      ],
+      "display": "Structure Factory",
+      "player": 1,
+      "params": {},
+      "uid": "obj8",
+      "unit_name": ""
+    }
+  ],
+  "building_groups": [],
+  "reinforce_groups": [
+    {
+      "name": "ReinforceGroup1",
+      "player": 1,
+      "unit_ids": [
+        "obj6",
+        "obj7"
+      ],
+      "targets": [],
+      "folder": ""
+    }
+  ],
+  "fight_groups": [
+    {
+      "name": "FightGroup1",
+      "player": 1,
+      "idle_x": 57,
+      "idle_y": 60,
+      "idle_width": 20,
+      "idle_height": 21,
+      "unit_ids": [],
+      "folder": ""
+    }
+  ],
+  "triggers": [
+    {
+      "name": "Trigger1",
+      "enabled_at_start": true,
+      "one_shot": true,
+      "condition": "time",
+      "marks": 1,
+      "player": 0,
+      "count": 1,
+      "compare": "cmpGreaterEqual",
+      "tech_id": 0,
+      "resource": "resCommonOre",
+      "amount": 1000,
+      "building": "mapCommandCenter",
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1,
+      "actions": [
+        {
+          "kind": "setTargCount",
+          "text": "",
+          "unit_type": "mapScout",
+          "weapon_type": "mapNone",
+          "target_count": 1,
+          "x": 0,
+          "y": 0,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "Trigger1",
+          "group_name": "FightGroup1",
+          "source_group_name": "ReinforceGroup1",
+          "reinforce_priority": 1200,
+          "building_type": "mapCommandCenter",
+          "wall_type": "mapWall",
+          "conditions": [],
+          "condition_logic": "and",
+          "then_actions": [],
+          "else_actions": [],
+          "var_name": "",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "meteor",
+          "x_expr": 0,
+          "y_expr": 0,
+          "x2_expr": 0,
+          "y2_expr": 0,
+          "size": -1,
+          "magnitude": 1,
+          "duration": 100,
+          "spread_speed": 15,
+          "lava_zone": [],
+          "now": false,
+          "wave_units": [],
+          "targ_counts": [
+            {
+              "unit_type": "mapLynx",
+              "weapon_type": "mapMicrowave",
+              "count": 1
+            }
+          ],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "patrol_points": [],
+          "loop_mode": "none",
+          "loop_count": 1,
+          "enum_source": "rect"
+        }
+      ],
+      "unit_checks": [],
+      "folder": ""
+    }
+  ],
+  "victories": [],
+  "defeats": [],
+  "node_positions": {}
+}

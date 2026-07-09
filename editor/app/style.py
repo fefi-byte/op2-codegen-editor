@@ -15,23 +15,82 @@ YELLOW   = "#f9e2af"
 PEACH    = "#fab387"
 TEAL     = "#94e2d5"
 MAUVE    = "#cba6f7"
+SKY      = "#89dceb"
+LAVENDER = "#b4befe"
+PINK     = "#f5c2e7"
 CRUST    = "#181825"
 BORDER   = "#3a3a5c"
 
 ACTION_CATEGORY_COLOR: dict[str, str] = {
-    "message":        BLUE,
-    "createUnit":     GREEN,
-    "createDisaster": PEACH,
-    "createTrigger":  MAUVE,
-    "recordBuilding": YELLOW,
-    "recordTube":     YELLOW,
-    "recordWall":     YELLOW,
-    "setTargCount":   TEAL,
-    "assignToGroup":  TEAL,
-    "modVar":         RED,
-    "if":             OVERLAY,
-    "noop":           SURFACE1,
+    "message":         BLUE,
+    "createUnit":      GREEN,
+    "createDisaster":  PEACH,
+    "createTrigger":   MAUVE,
+    "recordBuilding":  YELLOW,
+    "recordTube":      YELLOW,
+    "recordWall":      YELLOW,
+    "setTargCount":    TEAL,
+    "assignToGroup":   TEAL,
+    "modVar":          RED,
+    "startMining":     GREEN,
+    "sendAttackWave":  RED,
+    "defendArea":      RED,
+    "repairBuildings": TEAL,
+    "fightGroupCmd":   MAUVE,
+    "unitCmd":         BLUE,
+    "if":              LAVENDER,
+    "noop":            SURFACE1,
 }
+
+# "if" ist ein Container (Wenn/Dann/Sonst, ggf. mit Schleife); die Randfarbe
+# haengt zusaetzlich vom loop_mode ab, damit man Bedingung/Zaehlschleife/
+# Enumerator-Schleife auf einen Blick unterscheiden kann.
+# "if" is a container (When/Then/Else, optionally looped); its accent color
+# also depends on loop_mode so condition/count-loop/enumerator-loop are
+# distinguishable at a glance.
+IF_LOOP_COLOR: dict[str, str] = {
+    "none":    BLUE,
+    "count":   SKY,
+    "forEach": PINK,
+}
+
+# Farben fuer die Wenn-/Dann-Sonst-Unterbereiche innerhalb eines if/for-Blocks.
+# Colors for the When/Then-Else sub-sections inside an if/for block.
+CONDITION_SECTION_COLOR = GREEN
+ACTION_SECTION_COLOR = YELLOW
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def tint_stylesheet(color: str, *, border_px: int = 2, alpha: int = 140) -> str:
+    """Nur eine Umrandung in `color` (kein Flaechenhintergrund) -- `alpha`
+    (0-255) blasst den Rand ab, damit er nicht zu grell wirkt."""
+    r, g, b = _hex_to_rgb(color)
+    return (
+        "QFrame {"
+        f" border: {border_px}px solid rgba({r}, {g}, {b}, {alpha});"
+        " border-radius: 4px;"
+        " background-color: transparent;"
+        "}"
+    )
+
+
+def tint_button_stylesheet(color: str) -> str:
+    """Knopf mit blasser Randfarbe `color` statt voller Flaechenfuellung."""
+    r, g, b = _hex_to_rgb(color)
+    return (
+        "QPushButton {"
+        f" border: 1px solid rgba({r}, {g}, {b}, 160);"
+        f" background-color: rgba({r}, {g}, {b}, 25);"
+        f" color: {TEXT};"
+        " border-radius: 3px;"
+        " padding: 3px;"
+        "}"
+        f"QPushButton:hover {{ background-color: rgba({r}, {g}, {b}, 55); }}"
+    )
 
 
 def apply_role(widget, role: str) -> None:

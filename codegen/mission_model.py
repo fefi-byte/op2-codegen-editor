@@ -181,6 +181,50 @@ class BuildingGroupSpec:
 
 
 @dataclass
+class FightGroupSpec:
+    """FightGroup: vordefinierte Kampfgruppe (muss existieren, bevor eine
+    Angriffswelle oder ein Gruppen-Befehl sie referenzieren kann).
+
+    FightGroup: predefined combat group (must exist before an attack wave or
+    a group command can reference it).
+    """
+    name: str
+    player: int = 0
+    idle_x: int = 0
+    idle_y: int = 0
+    idle_width: int = 8
+    idle_height: int = 8
+    unit_ids: list[str] = field(default_factory=list)
+    folder: str = ""
+
+
+@dataclass
+class MiningGroupSpec:
+    """MiningGroup: vordefinierte Mining-Gruppe (muss existieren, bevor eine
+    startMining-Aktion sie referenzieren kann). Mine/Smelter werden je Aktion
+    referenziert, nicht hier -- die Gruppe traegt Spieler, den Abladebereich
+    fuer die Erz-Trucks (setupMining()-Bereichsargument) und eine vorab
+    zugewiesene Truck-Roster (unit_ids); die Aktion kann zusaetzlich eine
+    Sollstaerke (setTargCount) fordern, falls mehr Trucks noetig sind.
+
+    MiningGroup: predefined mining group (must exist before a startMining
+    action can reference it). Mine/smelter are referenced per action, not
+    here -- the group carries the player, the unload/staging area for the ore
+    trucks (setupMining()'s area argument), and a preset truck roster
+    (unit_ids); the action can additionally request a target count
+    (setTargCount) if more trucks are needed.
+    """
+    name: str
+    player: int = 0
+    idle_x: int = 0
+    idle_y: int = 0
+    idle_width: int = 9
+    idle_height: int = 7
+    unit_ids: list[str] = field(default_factory=list)  # vorab platzierte CargoTrucks (uid)
+    folder: str = ""
+
+
+@dataclass
 class ReinforceTargetSpec:
     """Zielgruppe, die von einer ReinforceGroup Fahrzeuge anfordern darf.
 
@@ -224,6 +268,13 @@ class ActionCondition:
     resource: str = "resCommonOre"
     tech_id: int = 0
     var_name: str = ""        # fuer varCheck: Variable die geprueft wird
+    command_type: str = "Move"  # fuer loopUnitCommand: abi::CommandType-Name (z.B. "Move", "Idle")
+    # Bei verschachtelten forEach-Schleifen: welche Ebene die loopUnit*-Bedingung
+    # meint. "current" = die Schleife, in der diese Bedingung selbst haengt;
+    # "outer" = eine Ebene weiter aussen.
+    # For nested forEach loops: which level this loopUnit* condition refers to.
+    # "current" = the loop this condition itself lives in; "outer" = one level up.
+    loop_level: str = "current"
 
 
 @dataclass
@@ -232,7 +283,7 @@ class TriggerAction:
 
     An action inside the callback function of a trigger.
     """
-    kind: str                 # "message" | "createUnit" | "createTrigger" | "recordBuilding" | "recordTube" | "recordWall" | "setTargCount" | "assignToGroup" | "modVar" | "createDisaster" | legacy: "createMeteor" | "createEarthquake" | "createStorm" | "createVortex" | "createBlight" | "unsetBlight"
+    kind: str                 # "message" | "createUnit" | "createTrigger" | "recordBuilding" | "recordTube" | "recordWall" | "setTargCount" | "assignToGroup" | "modVar" | "createDisaster" | "startMining" | "sendAttackWave" | "fightGroupCmd" | "unitCmd" | "defendArea" | "repairBuildings"
     text: str = ""
     unit_type: str = "mapScout"
     weapon_type: str = "mapNone"
@@ -268,6 +319,67 @@ class TriggerAction:
     spread_speed: int = 15    # eruption lava spread speed (15=very slow, 45=medium)
     lava_zone: list = field(default_factory=list)  # [[x, y], ...] tiles for setLavaPossible
     now: bool = False
+    # sendAttackWave (Makro): Wellen-Zusammenstellung + Bereiche.
+    # sendAttackWave (macro): wave composition + areas.
+    # wave_units: [{"unit_type": "mapLynx", "weapon_type": "mapLaser", "count": 2}, ...]
+    wave_units: list = field(default_factory=list)
+    # setTargCount (Liste): mehrere Fahrzeugtypen in einer Aktion anfordern.
+    # [{"unit_type": "mapConVec", "weapon_type": "mapNone", "count": 2}, ...]
+    # setTargCount (list): request several vehicle types in one action.
+    targ_counts: list = field(default_factory=list)
+    # createUnit (Liste): mehrere Einheiten in einer Aktion erzeugen.
+    # [{"unit_type": "mapScout", "weapon_type": "mapNone", "x": 0, "y": 0}, ...]
+    unit_list: list = field(default_factory=list)
+    # recordBuilding (Liste): mehrere Gebaeude fuer dieselbe Gruppe in einer Aktion.
+    # [{"building_type": "mapCommandCenter", "weapon_type": "mapNone", "x": 0, "y": 0}, ...]
+    building_list: list = field(default_factory=list)
+    # recordTube (Liste): mehrere Rohrleitungen (Liniensegmente) in einer Aktion.
+    # [{"x": 0, "y": 0, "x2": 0, "y2": 0}, ...]
+    tube_list: list = field(default_factory=list)
+    # recordWall (Liste): mehrere Mauerabschnitte (Liniensegmente, je mit eigenem Typ).
+    # [{"wall_type": "mapWall", "x": 0, "y": 0, "x2": 0, "y2": 0}, ...]
+    wall_list: list = field(default_factory=list)
+    spawn_mode: str = "spawn"   # "spawn" (sofort erzeugen) | "reinforce" (von ReinforceGroup produzieren lassen)
+    attack_x: int = 0           # Angriffsbereich / attack area rect
+    attack_y: int = 0
+    attack_x2: int = 0
+    attack_y2: int = 0
+    # Benannte Welle: macht die FightGroup fuer andere Aktionen ansprechbar
+    # Named wave: makes the FightGroup addressable by other actions
+    group_var_name: str = ""
+    # Idle-Rect: wo die Gruppe gebaut wird / spawnt (leer = Sammelbereich)
+    # Idle rect: where the group is built / spawns (empty = staging area)
+    idle_x: int = 0
+    idle_y: int = 0
+    idle_x2: int = 0
+    idle_y2: int = 0
+    # fightGroupCmd/unitCmd: Befehl an eine Gruppe bzw. benannte Einheit
+    # fightGroupCmd/unitCmd: command for a group or a named unit
+    fg_command: str = "attackArea"
+    unit_ref: str = ""          # unitCmd: Name der platzierten Einheit / placed unit's name
+    # startMining: Mine/Smelter als Einheit referenzieren statt per X/Y-Position
+    # nachzuschlagen -- "" = X/Y verwenden, "<loop>"/"<loop:outer>" = aktuelle/
+    # aeussere forEach-Schleifeneinheit, sonst Name einer benannten Einheit.
+    # Noetig, wenn die Aktion innerhalb einer for-Schleife steht: dort ist
+    # vorher nicht bekannt, WELCHES Gebaeude gemeint ist -- es ist immer die
+    # gerade durchlaufene Schleifeneinheit.
+    # startMining: reference mine/smelter as a unit instead of looking one up
+    # by X/Y position -- "" = use X/Y, "<loop>"/"<loop:outer>" = current/outer
+    # forEach loop unit, otherwise the name of a named unit. Needed when the
+    # action sits inside a for loop: there's no way to know in advance WHICH
+    # building is meant -- it's always whichever the loop is currently on.
+    mine_ref: str = ""
+    smelter_ref: str = ""
+    # Patrouille: bis zu 8 Wegpunkte [[x, y], ...]; leer -> x,y/x2,y2 (2 Punkte)
+    # Patrol: up to 8 waypoints [[x, y], ...]; empty -> x,y/x2,y2 (2 points)
+    patrol_points: list = field(default_factory=list)
+    # Logik-Block (kind == "if"): optionale Schleife um Bedingung + Aktionen
+    # Logic block (kind == "if"): optional loop around condition + actions
+    loop_mode: str = "none"     # none | count | forEach
+    loop_count: int | str = 1   # count: Anzahl, auch Ausdruck / count, expression allowed
+    # forEach: welcher Enumerator die Einheiten liefert
+    # forEach: which enumerator yields the units
+    enum_source: str = "rect"   # all | player | playerVehicles | playerBuildings | type | rect
 
 
 @dataclass
@@ -393,6 +505,8 @@ class Mission:
     walls_tubes: list[WallTubeSpec] = field(default_factory=list)
     building_groups: list[BuildingGroupSpec] = field(default_factory=list)
     reinforce_groups: list[ReinforceGroupSpec] = field(default_factory=list)
+    fight_groups: list[FightGroupSpec] = field(default_factory=list)
+    mining_groups: list[MiningGroupSpec] = field(default_factory=list)
     triggers: list[TriggerDef] = field(default_factory=list)
     start_message: StartMessage | None = None
     victories: list[Condition] = field(default_factory=list)

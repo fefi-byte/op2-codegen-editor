@@ -5,7 +5,9 @@ from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from . import i18n
 from .game_data import COMPARE
-from mission_model import BuildingGroupSpec, Condition, ReinforceGroupSpec
+from mission_model import (
+    BuildingGroupSpec, Condition, FightGroupSpec, MiningGroupSpec, ReinforceGroupSpec,
+)
 
 tr = i18n.tr
 
@@ -31,6 +33,14 @@ def action_condition_summary(c) -> str:
     if c.kind == "varCheck":
         var = getattr(c, 'var_name', '') or '?'
         return f"{neg}{var} {cmp} {c.value}"
+    if c.kind == "loopUnitType":
+        return f"{neg}unit.type == {(c.building_type or '?').replace('map', '')}"
+    if c.kind == "loopUnitDamage":
+        return f"{neg}unit.damage {cmp} {c.value}"
+    if c.kind == "loopUnitCargo":
+        return f"{neg}unit.weapon == {(c.building_type or '?').replace('map', '')}"
+    if c.kind == "loopUnitCommand":
+        return f"{neg}unit.command == {getattr(c, 'command_type', 'Move') or 'Move'}"
     return c.kind
 
 
@@ -52,18 +62,28 @@ def _action_summary_core(a) -> str:
         return tr("action_kinds.noop")
     if a.kind == "if":
         logic = tr("sum.or") if getattr(a, "condition_logic", "and") == "or" else tr("sum.and")
-        return tr("sum.act_if", n=len(getattr(a, "conditions", [])), logic=logic,
+        base = tr("sum.act_if", n=len(getattr(a, "conditions", [])), logic=logic,
                   then=len(getattr(a, "then_actions", [])), els=len(getattr(a, "else_actions", [])))
+        loop = getattr(a, "loop_mode", "none") or "none"
+        if loop == "count":
+            base = f"{getattr(a, 'loop_count', 1)}× " + base
+        elif loop == "forEach":
+            ut = (getattr(a, "unit_type", "mapAny") or "mapAny").replace("map", "")
+            base = f"∀ {ut} in ({a.x},{a.y})-({a.x2},{a.y2}): " + base
+        return base
     if a.kind == "message":
         return tr("sum.act_message", text=a.text)
     if a.kind == "createUnit":
-        weapon = "" if a.weapon_type == "mapNone" else f" / {a.weapon_type}"
-        return tr("sum.act_createunit", unit=a.unit_type, weapon=weapon, x=a.x, y=a.y, p=a.player)
-    if a.kind == "createMeteor":
-        size_map = {-1: "random", 0: "small", 1: "medium", 2: "large"}
-        size = size_map.get(getattr(a, "size", -1), getattr(a, "size", -1))
-        now = " now" if getattr(a, "now", False) else ""
-        return f"Meteor({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}, {size}{now})"
+        entries = list(getattr(a, "unit_list", None) or [])
+        if not entries:
+            entries = [{"unit_type": a.unit_type, "weapon_type": a.weapon_type, "x": a.x, "y": a.y}]
+        if len(entries) == 1:
+            e = entries[0]
+            weapon = "" if e.get("weapon_type", "mapNone") == "mapNone" else f" / {e.get('weapon_type')}"
+            return tr("sum.act_createunit", unit=e.get("unit_type", "?"), weapon=weapon,
+                      x=e.get("x", 0), y=e.get("y", 0), p=a.player)
+        comp = ", ".join(f"{e.get('unit_type', '?')}@({e.get('x', 0)},{e.get('y', 0)})" for e in entries)
+        return f"CreateUnit(P{a.player}, {len(entries)}x: {comp})"
     if a.kind == "createDisaster":
         dtype = getattr(a, "disaster_type", "meteor")
         if dtype == "meteor":
@@ -85,27 +105,40 @@ def _action_summary_core(a) -> str:
         if dtype == "unblight":
             return f"Disaster: UnsetBlight({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)})"
         return f"Disaster: {dtype}"
-    if a.kind == "createEarthquake":
-        now = " now" if getattr(a, "now", False) else ""
-        return f"Earthquake({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}, mag={getattr(a, 'magnitude', 1)}{now})"
-    if a.kind == "createStorm":
-        now = " now" if getattr(a, "now", False) else ""
-        return f"Storm(({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}) -> ({getattr(a, 'x2_expr', 0)}, {getattr(a, 'y2_expr', 0)}), t={getattr(a, 'duration', 100)}{now})"
-    if a.kind == "createVortex":
-        now = " now" if getattr(a, "now", False) else ""
-        return f"Vortex(({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)}) -> ({getattr(a, 'x2_expr', 0)}, {getattr(a, 'y2_expr', 0)}), t={getattr(a, 'duration', 100)}{now})"
-    if a.kind == "createBlight":
-        return f"Blight({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)})"
-    if a.kind == "unsetBlight":
-        return f"UnsetBlight({getattr(a, 'x_expr', 0)}, {getattr(a, 'y_expr', 0)})"
     if a.kind == "createTrigger":
         return tr("sum.act_createtrigger", target=a.target)
     if a.kind == "recordBuilding":
-        return tr("sum.act_recordbuilding", g=a.group_name, b=a.building_type, x=a.x, y=a.y)
+        entries = list(getattr(a, "building_list", None) or [])
+        if not entries:
+            entries = [{"building_type": a.building_type, "x": a.x, "y": a.y}]
+        if len(entries) == 1:
+            e = entries[0]
+            return tr("sum.act_recordbuilding", g=a.group_name, b=e.get("building_type", "?"),
+                      x=e.get("x", 0), y=e.get("y", 0))
+        comp = ", ".join(f"{e.get('building_type', '?')}@({e.get('x', 0)},{e.get('y', 0)})" for e in entries)
+        return f"{a.group_name}.RecordBuilding({len(entries)}x: {comp})"
     if a.kind == "recordTube":
-        return f"{a.group_name}.RecordTubeLine(({a.x},{a.y}) -> ({a.x2},{a.y2}))"
+        entries = list(getattr(a, "tube_list", None) or [])
+        if not entries:
+            entries = [{"x": a.x, "y": a.y, "x2": a.x2, "y2": a.y2}]
+        if len(entries) == 1:
+            e = entries[0]
+            return f"{a.group_name}.RecordTubeLine(({e.get('x', 0)},{e.get('y', 0)}) -> ({e.get('x2', 0)},{e.get('y2', 0)}))"
+        comp = ", ".join(
+            f"({e.get('x', 0)},{e.get('y', 0)})->({e.get('x2', 0)},{e.get('y2', 0)})" for e in entries)
+        return f"{a.group_name}.RecordTube({len(entries)}x: {comp})"
     if a.kind == "recordWall":
-        return f"{a.group_name}.RecordWallLine({a.wall_type}, ({a.x},{a.y}) -> ({a.x2},{a.y2}))"
+        entries = list(getattr(a, "wall_list", None) or [])
+        if not entries:
+            entries = [{"wall_type": a.wall_type, "x": a.x, "y": a.y, "x2": a.x2, "y2": a.y2}]
+        if len(entries) == 1:
+            e = entries[0]
+            return (f"{a.group_name}.RecordWallLine({e.get('wall_type', '?')}, "
+                    f"({e.get('x', 0)},{e.get('y', 0)}) -> ({e.get('x2', 0)},{e.get('y2', 0)}))")
+        comp = ", ".join(
+            f"{e.get('wall_type', '?')}@({e.get('x', 0)},{e.get('y', 0)})->({e.get('x2', 0)},{e.get('y2', 0)})"
+            for e in entries)
+        return f"{a.group_name}.RecordWall({len(entries)}x: {comp})"
     if a.kind == "setTargCount":
         weapon = "" if a.weapon_type == "mapNone" else f", {a.weapon_type}"
         source = f" via {a.source_group_name} P{a.reinforce_priority}" if a.source_group_name else ""
@@ -121,12 +154,53 @@ def _action_summary_core(a) -> str:
             return f"{var} −1"
         expr = getattr(a, 'var_expr', '') or '…'
         return f"{var} = {expr}"
+    if a.kind == "startMining":
+        gname = getattr(a, "group_name", "") or "?"
+        return f"{gname}.StartMining(Mine ({a.x},{a.y}) -> Smelter ({a.x2},{a.y2}), {a.target_count} Trucks)"
+    if a.kind == "sendAttackWave":
+        waves = getattr(a, "wave_units", None) or []
+        comp = ", ".join(f"{w.get('count', 1)}x {w.get('unit_type', '?')}" for w in waves) \
+            or f"{a.target_count}x {a.unit_type}"
+        mode = "Reinforce" if getattr(a, "spawn_mode", "spawn") == "reinforce" else "Spawn"
+        name = getattr(a, "group_var_name", "") or ""
+        tag = f" '{name}'" if name else ""
+        return f"AttackWave{tag}(P{a.player}, {mode}: {comp})"
+    if a.kind == "fightGroupCmd":
+        cmd = _GROUP_CMD_LABELS.get(getattr(a, "fg_command", "attackArea"), "?")
+        return f"Gruppe '{getattr(a, 'group_name', '?')}': {cmd}"
+    if a.kind == "unitCmd":
+        cmd = _UNIT_CMD_LABELS.get(getattr(a, "fg_command", "move"), "?")
+        return f"Einheit '{getattr(a, 'unit_ref', '?')}': {cmd}"
+    if a.kind == "defendArea":
+        return f"DefendArea(P{a.player}, ({a.x},{a.y}) -> ({a.x2},{a.y2}))"
+    if a.kind == "repairBuildings":
+        return f"RepairBuildings(P{a.player}, ({a.x},{a.y}) -> ({a.x2},{a.y2}))"
     return a.kind
 
 
+# Befehls-Labels fuer Zusammenfassungen / command labels for summaries
+_GROUP_CMD_LABELS = {
+    "attackArea": "Bereich angreifen", "attackEnemy": "Feind jagen",
+    "guardArea": "Bereich bewachen", "patrol": "Patrouillieren",
+    "exitMap": "Karte verlassen",
+    "combineFireOn": "Feuer bündeln: an", "combineFireOff": "Feuer bündeln: aus",
+    "setBuildRect": "Baubereich setzen",
+    "reinforceGroup": "Verstärkung starten", "unReinforceGroup": "Verstärkung stoppen",
+    "lightsOn": "Lichter an", "lightsOff": "Lichter aus",
+    "clearTargCount": "Sollstärken löschen",
+}
+_UNIT_CMD_LABELS = {
+    "move": "Bewegen", "patrol": "Patrouillieren", "attackGround": "Position angreifen",
+    "repair": "Reparieren",
+    "stop": "Stopp", "idle": "Stilllegen", "unidle": "Aktivieren",
+    "selfDestruct": "Selbstzerstörung", "remove": "Entfernen",
+    "transfer": "An Spieler übergeben",
+    "lightsOn": "Lichter an", "lightsOff": "Lichter aus",
+}
+
 _KIND_TITLE = {
     "noop": "Platzhalter",
-    "if": "Wenn / Dann / Sonst",
+    "if": "Logik (Wenn / Schleife)",
     "message": "Nachricht",
     "createUnit": "Einheit erzeugen",
     "createDisaster": "Katastrophe",
@@ -137,6 +211,12 @@ _KIND_TITLE = {
     "setTargCount": "setTargCount",
     "assignToGroup": "Gruppe zuweisen",
     "modVar": "Variable ändern",
+    "startMining": "Mining starten",
+    "sendAttackWave": "Angriffswelle",
+    "fightGroupCmd": "Gruppen-Befehl",
+    "unitCmd": "Einheiten-Befehl",
+    "defendArea": "Gebiet verteidigen",
+    "repairBuildings": "Gebäude reparieren",
 }
 
 
@@ -151,9 +231,17 @@ def action_params_summary(a) -> str:
     if a.kind == "message":
         return f'"{getattr(a, "text", "")}"'
     if a.kind == "createUnit":
-        weapon = getattr(a, "weapon_type", "mapNone")
-        w = "" if weapon == "mapNone" else f"  Waffe: {weapon}"
-        return f"Einheit: {getattr(a, 'unit_type', '?')}{w}  P{getattr(a, 'player', 0)}  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})"
+        entries = list(getattr(a, "unit_list", None) or [])
+        if not entries:
+            entries = [{"unit_type": getattr(a, "unit_type", "?"),
+                        "weapon_type": getattr(a, "weapon_type", "mapNone"),
+                        "x": getattr(a, "x", 0), "y": getattr(a, "y", 0)}]
+        if len(entries) == 1:
+            e = entries[0]
+            weapon = e.get("weapon_type", "mapNone")
+            w = "" if weapon == "mapNone" else f"  Waffe: {weapon}"
+            return f"Einheit: {e.get('unit_type', '?')}{w}  P{getattr(a, 'player', 0)}  @ ({e.get('x', 0)},{e.get('y', 0)})"
+        return f"{len(entries)} Einheiten  P{getattr(a, 'player', 0)}"
     if a.kind == "createDisaster":
         dtype = getattr(a, "disaster_type", "meteor")
         x, y = getattr(a, "x_expr", 0), getattr(a, "y_expr", 0)
@@ -163,11 +251,28 @@ def action_params_summary(a) -> str:
     if a.kind == "createTrigger":
         return f"→ {getattr(a, 'target', '?')}"
     if a.kind == "recordBuilding":
-        return f"{getattr(a, 'group_name', '?')}  ·  {getattr(a, 'building_type', '?')}  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})"
+        entries = list(getattr(a, "building_list", None) or [])
+        if len(entries) <= 1:
+            e = entries[0] if entries else {"building_type": getattr(a, "building_type", "?"),
+                                             "x": getattr(a, "x", 0), "y": getattr(a, "y", 0)}
+            return f"{getattr(a, 'group_name', '?')}  ·  {e.get('building_type', '?')}  @ ({e.get('x', 0)},{e.get('y', 0)})"
+        return f"{getattr(a, 'group_name', '?')}  ·  {len(entries)} Gebäude"
     if a.kind == "recordTube":
-        return f"{getattr(a, 'group_name', '?')}  ·  ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})"
+        entries = list(getattr(a, "tube_list", None) or [])
+        if len(entries) <= 1:
+            e = entries[0] if entries else {"x": getattr(a, "x", 0), "y": getattr(a, "y", 0),
+                                             "x2": getattr(a, "x2", 0), "y2": getattr(a, "y2", 0)}
+            return f"{getattr(a, 'group_name', '?')}  ·  ({e.get('x', 0)},{e.get('y', 0)}) → ({e.get('x2', 0)},{e.get('y2', 0)})"
+        return f"{getattr(a, 'group_name', '?')}  ·  {len(entries)} Leitungen"
     if a.kind == "recordWall":
-        return f"{getattr(a, 'group_name', '?')}  ·  {getattr(a, 'wall_type', '?')}  ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})"
+        entries = list(getattr(a, "wall_list", None) or [])
+        if len(entries) <= 1:
+            e = entries[0] if entries else {"wall_type": getattr(a, "wall_type", "?"),
+                                             "x": getattr(a, "x", 0), "y": getattr(a, "y", 0),
+                                             "x2": getattr(a, "x2", 0), "y2": getattr(a, "y2", 0)}
+            return (f"{getattr(a, 'group_name', '?')}  ·  {e.get('wall_type', '?')}  "
+                    f"({e.get('x', 0)},{e.get('y', 0)}) → ({e.get('x2', 0)},{e.get('y2', 0)})")
+        return f"{getattr(a, 'group_name', '?')}  ·  {len(entries)} Abschnitte"
     if a.kind == "setTargCount":
         return f"{getattr(a, 'group_name', '?')}  ·  {getattr(a, 'unit_type', '?')}  = {getattr(a, 'target_count', 0)}  P{getattr(a, 'reinforce_priority', 0)}"
     if a.kind == "assignToGroup":
@@ -180,6 +285,45 @@ def action_params_summary(a) -> str:
         if mode == "dec":
             return f"{var} −1"
         return f"{var} = {getattr(a, 'var_expr', '…') or '…'}"
+    if a.kind == "startMining":
+        gname = getattr(a, "group_name", "") or "?"
+        return (f"'{gname}'  Mine ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → "
+                f"Smelter ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})  Trucks: {getattr(a, 'target_count', 1)}")
+    if a.kind == "sendAttackWave":
+        waves = getattr(a, "wave_units", None) or []
+        comp = ", ".join(f"{w.get('count', 1)}× {w.get('unit_type', '?').replace('map', '')}"
+                         for w in waves) or f"{getattr(a, 'target_count', 1)}× {getattr(a, 'unit_type', '?')}"
+        mode = "Reinforce" if getattr(a, "spawn_mode", "spawn") == "reinforce" else "Spawn"
+        name = getattr(a, "group_var_name", "") or ""
+        tag = f"'{name}'  " if name else ""
+        return (f"{tag}P{getattr(a, 'player', 0)}  [{mode}]  {comp}  "
+                f"Sammeln ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → "
+                f"Angriff ({getattr(a, 'attack_x', 0)},{getattr(a, 'attack_y', 0)})")
+    if a.kind == "fightGroupCmd":
+        cmd = _GROUP_CMD_LABELS.get(getattr(a, "fg_command", "attackArea"), "?")
+        extra = ""
+        if getattr(a, "fg_command", "") in ("attackArea", "guardArea", "setBuildRect", "patrol"):
+            extra = f"  ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})"
+        elif getattr(a, "fg_command", "") in ("reinforceGroup", "unReinforceGroup"):
+            extra = f"  → '{getattr(a, 'target', '?')}'"
+        return f"'{getattr(a, 'group_name', '?')}'  {cmd}{extra}"
+    if a.kind == "unitCmd":
+        cmd = _UNIT_CMD_LABELS.get(getattr(a, "fg_command", "move"), "?")
+        extra = ""
+        if getattr(a, "fg_command", "") in ("move", "attackGround"):
+            extra = f"  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})"
+        elif getattr(a, "fg_command", "") == "patrol":
+            pts = getattr(a, "patrol_points", None) or []
+            extra = (f"  {len(pts)} Wegpunkte" if pts
+                     else f"  ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) ↔ ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})")
+        elif getattr(a, "fg_command", "") == "transfer":
+            extra = f"  → P{getattr(a, 'player', 0)}"
+        elif getattr(a, "fg_command", "") == "repair":
+            extra = f"  → '{getattr(a, 'target', '?')}'"
+        return f"'{getattr(a, 'unit_ref', '?')}'  {cmd}{extra}"
+    if a.kind in ("defendArea", "repairBuildings"):
+        return (f"P{getattr(a, 'player', 0)}  Rect ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → "
+                f"({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})")
     return ""
 
 
@@ -217,6 +361,18 @@ def building_group_summary(g: BuildingGroupSpec) -> str:
 def reinforce_group_summary(g: ReinforceGroupSpec) -> str:
     """Bildet eine Reinforce-Gruppe auf ein lesbares Listenlabel ab."""
     return tr("sum.group_reinforce", name=g.name, p=g.player, f=len(g.unit_ids), t=len(g.targets))
+
+
+def fight_group_summary(g: FightGroupSpec) -> str:
+    """Bildet eine FightGroup auf ein lesbares Listenlabel ab."""
+    return tr("sum.group_fight", name=g.name, p=g.player, rx=g.idle_x, ry=g.idle_y,
+              rw=g.idle_width, rh=g.idle_height, n=len(g.unit_ids))
+
+
+def mining_group_summary(g: MiningGroupSpec) -> str:
+    """Bildet eine MiningGroup auf ein lesbares Listenlabel ab."""
+    return tr("sum.group_mining_idle", name=g.name, p=g.player, rx=g.idle_x, ry=g.idle_y,
+              rw=g.idle_width, rh=g.idle_height, n=len(g.unit_ids))
 
 
 class ExprEdit(QWidget):

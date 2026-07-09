@@ -1,236 +1,174 @@
-# OP2 Mission Editor — Feature Documentation
+# OP2 Mission Editor — Feature Manual
 
-Last updated: 2026-06-27
+Alpha release. Documentation reflects the current editor state.
 
----
+## Contents
 
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Main Window](#main-window)
-3. [Map View](#map-view)
-4. [Dialog: Settings (Setup)](#dialog-settings-setup)
-5. [Dialog: Players](#dialog-players)
-6. [Dialog: Victory & Defeat](#dialog-victory--defeat)
-7. [Dialog: Groups](#dialog-groups)
-8. [Dialog: Triggers](#dialog-triggers)
-9. [Dialog: Action Editor (If/Then/Else)](#dialog-action-editor-ifthenelse)
-10. [Expression Fields (ExprEdit)](#expression-fields-expresedit)
-11. [Code Generation](#code-generation)
-12. [Project Format (Save/Load)](#project-format-saveload)
-
----
-
-## Overview
-
-The OP2 Mission Editor is a visual editor for missions in *Outpost 2: Divided Destiny*. It converts the visual mission model directly into C++23 source code (via TitanAPI) and can compile it to a DLL with a single click, then launch the mission in OP2.
-
-**Technology:** Python 3 · PySide6 · TitanAPI (C++23, header-only)
+1. [Main window](#main-window)
+2. [Map view](#map-view)
+3. [Place panel](#place-panel)
+4. [Groups panel](#groups-panel)
+5. [Triggers panel](#triggers-panel)
+6. [Objects panel](#objects-panel)
+7. [Mission overview & validation](#mission-overview--validation)
+8. [Dialog: Settings](#dialog-settings)
+9. [Dialog: Players](#dialog-players)
+10. [Dialog: Victory & Defeat](#dialog-victory--defeat)
+11. [Action editor](#action-editor)
+12. [Self-healing groups](#self-healing-groups)
+13. [Expression fields](#expression-fields)
+14. [Code generation](#code-generation)
+15. [Project format](#project-format)
 
 ---
 
-## Main Window
+## Main window
 
-### Toolbar (left to right)
+![Main window](docs/images/Main.png)
 
-| Button | Function |
+Three regions:
+
+- **Left sidebar** — the currently active side panel: Place / Triggers / Groups / Objects. Switch tabs at the top.
+- **Centre** — the map view.
+- **Right sidebar** — the live validation report (top) and the mission overview (bottom).
+
+### Toolbar
+
+| Button | What it does |
 |---|---|
-| **Settings** | Mission name, type, tech tree, difficulty multipliers, custom variables |
-| **Players** | Colony, human/AI, tech level, resources, pre-researched technologies |
-| **Victory & Defeat** | Victory and defeat conditions |
-| **Groups** | Manage BuildingGroups and ReinforceGroups |
-| **Triggers** | Triggers with conditions and actions |
-| **Show Code** | Preview generated C++ code with syntax highlighting |
-| **Build → DLL** | Compile C++ and copy DLL to OP2 folder |
-| **Test in OP2** | Launch mission directly in OP2 (via op2launcher.exe) |
-| **Clear Objects** | Remove all placed units/buildings from the map |
+| **Settings** | Mission name, mission type, tech tree, difficulty multipliers, custom variables |
+| **Players** | Colonies, human/AI, tech levels, resources, pre-researched techs |
+| **Victory / Defeat** | Win/lose conditions |
+| **Show code** | Preview the generated C++ with syntax highlighting |
+| **Build → DLL** | Compile and copy the DLL to the OP2 folder |
+| **Test in OP2** | Launch OP2 with this mission via `op2launcher.exe` |
+| **Clear objects** | Remove all placed units and buildings |
 
-### Menu
+### Menus
 
-- **File:** Open project · Save project · Save as · Choose map · Output location · Quit
-- **View:** Toggle grid · Zoom 1:1 · Zoom fit map
-- **Language:** Automatic (system) · Deutsch · English (takes effect on next start)
+- **File** — Open / Save / Save as project · Choose map · Set output directory · Quit
+- **Edit** — Undo / Redo of placement steps
+- **View** — Toggle tile grid · Zoom 1:1 · Fit map to window
+- **Language** — Automatic (system) · Deutsch · English (applies on next launch)
 
-### Left Sidebar — Placement Panel
+---
 
-- **Category:** Buildings · Vehicles · Beacons & Walls
-- **Unit list** with footprint display
-- **Player selector** (0–5)
-- **Unit name** (optional, for scripting references)
-- Context-sensitive parameters:
+## Map view
+
+### Mouse
+
+| Action | Effect |
+|---|---|
+| **Left click** | Place the currently selected object; or, without a selection, open the object at that tile for editing |
+| **Right click** | Remove an object |
+| **Middle drag** | Pan |
+| **Wheel** | Zoom in / out |
+| **Left drag** | Draw a rectangle (for area-based actions and group build rects), or a straight line (for tube/wall pickers — axis-locked to X or Y so lines stay straight) |
+
+### Visual cues
+
+- **Placement preview** — dashed footprint at the cursor
+- **Action line preview** — the tiles a recordTube / recordWall action would place
+- **Action area preview** — the rectangle an area-based action operates on, highlighted while the action is expanded
+- **Player colours** — six distinct colours (blue / red / green / yellow / purple / cyan)
+- **Beacons** in orange, walls / tubes in grey
+- Optional 1 px tile grid (View menu)
+
+---
+
+## Place panel
+
+Left sidebar → **Place** tab.
+
+- **Category** — Buildings · Vehicles · Beacons & Walls
+- **Unit list** — every placeable type with its tile footprint
+- **Player** — 0 – 5
+- **Unit name** *(optional)* — gives the unit a script-visible name (e.g. `mainSmelter`), so actions can reference it directly instead of by tile coordinates
+- Context parameters that appear per unit:
   - Cargo Truck: cargo type + amount
-  - ConVec: kit (which building it carries)
-  - Mining Beacon: ore type (random/common/rare) + yield (Bar1–3)
-  - Combat vehicles (Lynx/Panther/Tiger) + Guard Post: weapon type
+  - ConVec: kit (which structure it carries)
+  - Mining Beacon: ore type (random / common / rare), yield tier
+  - Combat vehicles + Guard Post: weapon type
 
-### Right Sidebar — Mission Overview
-
-Dynamic tree with the following sections:
-
-- **Flow / Triggers** — hierarchy of all triggers with execution order (⟶) and cycle detection
-- **Players** — summary of all player configurations
-- **Groups** — list of all BuildingGroups and ReinforceGroups
-- **Victory/Defeat** — victory and defeat conditions
-- **Objects** — count of placed units, buildings, beacons, walls
-
-Double-clicking any entry opens its edit dialog.
+Left-click places, right-click removes.
 
 ---
 
-## Map View
+## Groups panel
 
-### Mouse Controls
+Left sidebar → **Groups** tab.
 
-| Action | Function |
-|---|---|
-| Left-click | Place selected object (if selection active) or edit existing object |
-| Right-click | Remove object |
-| Middle-drag | Pan the map |
-| Mouse wheel | Zoom (1.25× / 0.8× per step) |
-| Left-drag | Draw rectangle (for SetRect / tube-wall line recording) |
+![Groups panel](docs/images/Groups.png)
 
-### Visual Elements
-
-- **Placement preview:** Dashed rectangle + label showing where the object will land
-- **Action line:** L-shaped line for tube/wall recording actions
-- **Action area:** Transparent rectangle for area-based actions
-- **Player colors:** 6 distinct colors (blue/red/green/yellow/purple/cyan)
-- **Beacon color:** Orange
-- **Wall/Tube color:** Gray
-- **Tile grid:** Optional 1px line grid (toggle via View menu)
-
----
-
-## Dialog: Settings (Setup)
-
-Opened via the **Settings** toolbar button.
-
-### Basic Data
-
-| Field | Description |
-|---|---|
-| Mission name | Displayed in OP2's mission list |
-| Mission type | Colony, AutoDemo, Tutorial, Multi variants (Land Rush, Space Race, …) |
-| Tech tree file | Path to the technology file (default: `MULTITEK.TXT`) |
-
-### Difficulty
-
-Three numeric values (Hard / Normal / Easy, defaults: 13 / 10 / 5).
-
-These values are available as the `diff` variable in all **expression fields**. Example: a trigger time of `ceil(600 * diff / 10)` results in 780 marks on Hard, 600 on Normal, 300 on Easy.
-
-### Custom Variables
-
-Table with columns **Name · Type · Initial Value**:
-
-- **Type:** `int` or `bool`
-- **Initial value:** Integer (for `bool`: 0 = false, anything else = true)
-- Variables are declared as `static` variables in the generated C++
-- They can be modified with `modVar` actions and tested with `varCheck` conditions
-
----
-
-## Dialog: Players
-
-Opened via the **Players** toolbar button.
-
-### Player List
-
-Left side: list of all players with summary info. Buttons to add and remove players.
-
-### Player Configuration
-
-| Field | Description |
-|---|---|
-| Colony | Eden or Plymouth |
-| Type | Human or AI |
-| Tech level | 0–12 (12 = all techs from the tech tree granted automatically) |
-| Set starting resources | Enables the initResources flag |
-| Set colonists explicitly | Sets workers / scientists / kids to exact numbers |
-| Set resources explicitly | Sets Common Ore / Rare Ore / Food to exact values (expressions supported) |
-| Pre-researched | Select individual technologies by name and add them |
-
-Resource fields (Common Ore, Rare Ore, Food) support **expression fields** with difficulty preview.
-
----
-
-## Dialog: Victory & Defeat
-
-Opened via the **Victory & Defeat** toolbar button.
-
-### Condition Types
-
-| Type | Fields |
-|---|---|
-| Survive time | Marks |
-| Last one standing | Player |
-| Build starship | Player |
-| No Command Center | Player |
-| Building count | Player, building type, compare, count |
-| Vehicle count | Player, compare, count |
-| Technology researched | Player, tech ID |
-| Resource reached | Player, resource, compare, amount |
-| Building operational | Player, building type, compare, count |
-
-Each condition has a description field for the objective text shown in-game.
-
-Any number of victory and defeat conditions can be combined.
-
----
-
-## Dialog: Groups
-
-Opened via the **Groups** toolbar button.
-
-Groups are displayed as a tree (optionally with folder grouping).
+Four group types, each with its own creation button:
 
 ### BuildingGroup
 
-A BuildingGroup manages a set of buildings that should be automatically rebuilt.
+Reconstructs buildings inside a rect using its assigned builder units (ConVecs, Robo-Miners, etc.).
 
-| Field | Description |
+| Field | Purpose |
 |---|---|
-| Name | Unique identifier |
-| Folder | Optional folder name for grouping |
-| Player | Which player owns the group |
-| Rect X/Y/Width/Height | Map area (0–1023) searched for buildings |
-| Units | Checkboxes for building/vehicle types in the group |
-
-**Drag SetRect on map:** Draw a rectangle on the map with the mouse instead of typing coordinates.
+| Name / Folder | Identifier and optional grouping |
+| Player | Owner |
+| Build rect (X / Y / Width / Height) | Area the group builds in — draggable directly on the map with **Drag SetRect on map** |
+| Units | Checkable list of the placed builders that belong to the group |
 
 ### ReinforceGroup
 
-A ReinforceGroup supplies other groups with units (via Vehicle Factories).
+Feeds other groups with fresh vehicles from its factories.
 
-| Field | Description |
+| Field | Purpose |
 |---|---|
-| Reinforce targets | Text area: one target group per line, format `GroupName=Priority` |
-| Units | Checkboxes for factory types |
+| Reinforce targets | One target-group per line: `GroupName=Priority`. Non-empty priorities have to be ≥ 1 (the engine hangs on priority 0). |
+| Units | Checkable list of vehicle factories that belong to the group |
+
+### FightGroup
+
+Predefined combat group. Attack waves (`sendAttackWave`) and group commands reference it by name.
+
+| Field | Purpose |
+|---|---|
+| Idle area | Fallback / staging area on the map |
+| Units | Checkable list of military vehicles belonging to the group |
+
+### MiningGroup
+
+Predefined ore hauling group. A `startMining` action attaches a mine + smelter and sets a truck target count.
+
+| Field | Purpose |
+|---|---|
+| Idle area | Unload / staging area for the trucks — trucks must be inside this rect at the moment `setupMining` runs, so it typically sits around the smelter |
+| Units | Checkable list of Cargo Trucks belonging to the group |
+
+Groups are shown in a tree with optional folder grouping. Any panel that references groups (action editor dropdowns, trigger dropdowns) refreshes automatically when you add or remove one.
 
 ---
 
-## Dialog: Triggers
+## Triggers panel
 
-Opened via the **Triggers** toolbar button or the "Trigger +" button in the overview.
+Left sidebar → **Triggers** tab.
 
-### Trigger List
+![Triggers panel](docs/images/Trigger.png)
 
-Tree with folder grouping. Each trigger shows its condition type and action count.
+The panel has two sections stacked vertically:
 
-### Trigger Properties
+1. **Trigger list** with **Add trigger** / **Remove trigger** side by side.
+2. Below the selected trigger, two tabs: **Trigger** (the trigger's own cause + settings) and **Actions** (its action list).
 
-| Field | Description |
+### Trigger settings (Trigger tab)
+
+| Field | Purpose |
 |---|---|
-| Name | Unique identifier |
-| Folder | Optional folder name for grouping |
-| Active at start | Trigger is registered immediately in initProc |
-| Trigger only once | Trigger is deactivated after first firing (oneShot) |
+| Name / Folder | Identifier and optional grouping |
+| Active at start | Registered in `initProc` — otherwise created at runtime via a `createTrigger` action |
+| One-shot | Auto-disabled after firing once |
+| Trigger (cause) | What causes it to fire (see below) |
 
-### Trigger Conditions
+### Trigger causes
 
-| Type | Fields |
+| Cause | Extra fields |
 |---|---|
-| Time (marks) | Marks (expression field with difficulty preview) |
+| Time (marks) | Marks (expression, difficulty-aware) |
 | Point reached | Player, X, Y |
 | Rectangle entered | Player, X, Y, Width, Height |
 | Building count | Player, building type, compare, count |
@@ -238,167 +176,268 @@ Tree with folder grouping. Each trigger shows its condition type and action coun
 | Technology researched | Player, tech ID |
 | Resource reached | Player, resource, compare, amount |
 | Building operational | Player, building type, compare, count |
-| Find unit | List of unit checks (type, X, Y) |
+| Find unit | List of `(unit type, X, Y)` checks — polls every 10 ticks, fires when *all* checks pass. Useful for "wait until the mine AND the smelter have been built". |
 
-### Action List
+### Actions tab
 
-Below the condition: list of all trigger actions. Actions can be added, edited, or removed via "+ Add action".
-
-IF blocks can be nested to any depth.
+The action list of the selected trigger. Actions can be added, edited, removed and reordered. If/for blocks nest arbitrarily.
 
 ---
 
-## Dialog: Action Editor (If/Then/Else)
+## Objects panel
 
-Appears when adding or editing an action.
+Left sidebar → **Objects** tab. Flat list of every placed unit, building, beacon, wall and tube. Handy for bulk editing / cleanup.
 
-### Action Types
+---
 
-| Type | Fields | Codegen Output |
-|---|---|---|
-| Empty action (noop) | — | `// (empty action)` |
-| Show message | Text | `Game::addMessage(...)` |
-| Create unit | Unit type, weapon, X, Y, player | `Game::createUnit(...)` |
-| Create another trigger | Target trigger | Calls trigger helper function |
-| RecordBuilding | Group, building type, X, Y | `group.recordBuilding(...)` |
-| RecordTube line | Group, X→X2, Y→Y2 | `Game::createTube(...)` |
-| RecordWall line | Group, wall type, X→X2, Y→Y2 | `Game::createWall(...)` |
-| SetTargCount | Group, unit, weapon, target count (expr) | `group.setTargCount(...)` |
-| Assign building to group | Group, building type, X, Y, player | `onTick(10, [...takeUnit])` |
-| Modify variable | Variable, mode (inc/dec/expr), expression | `var++` / `var--` / `var = expr` |
-| If / Then / Else | Conditions, then-actions, else-actions | `if (cond) { ... } else { ... }` |
+## Mission overview & validation
 
-### IF Conditions (action gating)
+Right sidebar, always visible:
 
-Each action can be guarded by one or more conditions (AND/OR):
+- **Validation** *(top)* — live error/warning report. Updates on every edit. Examples: unused variable, undeclared group referenced by an action, no victory/defeat condition set. Warnings show a count at the bottom (`0 errors, 3 warnings`).
+- **Mission overview** *(bottom)* — dynamic tree with the whole mission at a glance:
+  - **Flow / Triggers** — trigger execution order with flow arrows (⟶) and cycle detection
+  - **Players** — one line per player
+  - **Groups** — every BuildingGroup / ReinforceGroup / FightGroup / MiningGroup
+  - **Victory / Defeat**
+  - **Objects** — total object count
 
-| Type | Fields |
+Double-clicking any entry opens the corresponding editor.
+
+---
+
+## Dialog: Settings
+
+Toolbar → **Settings**.
+
+### Basics
+
+| Field | Description |
+|---|---|
+| Mission name | Shown in OP2's mission list |
+| Mission type | Colony · AutoDemo · Tutorial · Multi (Land Rush, Space Race, Resource Race, Midas, Last One Standing) |
+| Tech tree file | Path to the technology file (default: `MULTITEK.TXT`) |
+
+### Difficulty
+
+Three integers (Hard / Normal / Easy — defaults 13 / 10 / 5). Available as the `diff` identifier in all [expression fields](#expression-fields).
+
+### Custom variables
+
+Table with **Name · Type (int/bool) · Initial value**. Variables are declared as `static` in the generated C++, persist across save/load, and can be:
+
+- modified by `modVar` actions
+- tested by `varCheck` conditions
+- referenced in expression fields
+
+---
+
+## Dialog: Players
+
+Toolbar → **Players**.
+
+| Field | Description |
+|---|---|
+| Colony | Eden or Plymouth |
+| Type | Human or AI |
+| Tech level | 0 – 12 (12 = all techs pre-granted) |
+| Set starting resources | Enables the initResources flag |
+| Set colonists explicitly | Workers / Scientists / Kids |
+| Set resources explicitly | Common Ore / Rare Ore / Food (expression fields) |
+| Pre-researched | Add individual technologies by name |
+
+---
+
+## Dialog: Victory & Defeat
+
+Toolbar → **Victory / Defeat**.
+
+Same condition types as trigger causes (survive time, last one standing, build starship, no CC, building/vehicle count, tech, resource, building operational). Each condition has a description field that becomes the in-game objective text.
+
+Any number of victory and defeat conditions can be combined.
+
+---
+
+## Action editor
+
+Every action added to a trigger opens the inline action form.
+
+### Action kinds
+
+| Kind | Purpose |
+|---|---|
+| **noop** | Placeholder |
+| **If / Then / Else** | Condition block. Can carry a **loop** (`count` — repeat N times; `forEach` — iterate over units matching a source: all / by player / by type / in rect / vehicles-only / buildings-only). Then/else branches nest arbitrarily. Card is colour-outlined (blue = plain If, sky = count, pink = forEach). |
+| **Show message** | Text shown to the player |
+| **Create unit** | List of unit + weapon + X + Y entries — the action can spawn several units in one shot |
+| **Create disaster** | Meteor / Earthquake / Storm / Vortex / Blight / Unblight / Eruption. Position is expression-based (e.g. `randBetween(20, 40)`) |
+| **Create another trigger** | Runtime-creates another trigger by name |
+| **RecordBuilding** | List of `(building type, cargo, X, Y)` entries recorded into a BuildingGroup |
+| **RecordTube line** | List of `(X, Y) → (X2, Y2)` line segments (expanded per-tile in codegen) |
+| **RecordWall line** | Same, but with a wall type per entry |
+| **SetTargCount** | List of `(unit, weapon, count)` entries — target strength that a linked ReinforceGroup keeps producing |
+| **Assign building to group** | Attaches an existing building at (X, Y) to a group — polls until it appears |
+| **Modify variable** | inc / dec / assign expression |
+| **Start mining** | Attaches mine + smelter to a MiningGroup and sets a Cargo Truck target count. See below. |
+| **Send attack wave** | Fills a predefined FightGroup with vehicles and sends it |
+| **Group command** | Attack / guard / patrol / add-unit / remove-unit / set idle rect / … per group type |
+| **Unit command** | move / patrol / repair / transfer / stop / self-destruct / … on a named unit or on the current loop unit |
+| **Defend area** | Macro: patrol + attack in the given rect |
+| **Repair buildings** | Macro: keep a ConVec repairing anything damaged in the rect |
+
+### IF conditions (per-action gating)
+
+Any leaf action can be guarded by one or more conditions (AND / OR):
+
+| Kind | Fields |
 |---|---|
 | Building present at position | Player, building type, X, Y |
-| Building damage | Player, building type, compare, value (expr) |
-| Player resource | Player, resource, compare, value (expr) |
-| Building count | Player, building type, compare, value (expr) |
+| Building damage | Player, building type, compare, value |
+| Player resource | Player, resource, compare, value |
+| Building count | Player, building type, compare, value |
 | Technology researched | Player, tech ID |
-| Check variable | Variable (from variable list), compare, value (expr) |
+| Variable check | Variable, compare, value |
+| Loop unit type / damage / cargo / command | (only inside a forEach loop) — inspects the current loop unit |
 
-Each condition can be inverted with the **Negate (NOT)** checkbox.
+Each condition has a **Negate (NOT)** checkbox. Nested loops can address the outer or inner level via the loop_level field.
+
+### The `startMining` action in detail
+
+Two use modes, one action:
+
+1. **Direct mode** — mine and smelter already exist. Pick them from the "Mine (placed)" / "Smelter (placed)" dropdowns (auto-fills the X/Y) or type coordinates. Put the action in an always-fire trigger (`Time (marks) = 0`).
+2. **Wait mode** — the AI/player still has to build them. Create a trigger with cause = **Find unit** and add two checks: one for the mine tile+type, one for the smelter tile+type. Put the same `startMining` action in that trigger's action list. The action form even shows a live hint spelling out the exact coordinates to use:
+
+  > 💡 To only start once the mine and smelter have been built: create a trigger with the "Unit found" condition and add two checks — the mine's unit type at position (X, Y) and the smelter's unit type at position (X2, Y2). Put this mining action in that trigger's action list.
+
+**Inside a forEach loop?** Switch **Mine** or **Smelter** from "-- Position (X/Y) --" to *"Loop unit (current loop)"* / *"Loop unit (outer loop)"* — the action then uses whatever building the loop is currently on, no coordinates needed. Named units in the "Unit name" field are also selectable.
+
+Target count is a `Group::setTargCount(CargoTruck, ...)` value that a linked ReinforceGroup will replenish over time.
 
 ---
 
-## Expression Fields (ExprEdit)
+## Self-healing groups
 
-Wherever a plain number field used to appear, there are now **expression fields** that accept either:
+The engine automatically rebuilds destroyed structures at the same tile. When a group's factory, mine or smelter is destroyed and rebuilt, the group has to re-attach to the new instance — or it stays broken.
 
-- a plain **integer** (`600`), or
-- a **C++ expression** containing the identifier `diff` and custom variable names (`ceil(600 * diff / 10)`)
+The editor handles this automatically: on every generated mission, a **single mission-wide `onTick(1 mark, …, /*oneShot=*/false)`** timer walks
 
-### Difficulty Preview
+- every BuildingGroup / ReinforceGroup / MiningGroup roster (re-`takeUnit` any live unit standing on an assigned tile — including replacements)
+- every position-based `startMining` action (re-run `setupMining` + `setTargCount` if the mine/smelter is present)
 
-When `diff` appears in the expression, a live preview is shown directly below the field:
+This costs exactly **one** of the engine's 64 callback slots, regardless of how many groups or mining actions the mission has. No opt-in, no configuration — it's on for every mission.
+
+---
+
+## Expression fields
+
+Wherever a numeric input is difficulty-aware, an **expression field** replaces the plain spin box. It accepts either:
+
+- a plain integer (`600`), or
+- a C++ expression using the identifier `diff` and custom variables (`ceil(600 * diff / 10)`)
+
+Available functions: `ceil`, `floor`, `round`, `abs`, `max`, `min`. Available randomness: `getRand(N)`, `randBetween(a, b)`.
+
+### Difficulty preview
+
+If `diff` appears in the expression, a live preview shows the computed value for each difficulty:
 
 ```
 Hard: 780  ·  Normal: 600  ·  Easy: 300
 ```
 
-(calculated using the values from the Setup dialog)
+Values come from the Settings dialog's Hard / Normal / Easy triple.
 
-### Supported Functions in Expressions
+### Where expression fields are used
 
-`ceil`, `floor`, `round`, `abs`, `max`, `min`
-
-### Fields with Expression Support
-
-- Trigger marks (time condition)
-- SetTargCount target count
-- Player resources (Common Ore, Rare Ore, Food)
+- Trigger marks (Time cause)
+- setTargCount count
+- Player resources (Common Ore / Rare Ore / Food)
 - ActionCondition value (playerResource, buildingCount, unitDamage, varCheck)
+- Disaster position (X / Y expressions, e.g. `randBetween(20, 40)`)
 
 ---
 
-## Code Generation
+## Code generation
 
-The editor generates a single C++23 source file (`mission.cpp`) from the model.
+The editor emits a single self-contained `mission.cpp` targeting the TitanAPI facade.
 
-### Output Structure
+### File shape
 
 ```cpp
-// mission.cpp -- generated ...
+// mission.cpp -- generated from the editor model
 #include "op2.hpp"
-...
+#include "op2/trigger.hpp"
+#include "op2/base.hpp"
+#include "op2/groups.hpp"
+// ...
 using namespace op2;
 
-static const int kDiff[] = {13, 10, 5};
-static const int diff = kDiff[(int)Game::difficulty()];
+static const int kDiff[] = {5, 10, 13};
+static const int diff = kDiff[(int)Player(0).difficulty()];
 
-static int myVar = 0;           // custom variables
-static bool flagActive = false;
+struct MissionSave {                     // POD, registered via GetSaveRegions()
+    int  cbCount = 0;
+    unsigned char cbSlot[64] = {};
+    int  myCounter = 0;                  // custom variables
+    bool _mining_armed_0 = false;        // startMining "armed" flags
+    Group _grp_0_BG1{};                  // group handles
+    Unit  _unit_mainSmelter{};           // named unit handles
+};
+static MissionSave g_save;
+static int&  myCounter    = g_save.myCounter;
+static Group& _grp_0_BG1  = g_save._grp_0_BG1;
+// ...
 
-static void make_MyTrigger();   // forward declarations
-static Group g_0;               // group variables
-
-extern "C" ... LevelDesc[]      // OP2 DLL exports
-extern "C" ... MapName[]
-extern "C" ... TechtreeName[]
-extern "C" ... DescBlock        // mission type, player count
-extern "C" ... DescBlockEx
+extern "C" __declspec(dllexport) char LevelDesc[]    = "...";
+extern "C" __declspec(dllexport) char MapName[]      = "...";
+extern "C" __declspec(dllexport) char TechtreeName[] = "MULTITEK.TXT";
 
 static void initProc() {
     // player setup
-    // base layout (buildings, vehicles, beacons, walls)
-    // group initialization
+    // base layout
+    // group creation + roster take-in (one-shot)
+    // one shared onTick(kTicksPerMark, ...) that re-attaches destroyed-and-rebuilt buildings
     // start message
-    // victory/defeat conditions
-    // enable triggers
+    // victory / defeat conditions
+    // enabled-at-start trigger helpers
 }
-
-static void make_MyTrigger() {
-    onMark(ceil(600 * diff / 10), [] {
-        if (myVar >= 3) {
-            Game::addMessage("You win!");
-        }
-    }, /*oneShot=*/true);
-}
-
-static void aiProc() {}
-
-extern "C" InitProc() { crash::guard("InitProc", &initProc); }
-extern "C" AIProc()   { crash::guard("AIProc",   &aiProc); }
 ```
 
 ### Coordinates
 
-The editor uses 0-based coordinates. The code generator automatically adds +1 to X and Y, since OP2 expects 1-based tile coordinates.
+Editor tiles are 0-based; TitanAPI tiles are 1-based. The generator adds +1 on every X/Y automatically. Every emitted `{ x, y }` literal is what OP2's status bar shows.
+
+### Save-game safety
+
+All persistent state (variables, group handles, unit handles, custom `startMining` armed flags, callback slot table) lives in one trivially-copyable `MissionSave` struct that gets registered with `GetSaveRegions()`. OP2 does **not** call `InitProc` again on load — instead the saved struct is restored byte-for-byte and the callback slot table is re-registered from it.
 
 ---
 
-## Project Format (Save/Load)
+## Project format
 
-A project is saved as a **folder** containing all files:
+A project is a folder:
 
 ```
 MyMission/
-├── project.json      ← all editor data
-├── mission.cpp       ← generated C++ code
-└── mission.dll       ← compiled DLL (after Build)
+├── project.json     — every editor field
+├── mission.cpp      — last-generated C++ (rebuilt on every Build)
+└── mission.dll      — compiled mission DLL
 ```
 
-### `project.json` — Fields
+### `project.json` fields
 
-| Field | Content |
+| Key | Content |
 |---|---|
-| `mission_name` | Mission name |
-| `mission_type` | Integer (MissionType enum) |
-| `tech_tree` | Tech tree filename |
+| `mission_name`, `mission_type`, `tech_tree`, `map` | Basic identity |
 | `difficulty` | `{hard, normal, easy}` |
 | `variables` | List of `{name, var_type, initial_value}` |
-| `map` | Map filename |
-| `players` | List of all player configurations |
-| `objects` | List of all placed units/buildings |
-| `building_groups` | BuildingGroup definitions |
-| `reinforce_groups` | ReinforceGroup definitions |
-| `triggers` | Trigger definitions (including nested actions) |
-| `victories` | Victory conditions |
-| `defeats` | Defeat conditions |
-| `node_positions` | Timeline node positions (visual layout) |
+| `players` | Full PlayerSpec per player |
+| `objects` | Every placed unit / building |
+| `beacons`, `walls_tubes` | Map-level features |
+| `building_groups`, `reinforce_groups`, `fight_groups`, `mining_groups` | The four group types |
+| `triggers` | Trigger definitions including nested actions, conditions and loops |
+| `victories`, `defeats` | Win / lose conditions |
+| `node_positions` | Timeline node layout (visual state) |
 
-All fields are backwards-compatible: unknown keys are ignored on load, missing keys receive their default values.
+All fields are backwards-compatible: unknown keys are ignored on load, missing keys use the dataclass default. Legacy saved missions without predefined FightGroups or MiningGroups are auto-migrated on open (see `_migrate_wave_fight_groups`, `_migrate_start_mining_groups`).

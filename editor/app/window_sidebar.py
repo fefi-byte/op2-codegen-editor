@@ -3,12 +3,15 @@ from __future__ import annotations
 from .common import *
 from .panels.trigger_panel import TriggerPanel
 from .panels.groups_panel import GroupsPanel
+from .panels.objects_panel import ObjectsPanel
 
 
 class _SidebarMixin:
     def _build_sidebar(self):
         dock = QDockWidget(tr("window.dock_place"), self)
-        dock.setMinimumWidth(300)
+        # Breit genug fuer die Aktions-Formulare; per Splitter frei veraenderbar.
+        # Wide enough for the action forms; freely resizable via the splitter.
+        dock.setMinimumWidth(390)
 
         # --- Tab 0: Platzieren ---
         place_widget = self._build_place_widget()
@@ -21,14 +24,18 @@ class _SidebarMixin:
         self.groups_panel = GroupsPanel(self)
         self.groups_panel.rect_pick_requested.connect(self._begin_rect_pick)
 
+        # --- Tab 3: Objekte ---
+        self.objects_panel = ObjectsPanel(self)
+
         self._sidebar_tabs = QTabWidget()
         self._sidebar_tabs.addTab(place_widget, tr("window.tab_place"))
         self._sidebar_tabs.addTab(self.trigger_panel, tr("window.tab_triggers"))
         self._sidebar_tabs.addTab(self.groups_panel, tr("window.tab_groups"))
+        self._sidebar_tabs.addTab(self.objects_panel, tr("window.tab_objects"))
 
         dock.setWidget(self._sidebar_tabs)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
-        self.resizeDocks([dock], [320], Qt.Horizontal)
+        self.resizeDocks([dock], [560], Qt.Horizontal)
         self._fill_list(self.cat_combo.currentData())
 
     def _on_trigger_map_pick(self, request: dict):

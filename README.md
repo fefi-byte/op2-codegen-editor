@@ -1,84 +1,54 @@
-# OP2 Mission Editor — `titanapi` branch
+# OP2 Mission Editor
 
-> **Experimental branch** that swaps the legacy Outpost2DLL/OP2Helper/HFL SDK for [TitanAPI](https://github.com/leviathan400/TitanAPI), a modern C++23 SDK by leviathan400.
-> The `main` branch still uses the legacy SDK.
+> **Alpha release.** Expect rough edges. Feedback and bug reports welcome.
 
-A Python-based mission editor for Outpost 2 that generates native C++ mission source code and compiles it to a 32-bit DLL.
+A visual mission editor for *Outpost 2: Divided Destiny*. Design missions by clicking, generate native C++23 source code, compile it to a 32-bit DLL that Outpost 2 loads directly.
 
-Recent changes are tracked in [CHANGELOG.md](CHANGELOG.md).
+Built against [TitanAPI](https://github.com/leviathan400/TitanAPI), a modern header-only C++23 SDK by leviathan400.
 
-**Feature documentation:** [English](EDITOR_DOCS.md) · [Deutsch](EDITOR_DOKU.md)
+![Main window](docs/images/Main.png)
 
-## How it works
+**Feature manual:** [English](EDITOR_DOCS.md) · [Deutsch](EDITOR_DOKU.md) — full walk-through of every panel, dialog, and action type.
 
-1. The **editor GUI** (PySide6) lets you place units, buildings, beacons, walls, configure players, triggers, and AI groups visually.
-2. The **code generator** (`codegen/`) turns the mission model into a `.cpp` file.
-3. **CMake / MSVC (VS2026)** compiles the `.cpp` into a 32-bit DLL that Outpost 2 loads directly.
+Recent changes: [CHANGELOG.md](CHANGELOG.md).
 
-## Editor UI
+## What's in the editor
 
-The main window has two side docks around the central map view.
+- **Visual placement** — buildings, vehicles, mining beacons, walls and tubes, drag-drop on a real tile map
+- **Players** — up to 6 players, human or AI, per-player resources, tech level, pre-researched techs
+- **Groups** — BuildingGroup / ReinforceGroup / FightGroup / MiningGroup, each with its own roster and behaviour
+- **Triggers** — conditions (time, count, resource, findUnit, …) with nested if/then/else action blocks and forEach loops
+- **Actions** — 15+ action kinds including createUnit, sendAttackWave, startMining, group commands, unit commands, disasters
+- **Self-healing groups** — mission-wide watchdog that re-attaches rebuilt buildings/mines/smelters to their group automatically
+- **Save-game safe** — persistent state (variables, groups, unit handles) lives in a single POD struct that survives save/load
+- **Live validation** — mission-wide error/warning panel updates on every edit
+- **Localised UI** — German and English, switch at runtime
+- **One-click build** — MSBuild integration, DLL is copied straight into your OP2 folder
 
-### Left Dock — Placement Panel
-
-Select what to place on the map:
-
-- **Category** — Buildings · Vehicles · Beacons & Walls
-- **Unit list** — all placeable types with their tile footprint
-- **Player** — which player (0–5) owns the object
-- **Unit name** — optional scripting reference (e.g. `mainSmelter`)
-- **Context parameters** that appear depending on the selected type:
-  - *Cargo Truck* — cargo type (ore, food, metal, empty) + amount
-  - *ConVec* — building kit (which structure it carries)
-  - *Mining Beacon* — ore type (random / common / rare) and yield tier (Bar 1–3)
-  - *Combat vehicles & Guard Post* — weapon type
-
-Left-click on the map places the object. Right-click removes an existing object. Middle-drag pans the map; mouse wheel zooms.
-
-### Right Dock — Mission Overview
-
-Live summary of the whole mission, updated after every edit:
-
-- **Flow / Triggers** — all triggers in execution order with flow arrows (⟶) and cycle detection; double-click to jump to the trigger editor
-- **Players** — one line per player (colony, type, tech level)
-- **Groups** — BuildingGroups and ReinforceGroups
-- **Victory / Defeat** — all win/loss conditions at a glance
-- **Objects** — total count of placed units, buildings, beacons and walls
-
-Double-clicking any item in the overview opens its respective editor dialog directly.
-
-## Repository layout
-
-```
-editor/         Python editor (PySide6)
-  app/          Modular editor package (main entry point)
-    dialogs/    All editor dialogs
-  main.py       Legacy single-file editor (kept for reference)
-codegen/        C++ code generator and mission data model
-mapview/        Map tile renderer / inspection tools
-missions/       Saved mission projects (.json)
-LevelTemplate/  C++ mission template + bundled OP2 SDK sources
-  OP2MissionSDK/
-    Outpost2DLL/  Core SDK headers and lib
-    OP2Helper/    Helper macros (MkXY, ExportLevelDetails, …)
-    HFL/          Hooman's Function Library (UnitEx, PlayerEx, …)
-    odasl/        odasl.lib
-```
-
-## Setup
+## Quick start
 
 ### Requirements
 
 - Python 3.11+
-- PySide6, numpy, Pillow (`pip install PySide6 numpy Pillow`)
-- Visual Studio Build Tools 2019+ with the **C++ x86/x64 Build Tools** component (for `msbuild`)
-- Outpost 2 installed (OPU 1.4.1 recommended)
+- `pip install PySide6 numpy Pillow`
+- Visual Studio Build Tools 2019+ with the **C++ x86 build tools** component (for the 32-bit DLL)
+- Outpost 2 installed (OPU 1.4.1 recommended — the editor reads its extracted `OPU\base\` and `OPU\maps` layout, no `.vol` archives needed)
 
-### Editor config
+### Clone with the TitanAPI submodule
 
-Paths live in a `config.ini` next to the executable (or in the project root when
-running `python -m app`). It is created automatically on first start; copy
-`config.example.ini` and adjust it, or edit the generated file:
+```powershell
+git clone --recursive https://github.com/fefi-byte/op2-codegen-editor.git
+```
+
+If you cloned without `--recursive`:
+
+```powershell
+git submodule update --init --recursive
+```
+
+### Configure paths
+
+The editor creates `config.ini` on first start next to the entry point. Copy `config.example.ini` as a template, or edit the generated file:
 
 ```ini
 [paths]
@@ -93,37 +63,14 @@ dll_name = cEditorMission.dll
 language = auto
 ```
 
-- `game_path` — Outpost 2 install folder. The editor reads the **extracted OPU
-  1.4.1 layout** (`OPU\base\maps`, `OPU\maps`, `OPU\base\tilesets`,
-  `OPU\base\techs`) — no `.vol` archives needed. If there is no `OPU` subfolder,
-  `game_path` itself is treated as the content root.
-- `msvs_path` — Visual Studio install folder (must contain `Common7\Tools\VsDevCmd.bat`).
+- `game_path` — Outpost 2 install folder. If it contains an `OPU\` subfolder, that's used as the content root; otherwise `game_path` itself is.
+- `msvs_path` — must contain `Common7\Tools\VsDevCmd.bat`.
 - `output_dir` — where the built DLL is copied (empty = `game_path`).
-- `language` — UI language (see [Language](#language) below).
+- `[ui] language` — `auto` (follow OS), `de`, or `en`. Switchable at runtime via the Language menu.
 
-A `[build]` section can override the MSBuild toolset on newer Visual Studio
-versions (e.g. `platform_toolset = v143` for VS2022, `v145` for VS2026, when the
-v142/VS2019 toolset isn't installed).
+An optional `[build] platform_toolset = v143` (VS2022) or `v145` (VS2026) overrides MSBuild's default toolset if the older one isn't installed.
 
-`config.ini` is git-ignored (machine-specific paths).
-
-### Language
-
-The UI ships in **German and English**. The active language comes from
-`config.ini [ui] language`:
-
-```ini
-[ui]
-language = auto    # auto = follow the OS language; or a fixed code: de, en
-```
-
-- `auto` detects the system language on startup and uses the matching
-  `lang.<code>.ini` if one exists, otherwise falls back to German.
-- Switch at runtime via the **Language** menu (applies on restart). Picking a
-  language pins it; "Automatic (system)" sets it back to `auto`.
-- To add a language, copy `lang.en.ini` to `lang.<code>.ini`, translate the
-  values (keys and `{placeholders}` stay unchanged), and select it — no code
-  changes needed.
+`config.ini` is git-ignored.
 
 ### Start the editor
 
@@ -132,34 +79,42 @@ cd editor
 python -m app
 ```
 
+Or double-click `editor\Editor (modular) starten.bat`.
+
 ### Build a mission DLL
 
-Use the **Build** button in the editor, or run manually:
+Use the **Build → DLL** button in the toolbar, or manually:
 
 ```powershell
 cd LevelTemplate
 msbuild OP2Script.vcxproj /p:Configuration=Release /p:Platform=Win32
 ```
 
-The compiled DLL is written to the path set in `config.ini`.
+## Repository layout
 
-## Cloning
-
-The `TitanAPI/` folder is a **git submodule** of [leviathan400/TitanAPI](https://github.com/leviathan400/TitanAPI). Clone with `--recursive`:
-
-```powershell
-git clone --recursive -b titanapi https://github.com/fefi-byte/op2-codegen-editor.git
+```
+editor/
+  app/              Editor package (PySide6, modular entry point)
+    dialogs/        Modal dialogs (settings, players, victory/defeat, action editor, …)
+    panels/         Sidebar panels (placement, triggers, groups, objects)
+    Editor (modular) starten.bat
+codegen/            Mission model + C++ code generator
+mapview/            Tile renderer for the map view
+missions/           Example mission projects
+LevelTemplate/      C++ mission project template (MSBuild)
+TitanAPI/           SDK submodule (leviathan400/TitanAPI)
+lang.de.ini         German UI strings
+lang.en.ini         English UI strings
 ```
 
-If you already cloned without `--recursive`, run:
+## How it works
 
-```powershell
-git submodule update --init --recursive
-```
+1. The editor loads a project into an in-memory **Mission model** (`codegen/mission_model.py`), a set of dataclasses describing every unit, group, trigger and action.
+2. Every change is validated live (`editor/app/validation.py`) — errors and warnings appear in the right sidebar.
+3. On **Build**, the code generator (`codegen/codegen.py`) walks the model and emits a single self-contained `mission.cpp` targeting the TitanAPI facade.
+4. **MSBuild** compiles that C++ into a 32-bit DLL.
+5. **Test in OP2** launches Outpost 2 with the mission preselected via `op2launcher.exe`.
 
-## SDK source
+## License
 
-[TitanAPI](https://github.com/leviathan400/TitanAPI) is a modern C++23 SDK for Outpost 2. The `op2::` facade is header-only — every mission `#include`s straight from `TitanAPI/TitanAPI/include/op2.hpp`, no separate library to link.
-- [odasl](https://github.com/OutpostUniverse/odasl) — audio lib
-
-The SDK sources are bundled directly (no git submodules) so the project builds without any additional clones.
+*(project-specific — add your preferred license file here)*

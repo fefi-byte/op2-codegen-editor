@@ -9,11 +9,6 @@
   },
   "variables": [
     {
-      "name": "var1",
-      "var_type": "int",
-      "initial_value": 0
-    },
-    {
       "name": "var2",
       "var_type": "bool",
       "initial_value": 0
@@ -37,13 +32,13 @@
     {
       "colony": 1,
       "is_human": false,
-      "tech_level": 4,
+      "tech_level": 12,
       "init_resources": false,
       "kids": null,
       "workers": null,
       "scientists": null,
       "common_ore": 8000,
-      "rare_ore": 0,
+      "rare_ore": 8000,
       "food": 99999,
       "researches": []
     }
@@ -270,6 +265,236 @@
       "params": {},
       "uid": "obj16",
       "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 43,
+      "tile_y": 19,
+      "map_id": "mapGuardPost",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Guard Post",
+      "player": 1,
+      "params": {
+        "weapon": "mapRPG"
+      },
+      "uid": "obj13",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 53,
+      "tile_y": 18,
+      "map_id": "mapGuardPost",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Guard Post",
+      "player": 1,
+      "params": {
+        "weapon": "mapRPG"
+      },
+      "uid": "obj14",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 53,
+      "tile_y": 12,
+      "map_id": "mapGuardPost",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Guard Post",
+      "player": 1,
+      "params": {
+        "weapon": "mapRPG"
+      },
+      "uid": "obj17",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 53,
+      "tile_y": 7,
+      "map_id": "mapGuardPost",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Guard Post",
+      "player": 1,
+      "params": {
+        "weapon": "mapRPG"
+      },
+      "uid": "obj18",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 41,
+      "tile_y": 19,
+      "map_id": "mapGuardPost",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Guard Post",
+      "player": 1,
+      "params": {
+        "weapon": "mapRPG"
+      },
+      "uid": "obj19",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 45,
+      "tile_y": 19,
+      "map_id": "mapGuardPost",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Guard Post",
+      "player": 1,
+      "params": {
+        "weapon": "mapEMP"
+      },
+      "uid": "obj20",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 51,
+      "tile_y": 18,
+      "map_id": "mapGuardPost",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Guard Post",
+      "player": 1,
+      "params": {
+        "weapon": "mapEMP"
+      },
+      "uid": "obj21",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 53,
+      "tile_y": 15,
+      "map_id": "mapGuardPost",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Guard Post",
+      "player": 1,
+      "params": {
+        "weapon": "mapEMP"
+      },
+      "uid": "obj22",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 53,
+      "tile_y": 9,
+      "map_id": "mapGuardPost",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Guard Post",
+      "player": 1,
+      "params": {
+        "weapon": "mapEMP"
+      },
+      "uid": "obj23",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 42,
+      "tile_y": 12,
+      "map_id": "mapSpider",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Spider",
+      "player": 1,
+      "params": {
+        "weapon": "mapNone"
+      },
+      "uid": "obj25",
+      "unit_name": "spider"
+    },
+    {
+      "kind": "structure",
+      "tile_x": 32,
+      "tile_y": 15,
+      "map_id": "mapTokamak",
+      "footprint": [
+        2,
+        2
+      ],
+      "display": "Tokamak",
+      "player": 1,
+      "params": {},
+      "uid": "obj24",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 28,
+      "tile_y": 14,
+      "map_id": "mapRareOreSmelter",
+      "footprint": [
+        4,
+        3
+      ],
+      "display": "Rare Ore Smelter",
+      "player": 1,
+      "params": {},
+      "uid": "obj26",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 38,
+      "tile_y": 4,
+      "map_id": "mapArachnidFactory",
+      "footprint": [
+        2,
+        2
+      ],
+      "display": "Arachnid Factory",
+      "player": 1,
+      "params": {},
+      "uid": "obj27",
+      "unit_name": ""
+    },
+    {
+      "kind": "structure",
+      "tile_x": 46,
+      "tile_y": 5,
+      "map_id": "mapMHDGenerator",
+      "footprint": [
+        2,
+        2
+      ],
+      "display": "MHD Generator",
+      "player": 1,
+      "params": {},
+      "uid": "obj28",
+      "unit_name": ""
     }
   ],
   "building_groups": [
@@ -284,7 +509,7 @@
         "obj4",
         "obj11"
       ],
-      "folder": ""
+      "folder": "base 1"
     }
   ],
   "reinforce_groups": [
@@ -292,7 +517,8 @@
       "name": "ReinforceGroup1",
       "player": 1,
       "unit_ids": [
-        "obj6"
+        "obj6",
+        "obj27"
       ],
       "targets": [
         {
@@ -300,16 +526,28 @@
           "priority": 1500
         }
       ],
+      "folder": "base 1"
+    }
+  ],
+  "fight_groups": [
+    {
+      "name": "def",
+      "player": 1,
+      "idle_x": 22,
+      "idle_y": 1,
+      "idle_width": 36,
+      "idle_height": 25,
+      "unit_ids": [],
       "folder": ""
     }
   ],
   "triggers": [
     {
-      "name": "Trigger1",
-      "enabled_at_start": false,
+      "name": "Disaster",
+      "enabled_at_start": true,
       "one_shot": false,
       "condition": "time",
-      "marks": 100,
+      "marks": 500,
       "player": 0,
       "count": 1,
       "compare": "cmpGreaterEqual",
@@ -348,7 +586,7 @@
           "var_expr": "",
           "disaster_type": "eruption",
           "x_expr": 165,
-          "y_expr": 153,
+          "y_expr": 154,
           "x2_expr": 1,
           "y2_expr": 1,
           "size": 0,
@@ -929,7 +1167,25 @@
               154
             ]
           ],
-          "now": true
+          "now": true,
+          "wave_units": [],
+          "targ_counts": [],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "patrol_points": [],
+          "loop_mode": "none",
+          "loop_count": 1,
+          "enum_source": "rect"
         },
         {
           "kind": "message",
@@ -965,7 +1221,351 @@
           "duration": 100,
           "spread_speed": 15,
           "lava_zone": [],
-          "now": false
+          "now": false,
+          "wave_units": [],
+          "targ_counts": [],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "patrol_points": [],
+          "loop_mode": "none",
+          "loop_count": 1,
+          "enum_source": "rect"
+        }
+      ],
+      "unit_checks": [],
+      "folder": "Disaster"
+    },
+    {
+      "name": "base rep",
+      "enabled_at_start": true,
+      "one_shot": false,
+      "condition": "time",
+      "marks": 1,
+      "player": 0,
+      "count": 1,
+      "compare": "cmpGreaterEqual",
+      "tech_id": 0,
+      "resource": "resCommonOre",
+      "amount": 1000,
+      "building": "mapCommandCenter",
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1,
+      "actions": [
+        {
+          "kind": "if",
+          "text": "",
+          "unit_type": "mapAny",
+          "weapon_type": "mapNone",
+          "target_count": 1,
+          "x": 24,
+          "y": 1,
+          "x2": 56,
+          "y2": 23,
+          "player": 1,
+          "target": "",
+          "group_name": "",
+          "source_group_name": "",
+          "reinforce_priority": 1000,
+          "building_type": "mapCommandCenter",
+          "wall_type": "mapWall",
+          "conditions": [
+            {
+              "kind": "loopUnitDamage",
+              "negate": false,
+              "player": 0,
+              "building_type": "mapCommandCenter",
+              "x": 0,
+              "y": 0,
+              "compare": "cmpGreaterEqual",
+              "value": 10,
+              "resource": "resCommonOre",
+              "tech_id": 0,
+              "var_name": "var2",
+              "command_type": "Nop",
+              "loop_level": "current"
+            }
+          ],
+          "condition_logic": "and",
+          "then_actions": [
+            {
+              "kind": "if",
+              "text": "",
+              "unit_type": "mapSpider",
+              "weapon_type": "mapNone",
+              "target_count": 1,
+              "x": 27,
+              "y": 2,
+              "x2": 57,
+              "y2": 24,
+              "player": 1,
+              "target": "",
+              "group_name": "",
+              "source_group_name": "",
+              "reinforce_priority": 1000,
+              "building_type": "mapCommandCenter",
+              "wall_type": "mapWall",
+              "conditions": [
+                {
+                  "kind": "loopUnitCommand",
+                  "negate": false,
+                  "player": 0,
+                  "building_type": "mapCommandCenter",
+                  "x": 0,
+                  "y": 0,
+                  "compare": "cmpGreaterEqual",
+                  "value": 0,
+                  "resource": "resCommonOre",
+                  "tech_id": 0,
+                  "var_name": "var2",
+                  "command_type": "Nop",
+                  "loop_level": "current"
+                }
+              ],
+              "condition_logic": "and",
+              "then_actions": [],
+              "else_actions": [],
+              "var_name": "",
+              "mod_mode": "inc",
+              "var_expr": "",
+              "disaster_type": "meteor",
+              "x_expr": 0,
+              "y_expr": 0,
+              "x2_expr": 0,
+              "y2_expr": 0,
+              "size": -1,
+              "magnitude": 1,
+              "duration": 100,
+              "spread_speed": 15,
+              "lava_zone": [],
+              "now": false,
+              "wave_units": [],
+              "targ_counts": [],
+              "spawn_mode": "spawn",
+              "attack_x": 0,
+              "attack_y": 0,
+              "attack_x2": 0,
+              "attack_y2": 0,
+              "group_var_name": "",
+              "idle_x": 0,
+              "idle_y": 0,
+              "idle_x2": 0,
+              "idle_y2": 0,
+              "fg_command": "attackArea",
+              "unit_ref": "",
+              "patrol_points": [],
+              "loop_mode": "forEach",
+              "loop_count": 1,
+              "enum_source": "playerVehicles"
+            }
+          ],
+          "else_actions": [],
+          "var_name": "",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "meteor",
+          "x_expr": 0,
+          "y_expr": 0,
+          "x2_expr": 0,
+          "y2_expr": 0,
+          "size": -1,
+          "magnitude": 1,
+          "duration": 100,
+          "spread_speed": 15,
+          "lava_zone": [],
+          "now": false,
+          "wave_units": [],
+          "targ_counts": [],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "patrol_points": [],
+          "loop_mode": "forEach",
+          "loop_count": 1,
+          "enum_source": "playerBuildings"
+        }
+      ],
+      "unit_checks": [],
+      "folder": "base"
+    },
+    {
+      "name": "reinforce",
+      "enabled_at_start": true,
+      "one_shot": true,
+      "condition": "time",
+      "marks": 1,
+      "player": 0,
+      "count": 1,
+      "compare": "cmpGreaterEqual",
+      "tech_id": 0,
+      "resource": "resCommonOre",
+      "amount": 1000,
+      "building": "mapCommandCenter",
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1,
+      "actions": [
+        {
+          "kind": "message",
+          "text": "FAHRZEUGE",
+          "unit_type": "mapScout",
+          "weapon_type": "mapNone",
+          "target_count": 1,
+          "x": 0,
+          "y": 0,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "Disaster",
+          "group_name": "BuildingGroup1",
+          "source_group_name": "",
+          "reinforce_priority": 1000,
+          "building_type": "mapCommandCenter",
+          "wall_type": "mapWall",
+          "conditions": [],
+          "condition_logic": "and",
+          "then_actions": [],
+          "else_actions": [],
+          "var_name": "var2",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "meteor",
+          "x_expr": 0,
+          "y_expr": 0,
+          "x2_expr": 0,
+          "y2_expr": 0,
+          "size": -1,
+          "magnitude": 1,
+          "duration": 100,
+          "spread_speed": 15,
+          "lava_zone": [],
+          "now": false,
+          "wave_units": [],
+          "targ_counts": [],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "patrol_points": [],
+          "loop_mode": "none",
+          "loop_count": 1,
+          "enum_source": "rect"
+        }
+      ],
+      "unit_checks": [],
+      "folder": "base"
+    },
+    {
+      "name": "Trigger4",
+      "enabled_at_start": true,
+      "one_shot": true,
+      "condition": "time",
+      "marks": 1,
+      "player": 0,
+      "count": 1,
+      "compare": "cmpGreaterEqual",
+      "tech_id": 0,
+      "resource": "resCommonOre",
+      "amount": 1000,
+      "building": "mapCommandCenter",
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1,
+      "actions": [
+        {
+          "kind": "setTargCount",
+          "text": "",
+          "unit_type": "mapScout",
+          "weapon_type": "mapNone",
+          "target_count": 1,
+          "x": 0,
+          "y": 0,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "Disaster",
+          "group_name": "def",
+          "source_group_name": "ReinforceGroup1",
+          "reinforce_priority": 1200,
+          "building_type": "mapCommandCenter",
+          "wall_type": "mapWall",
+          "conditions": [],
+          "condition_logic": "and",
+          "then_actions": [],
+          "else_actions": [],
+          "var_name": "var2",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "meteor",
+          "x_expr": 0,
+          "y_expr": 0,
+          "x2_expr": 0,
+          "y2_expr": 0,
+          "size": -1,
+          "magnitude": 1,
+          "duration": 100,
+          "spread_speed": 15,
+          "lava_zone": [],
+          "now": false,
+          "wave_units": [],
+          "targ_counts": [
+            {
+              "unit_type": "mapLynx",
+              "weapon_type": "mapMicrowave",
+              "count": 5
+            },
+            {
+              "unit_type": "mapLynx",
+              "weapon_type": "mapEMP",
+              "count": 2
+            }
+          ],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "patrol_points": [],
+          "loop_mode": "none",
+          "loop_count": 1,
+          "enum_source": "rect"
         }
       ],
       "unit_checks": [],
