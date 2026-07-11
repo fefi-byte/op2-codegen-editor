@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # Footprints from building.txt (X-size, Y-size).
-# map_ids match TitanAPI MapID enum: MapID::Xxx -> "mapXxx".
+# map_ids match the classic Outpost2DLL map_id enum member names ("mapXxx").
 
 # Alphabetically sorted so the placement panel is predictable.
 STRUCTURES = sorted([

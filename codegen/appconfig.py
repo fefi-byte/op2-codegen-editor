@@ -65,24 +65,25 @@ def base_dir() -> Path:
 CONFIG_PATH = base_dir() / "config.ini"
 
 
-def titanapi_include_dir() -> Path:
-    """Ordner mit den TitanAPI-Headern (op2.hpp usw.), fuer generierte CMakeLists.txt.
+def op2sdk_dir() -> Path:
+    """Wurzelordner des OP2MissionSDK (Outpost2DLL + OP2Helper + HFL), fuer
+    generierte CMakeLists.txt.
 
-    Im PyInstaller-Build liegen sie gebuendelt unter sys._MEIPASS (_internal/);
-    im Dev-Checkout unter TitanAPI/TitanAPI/include neben codegen/. Ein fixer
-    relativer Pfad (z.B. "../../TitanAPI/...") ist falsch, sobald eine Mission
-    ausserhalb des Repo-Layouts liegt (z.B. im entpackten Release-ZIP).
+    Im PyInstaller-Build liegt es gebuendelt unter sys._MEIPASS (_internal/);
+    im Dev-Checkout als Submodul OP2MissionSDK/ neben codegen/. Ein fixer
+    relativer Pfad ist falsch, sobald eine Mission ausserhalb des
+    Repo-Layouts liegt (z.B. im entpackten Release-ZIP).
 
-    Folder containing the TitanAPI headers (op2.hpp etc.), for the generated
-    CMakeLists.txt. In a PyInstaller build they are bundled under sys._MEIPASS
-    (_internal/); in a dev checkout under TitanAPI/TitanAPI/include next to
-    codegen/. A fixed relative path (e.g. "../../TitanAPI/...") breaks as soon
-    as a mission folder lives outside the repo layout (e.g. an extracted
-    release ZIP).
+    Root folder of the OP2MissionSDK (Outpost2DLL + OP2Helper + HFL), for the
+    generated CMakeLists.txt. In a PyInstaller build it is bundled under
+    sys._MEIPASS (_internal/); in a dev checkout it is the OP2MissionSDK/
+    submodule next to codegen/. A fixed relative path breaks as soon as a
+    mission folder lives outside the repo layout (e.g. an extracted release
+    ZIP).
     """
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS) / "TitanAPI" / "TitanAPI" / "include"
-    return base_dir() / "TitanAPI" / "TitanAPI" / "include"
+        return Path(sys._MEIPASS) / "OP2MissionSDK"
+    return base_dir() / "OP2MissionSDK"
 
 
 def _load() -> configparser.ConfigParser:

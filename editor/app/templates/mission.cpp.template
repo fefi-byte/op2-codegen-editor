@@ -1,58 +1,47 @@
 // mission.cpp - generated stub for mission "__MISSION_NAME__".
-// Phase 1 of the TitanAPI migration: this is a minimal placeholder that
-// builds and loads. The full code generator (Phase 2) will replace this
-// file with code derived from the editor model.
+// Minimal placeholder that builds and loads against the OP2MissionSDK
+// (Outpost2DLL + OP2Helper). The editor's code generator replaces this file
+// with code derived from the editor model.
 
-#include "op2.hpp"
-#include "op2/trigger.hpp"
-#include "op2/base.hpp"
-#include "op2_mission.hpp"
+#include <Outpost2DLL/Outpost2DLL.h>
+#include <OP2Helper/OP2Helper.h>
 #include "op2_log.hpp"
 #include "op2_crash.hpp"
 
-using namespace op2;
+ExportLevelDetailsFull("__MISSION_NAME__", "__MAP_FILENAME__", "MULTITEK.TXT", Colony, 1, 12, 0)
+Export const AIModDescEx DescBlockEx = { 0 };
 
-extern "C" __declspec(dllexport) char LevelDesc[]    = "__MISSION_NAME__";
-extern "C" __declspec(dllexport) char MapName[]      = "__MAP_FILENAME__";
-extern "C" __declspec(dllexport) char TechtreeName[] = "MULTITEK.TXT";
-
-extern "C" __declspec(dllexport) mission::ModDesc   DescBlock   = { mission::MissionType::Colony, 1, 12, 0 };
-extern "C" __declspec(dllexport) mission::ModDescEx DescBlockEx = { 0, 0, 0, 0, 0, 0, 0, 0 };
+Export void NoResponseToTrigger() {}
 
 static void initProc() {
-    log::line("InitProc: starting (stub - editor codegen not yet ported to TitanAPI)");
+    op2::log::line("InitProc: starting (stub - no editor model yet)");
 
-    Player you = Game::player(0);
-    you.goEden();
-    you.setCommonOre(5000);
-    you.setWorkers(20);
-    you.setScientists(10);
+    Player[0].GoEden();
+    Player[0].GoHuman();
+    Player[0].SetOre(5000);
+    Player[0].SetWorkers(20);
+    Player[0].SetScientists(10);
 
-    BaseLayout base;
-    base.buildings = {
-        { {10, 10}, MapID::CommandCenter },
-        { {14, 10}, MapID::Tokamak },
-    };
-    createBase(you, base);
+    Unit _u;
+    TethysGame::CreateUnit(_u, mapCommandCenter, MkXY(10, 10), 0, mapNone, 0);
+    TethysGame::CreateUnit(_u, mapTokamak, MkXY(14, 10), 0, mapNone, 0);
 
-    loseIfNoCommandCenter(0);
-    Game::addMessage("__MISSION_NAME__");
-    log::line("InitProc: done");
+    CreateNoCommandCenterFailureCondition(0);
+    AddGameMessage("__MISSION_NAME__");
+    op2::log::line("InitProc: done");
 }
 
 static void aiProc() {}
 
-extern "C" __declspec(dllexport) int  InitProc() { crash::guard("InitProc", &initProc); return 1; }
-extern "C" __declspec(dllexport) void AIProc()   { crash::guard("AIProc",   &aiProc); }
+Export int InitProc() { op2::crash::guard("InitProc", &initProc); return 1; }
+Export void AIProc()  { op2::crash::guard("AIProc",   &aiProc); }
 
-extern "C" __declspec(dllexport) void GetSaveRegions(mission::SaveRegion* p) {
-    if (p) { p->pData = nullptr; p->size = 0; }
-}
+ExportSaveLoadDataNone()
 
 extern "C" int __stdcall DllMain(void*, unsigned long reason, void*) {
     if (reason == 1 /* DLL_PROCESS_ATTACH */) {
-        crash::installHandler();
-        log::setTickSource([] { return Game::tick(); });
+        op2::crash::installHandler();
+        op2::log::setTickSource([] { return TethysGame::Tick(); });
     }
     return 1;
 }

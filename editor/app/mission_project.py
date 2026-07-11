@@ -1,24 +1,22 @@
-"""Mission-Ordner: jede Mission ist ein eigener self-contained Ordner (TitanAPI-Variante).
+"""Mission-Ordner: jede Mission ist ein eigener self-contained Ordner (OP2MissionSDK-Variante).
 
 Inhalt:
   - mission.op2proj   (Editor-Projektdatei, JSON)
-  - mission.cpp       (generiert -- TitanAPI / op2:: facade)
-  - op2_mission.hpp   (1:1 aus Template, Mission-DLL-ABI)
+  - mission.cpp       (generiert -- Outpost2DLL + OP2Helper + HFL)
   - op2_log.hpp       (1:1 aus Template, file logging)
   - op2_crash.hpp     (1:1 aus Template, SEH guards)
   - version.rc.in     (Windows version info, von CMake befuellt)
-  - CMakeLists.txt    (CMake-Projekt, Pfade relativ zum TitanAPI-Submodul)
+  - CMakeLists.txt    (CMake-Projekt, SDK-Pfad einkonfiguriert)
   - <name>.map        (Karte-Kopie)
   - MULTITEK.TXT      (optional, falls Mission custom tech tree nutzt)
   - build.bat, README.md
 
 Ziel: jeder kann mit `git clone --recursive` + `build.bat` die Mission
-kompilieren, ohne den Editor zu brauchen.
+kompilieren, ohne den Editor zu brauchen. MSVC-Pflicht (Outpost2.lib).
 """
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import uuid
@@ -84,11 +82,10 @@ def write_mission_folder(
     techtree_source: Path | None = None,
     dll_basename: str = "cMission",
 ) -> dict[str, Path]:
-    """Schreibt eine vollstaendige TitanAPI-Mission in den Ordner.
+    """Schreibt eine vollstaendige OP2MissionSDK-Mission in den Ordner.
 
-    `level_main_cpp` wird als `mission.cpp` geschrieben. Solange der Editor-
-    Codegen noch nicht auf TitanAPI portiert ist, faellt eine leere/legacy-
-    Eingabe auf das `mission.cpp.template` zurueck.
+    `level_main_cpp` wird als `mission.cpp` geschrieben. Eine leere oder
+    nicht-SDK-Eingabe faellt auf das `mission.cpp.template` zurueck.
     """
     folder.mkdir(parents=True, exist_ok=True)
     written: dict[str, Path] = {}
@@ -99,13 +96,13 @@ def write_mission_folder(
         "__MISSION_NAME__": mission_name,
         "__DLL_BASENAME__": dll_basename,
         "__MAP_FILENAME__": map_name or "on1_01.map",
-        # Absoluter Pfad statt fixem "../../TitanAPI/..." -- funktioniert im
+        # Absoluter Pfad statt fixem relativen Pfad -- funktioniert im
         # Dev-Checkout genauso wie in einer aus dem Release-ZIP entpackten
-        # Mission (siehe appconfig.titanapi_include_dir()).
-        # Absolute path instead of a fixed "../../TitanAPI/..." -- works in
-        # the dev checkout the same as in a mission extracted from the
-        # release ZIP (see appconfig.titanapi_include_dir()).
-        "__TITANAPI_INCLUDE_DIR__": appconfig.titanapi_include_dir().as_posix(),
+        # Mission (siehe appconfig.op2sdk_dir()).
+        # Absolute path instead of a fixed relative path -- works in the dev
+        # checkout the same as in a mission extracted from the release ZIP
+        # (see appconfig.op2sdk_dir()).
+        "__OP2SDK_DIR__": appconfig.op2sdk_dir().as_posix(),
     }
 
     # 1) Editor-Projektdatei
@@ -113,17 +110,17 @@ def write_mission_folder(
     proj_path.write_text(json.dumps(project_data, indent=2), encoding="utf-8")
     written["project"] = proj_path
 
-    # 2) mission.cpp -- wenn der Codegen schon TitanAPI-Code liefert, nehmen
-    #    wir den; sonst die platzhalter-gefuellte Template-Datei.
+    # 2) mission.cpp -- wenn der Codegen schon SDK-Code liefert, nehmen wir
+    #    den; sonst die platzhalter-gefuellte Template-Datei.
     mcpp = folder / "mission.cpp"
-    if level_main_cpp and level_main_cpp.lstrip().startswith("//") and "op2.hpp" in level_main_cpp:
+    if level_main_cpp and level_main_cpp.lstrip().startswith("//") and "Outpost2DLL.h" in level_main_cpp:
         mcpp.write_text(level_main_cpp, encoding="utf-8")
     else:
         _copy_template("mission.cpp.template", mcpp, repl)
     written["mission_cpp"] = mcpp
 
-    # 3) TitanAPI-Scaffolding (1:1 kopiert) + version.rc.in
-    for name in ("op2_mission.hpp", "op2_log.hpp", "op2_crash.hpp", "version.rc.in"):
+    # 3) Logging/Crash-Scaffolding (1:1 kopiert) + version.rc.in
+    for name in ("op2_log.hpp", "op2_crash.hpp", "version.rc.in"):
         target = folder / name
         _copy_template(name, target)
         written[name] = target
@@ -145,14 +142,10 @@ def write_mission_folder(
     _copy_template("CMakeLists.txt.template", folder / "CMakeLists.txt", repl)
     written["cmake"] = folder / "CMakeLists.txt"
 
-    # 7) build.bat (Windows) + build.sh (Linux) + README
+    # 7) build.bat (MSVC-Pflicht -- kein Linux-Build moeglich) + README
     _copy_template("build.bat.template", folder / "build.bat", repl)
-    build_sh = folder / "build.sh"
-    _copy_template("build.sh.template", build_sh, repl)
-    os.chmod(build_sh, 0o755)
     _copy_template("README.md.template", folder / "README.md", repl)
     written["build_bat"] = folder / "build.bat"
-    written["build_sh"] = build_sh
     written["readme"] = folder / "README.md"
 
     return written

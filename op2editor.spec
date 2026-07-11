@@ -29,10 +29,12 @@ datas = [
     (str(APP / "templates"), "app/templates"),
     # codegen + mapview Python sources
     (str(ROOT / "codegen"), "codegen"),
-    # TitanAPI headers — the generated mission CMakeLists.txt includes them via
-    # a path relative to the mission folder (missions/<Name>/../../TitanAPI/TitanAPI/include),
-    # so they must land next to the EXE at the same relative offset as in the repo.
-    (str(ROOT / "TitanAPI" / "TitanAPI" / "include"), "TitanAPI/TitanAPI/include"),
+    # OP2MissionSDK (Outpost2DLL headers + Outpost2.lib, OP2Helper + HFL
+    # sources) — the generated mission CMakeLists.txt finds it via the path
+    # appconfig.op2sdk_dir() resolves to (sys._MEIPASS in the frozen build).
+    (str(ROOT / "OP2MissionSDK" / "Outpost2DLL"), "OP2MissionSDK/Outpost2DLL"),
+    (str(ROOT / "OP2MissionSDK" / "OP2Helper"), "OP2MissionSDK/OP2Helper"),
+    (str(ROOT / "OP2MissionSDK" / "HFL"), "OP2MissionSDK/HFL"),
     # mapview ohne gecachte PNG-Renders (werden zur Laufzeit aus OP2-Pfad geladen)
     *[
         (str(f), "mapview")

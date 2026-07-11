@@ -1,6 +1,7 @@
 @echo off
-REM Build script for mission "__MISSION_NAME__" (TitanAPI / CMake).
+REM Build script for mission "__MISSION_NAME__" (OP2MissionSDK / CMake).
 REM Requires: CMake 3.21+ and Visual Studio 2026 (or newer) with C++ x86 toolset.
+REM MSVC only: the mission links against Outpost2.lib (MSVC C++ name mangling).
 
 setlocal
 

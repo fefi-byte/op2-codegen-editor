@@ -106,56 +106,13 @@ def _find_cmake() -> str:
     )
 
 
-def _find_make_tool() -> tuple[str, str]:
-    """Gibt (cmake-Generator, make-Programm) fuer Linux zurueck.
-
-    Bevorzugt Ninja (schneller), faellt auf GNU make zurueck.
-    """
-    for prog, generator in (
-        ("ninja", "Ninja"),
-        ("ninja-build", "Ninja"),
-        ("make", "Unix Makefiles"),
-        ("gmake", "Unix Makefiles"),
-    ):
-        p = shutil.which(prog)
-        if p:
-            return generator, p
-    raise SystemExit(
-        "[FEHLER] Weder ninja noch make gefunden.\n"
-        "Bitte eines installieren:\n"
-        "  Debian/Ubuntu: sudo apt install ninja-build\n"
-        "  Arch/SteamDeck: sudo pacman -S ninja\n"
-        "  Fedora:        sudo dnf install ninja-build"
-    )
-
-
-def _find_mingw32() -> tuple[str, str, str]:
-    """Sucht den MinGW i686-w64-mingw32 Cross-Compiler (fuer Linux-Host).
-
-    Gibt (cc, cxx, windres) zurueck. windres kann leer sein wenn nicht gefunden
-    (CMake faellt dann auf einen generischen RC-Compiler zurueck).
-    """
-    for prefix in ("i686-w64-mingw32", "i686-mingw32"):
-        cc = shutil.which(f"{prefix}-gcc")
-        cxx = shutil.which(f"{prefix}-g++")
-        if cc and cxx:
-            rc = shutil.which(f"{prefix}-windres") or ""
-            return cc, cxx, rc
-    raise SystemExit(
-        "[FEHLER] i686-w64-mingw32-gcc nicht gefunden.\n"
-        "Bitte MinGW-w64 installieren:\n"
-        "  Debian/Ubuntu: sudo apt install mingw-w64\n"
-        "  Fedora:        sudo dnf install mingw32-gcc-c++\n"
-        "  Arch:          sudo pacman -S mingw-w64-gcc"
-    )
-
-
 def build_folder(folder: Path) -> Path:
-    """Baut eine TitanAPI-Mission via CMake.
+    """Baut eine OP2MissionSDK-Mission via CMake.
 
     Erwartet `CMakeLists.txt` direkt im Ordner. Gibt den Pfad zur erzeugten DLL
-    zurueck. Unterstuetzt Windows (MSVC via Visual Studio Generator) und Linux
-    (MinGW i686-w64-mingw32 Cross-Compiler).
+    zurueck. Nur Windows/MSVC: die Mission linkt gegen Outpost2.lib, deren
+    C++-Importe MSVC-Name-Mangling verwenden -- MinGW/Clang koennen sie nicht
+    linken.
     """
     folder = Path(folder)
     cmakelists = folder / "CMakeLists.txt"
@@ -173,29 +130,19 @@ def build_folder(folder: Path) -> Path:
 
     print(f"[..] cmake configure fuer {folder.name} ...")
 
-    if sys.platform == "win32":
-        configure_cmd = [
-            cmake, "-S", str(folder), "-B", str(build_dir),
-            "-G", "Visual Studio 18 2026", "-A", "Win32",
-        ]
-        build_cmd = [cmake, "--build", str(build_dir), "--config", "Release"]
-        dll_dirs = [build_dir / "Release", build_dir]
-    else:
-        cc, cxx, rc = _find_mingw32()
-        generator, make_prog = _find_make_tool()
-        configure_cmd = [
-            cmake, "-S", str(folder), "-B", str(build_dir),
-            "-G", generator,
-            f"-DCMAKE_MAKE_PROGRAM={make_prog}",
-            f"-DCMAKE_C_COMPILER={cc}",
-            f"-DCMAKE_CXX_COMPILER={cxx}",
-            "-DCMAKE_SYSTEM_NAME=Windows",
-            "-DCMAKE_BUILD_TYPE=Release",
-        ]
-        if rc:
-            configure_cmd.append(f"-DCMAKE_RC_COMPILER={rc}")
-        build_cmd = [cmake, "--build", str(build_dir)]
-        dll_dirs = [build_dir, build_dir / "Release"]
+    if sys.platform != "win32":
+        raise SystemExit(
+            "[FEHLER] OP2MissionSDK-Missionen erfordern MSVC (Windows).\n"
+            "Outpost2.lib verwendet MSVC-C++-Name-Mangling; ein MinGW-/Clang-\n"
+            "Cross-Compile kann nicht dagegen linken."
+        )
+
+    configure_cmd = [
+        cmake, "-S", str(folder), "-B", str(build_dir),
+        "-G", "Visual Studio 18 2026", "-A", "Win32",
+    ]
+    build_cmd = [cmake, "--build", str(build_dir), "--config", "Release"]
+    dll_dirs = [build_dir / "Release", build_dir]
 
     res = subprocess.run(configure_cmd, capture_output=True, text=True, env=env)
     if res.returncode != 0:
