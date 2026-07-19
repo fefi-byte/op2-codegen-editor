@@ -61,7 +61,8 @@ target_link_libraries(__DLL_BASENAME__ PRIVATE
 target_compile_definitions(__DLL_BASENAME__ PRIVATE
   WIN32_LEAN_AND_MEAN
   NOMINMAX
-  _CRT_SECURE_NO_WARNINGS)
+  _CRT_SECURE_NO_WARNINGS
+  OP2LOG_NAME="__DLL_BASENAME__")
 
 # /std:c++17 OHNE /permissive-: die klassischen SDK-APIs binden Temporaries
 # an non-const Referenzen (LOCATION&, MAP_RECT&) -- das erlaubt nur der

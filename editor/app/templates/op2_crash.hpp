@@ -8,7 +8,7 @@
 //   2) A process-wide unhandled-exception filter (SetUnhandledExceptionFilter) catches faults outside those
 //      guards - e.g. inside an engine-invoked trigger callback - and logs them as a last resort.
 //
-// KERNEL32-only; no <windows.h> (keeps the DLL's import table to KERNEL32, like the rest of TitanAPI). The
+// KERNEL32-only; no <windows.h> (keeps the DLL's import table lean). The
 // minimal EXCEPTION_RECORD/POINTERS layouts below match the x86 ABI so we can read the code + address without
 // pulling in the Windows headers.
 //
