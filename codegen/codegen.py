@@ -1079,6 +1079,73 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
         expr = getattr(action, "var_expr", "") or "0"
         return [f"{indent}{var} = {expr};"]
 
+    if k == "empMissile":
+        # SetEMPMissile(launchTileX, launchTileY, sourcePlayerNum, destX, destY).
+        # Startet auch ohne Spaceport ("may be launched from off screen");
+        # feuert nur, wenn der Quellspieler Plymouth ist (Engine-Regel).
+        # Launches even without a spaceport ("may be launched from off
+        # screen"); only fires if the source player is Plymouth (engine rule).
+        return [
+            f"{indent}TethysGame::SetEMPMissile({_xypos(action.x, action.y)}, "
+            f"{int(action.player)}, {_xypos(action.x2, action.y2)});"
+        ]
+
+    if k == "setMorale":
+        mode = getattr(action, "morale_mode", "good") or "good"
+        p = int(action.player)
+        fn = {"great": "ForceMoraleGreat", "good": "ForceMoraleGood",
+              "ok": "ForceMoraleOK", "poor": "ForceMoralePoor",
+              "rotten": "ForceMoraleRotten", "free": "FreeMoraleLevel"}.get(mode, "ForceMoraleGood")
+        if mode == "free" or p < 0:
+            arg = "PlayerNum::PlayerAll" if p < 0 else str(p)
+            return [f"{indent}TethysGame::{fn}({arg});"]
+        # ForceMoraleX ist bei konkreter Spielernummer buggy -- der Aufruf
+        # muss laut TethysGame.h-Kommentar ggf. DOPPELT erfolgen.
+        # ForceMoraleX is buggy for a specific player number -- per the
+        # TethysGame.h comment the call may need to happen TWICE.
+        return [
+            f"{indent}TethysGame::{fn}({p});",
+            f"{indent}TethysGame::{fn}({p});  // Engine-Bug-Workaround: doppelt aufrufen",
+        ]
+
+    if k == "setMusic":
+        songs = [s for s in (getattr(action, "songs", None) or []) if s]
+        if not songs:
+            return [f"{indent}// TODO setMusic: no songs selected"]
+        rep = max(0, min(int(getattr(action, "repeat_start", 0) or 0), len(songs) - 1))
+        return [
+            f"{indent}{{",
+            f"{indent}    static SongIds _songs[] = {{ {', '.join(songs)} }};",
+            f"{indent}    TethysGame::SetMusicPlayList({len(songs)}, {rep}, _songs);",
+            f"{indent}}}",
+        ]
+
+    if k == "lavaFlowAni":
+        # OP2Helper Lava.h: Animations-/Freeze-Funktionen fuer den Vulkanhang.
+        # OP2Helper Lava.h: animation/freeze helpers for the volcano side.
+        d = getattr(action, "flow_dir", "S") or "S"
+        d = d if d in ("S", "SW", "SE") else "S"
+        fn = ("FreezeFlow" if getattr(action, "flow_freeze", False) else "AnimateFlow") + d
+        return [f"{indent}{fn}({_xy(action.x, action.y)});"]
+
+    if k == "modUnitStats":
+        # HFL UnitInfo: Sheet-Werte eines Einheitentyps (pro Spieler) zur
+        # Laufzeit aendern -- z.B. HitPoints, Kosten, Reichweiten.
+        # HFL UnitInfo: change a unit type's sheet values (per player) at
+        # runtime -- e.g. hit points, costs, ranges.
+        mods = [m for m in (getattr(action, "stat_mods", None) or [])
+                if m.get("stat")]
+        if not mods:
+            return [f"{indent}// TODO modUnitStats: no stats selected"]
+        lines = [f"{indent}{{",
+                 f"{indent}    UnitInfo _ui({mapid(action.unit_type)});"]
+        for m in mods:
+            stat = re.sub(r"[^A-Za-z0-9_]", "", str(m.get("stat", "")))
+            lines.append(f"{indent}    _ui.Set{stat}({int(action.player)}, "
+                         f"{_expr_or_int(m.get('value', 0))});")
+        lines.append(f"{indent}}}")
+        return lines
+
     return [f"{indent}// TODO unsupported action kind: {k}"]
 
 
@@ -1312,11 +1379,31 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
 
     # --- Callback als exportierte Funktion / callback as an exported function ---
     if t.condition in ("time", "buildingCount", "vehicleCount", "research",
-                       "resource", "operational", "point", "rect"):
-        # point/rect: die Engine prueft die Bedingung selbst (native Trigger).
-        # point/rect: the engine checks the condition itself (native triggers).
+                       "resource", "operational", "point", "rect",
+                       "attacked", "damaged", "specialTarget"):
+        # point/rect/attacked/damaged/specialTarget: die Engine prueft die
+        # Bedingung selbst (native Trigger).
+        # point/rect/attacked/damaged/specialTarget: the engine checks the
+        # condition itself (native triggers).
         lines.append(f"Export void {cb_fn}() {{")
         lines.extend(_emit_action_list(t.actions, "    ", ctx))
+        lines.append(f"}}")
+    elif t.condition == "unitDied":
+        # Kein API-Trigger auf "Einheit stirbt" (Coding 101 W6) -- Poll alle
+        # 10 Ticks auf !IsLive(); der Trigger-Stub liegt in g_save und wird
+        # nach dem ersten Feuern deaktiviert (one_shot).
+        # No API trigger for "unit dies" (Coding 101 W6) -- poll !IsLive()
+        # every 10 ticks; the trigger stub lives in g_save and is disabled
+        # after the first fire (one_shot).
+        uvar = ctx.get("unit_vars", {}).get((t.target_unit or "").strip())
+        lines.append(f"Export void {cb_fn}() {{")
+        if uvar:
+            lines.append(f"    if ({uvar}.unitID == 0 || {uvar}.IsLive()) return;")
+        else:
+            lines.append(f"    return;  // TODO unitDied: unit '{t.target_unit}' not declared")
+        lines.extend(_emit_action_list(t.actions, "    ", ctx))
+        if t.one_shot:
+            lines.append(f"    g_save.{helper}_self.Disable();")
         lines.append(f"}}")
     elif t.condition == "findUnit":
         # Pollt jede 10 Ticks (wiederholender TimeTrigger), prueft jeden
@@ -1371,7 +1458,24 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
     elif t.condition == "rect":
         lines.append(f'    CreateRectTrigger(1, {one_shot}, {int(t.player)}, '
                      f'{_xypos(t.x, t.y)}, {int(t.width)}, {int(t.height)}, "{cb_fn}");')
-    elif t.condition == "findUnit":
+    elif t.condition in ("attacked", "damaged"):
+        gvar = ctx.get("group_vars", {}).get((getattr(t, "group_name", "") or "").strip())
+        if gvar:
+            if t.condition == "attacked":
+                lines.append(f'    CreateAttackedTrigger(1, {one_shot}, {gvar}, "{cb_fn}");')
+            else:
+                dmg = int(getattr(t, "damage_type", 3) or 3)
+                lines.append(f'    CreateDamagedTrigger(1, {one_shot}, {gvar}, {dmg}, "{cb_fn}");')
+        else:
+            lines.append(f"    // TODO {t.condition}: group '{getattr(t, 'group_name', '')}' not declared")
+    elif t.condition == "specialTarget":
+        uvar = ctx.get("unit_vars", {}).get((getattr(t, "target_unit", "") or "").strip())
+        if uvar:
+            src = mapid(getattr(t, "source_unit_type", "mapScout") or "mapScout")
+            lines.append(f'    CreateSpecialTarget(1, {one_shot}, {uvar}, {src}, "{cb_fn}");')
+        else:
+            lines.append(f"    // TODO specialTarget: unit '{getattr(t, 'target_unit', '')}' not declared")
+    elif t.condition in ("findUnit", "unitDied"):
         lines.append(f'    g_save.{helper}_self = CreateTimeTrigger(1, 0, 10, "{cb_fn}");')
     else:
         lines.append(f"    // TODO unsupported trigger condition: {t.condition}")
@@ -1736,6 +1840,21 @@ def generate_levelmain(mission: Mission) -> str:
     add('#include "op2_crash.hpp"')
     add("")
 
+    if getattr(mission, "world_map", False):
+        add("// World-/Wraparound-Karte (512 Tiles breit): Engine-Offset ist -1/-1")
+        add("// statt +31/-1 -- die OP2Helper-Makros werden passend umdefiniert.")
+        add("// World/wraparound map (512 tiles wide): engine offset is -1/-1")
+        add("// instead of +31/-1 -- redefine the OP2Helper macros accordingly.")
+        add("#undef MkXY")
+        add("#undef MkRect")
+        add("#undef XYPos")
+        add("#undef RectPos")
+        add("#define MkXY(x,y) (LOCATION((x)-1, (y)-1))")
+        add("#define MkRect(x1,y1,x2,y2) (MAP_RECT(LOCATION((x1)-1,(y1)-1), LOCATION((x2)-1,(y2)-1)))")
+        add("#define XYPos(x,y) (x)-1,(y)-1")
+        add("#define RectPos(x1,y1,x2,y2) (x1)-1,(y1)-1,(x2)-1,(y2)-1")
+        add("")
+
     # 1 Mark = 100 Ticks (Engine-Konstante; CreateTimeTrigger rechnet in Ticks).
     # 1 mark = 100 ticks (engine constant; CreateTimeTrigger counts in ticks).
     add("static const int kTicksPerMark = 100;")
@@ -1826,10 +1945,12 @@ def generate_levelmain(mission: Mission) -> str:
         add(f"    {ctx['group_class'][g.name]} {ctx['group_vars'][g.name]};")
     for var in ctx["unit_vars"].values():
         add(f"    UnitEx {var};")
-    # findUnit-Trigger-Handles (zum Disable nach dem ersten Feuern)
-    # findUnit trigger handles (to Disable after the first fire)
+    # findUnit-/unitDied-Trigger-Handles (zum Disable nach dem ersten Feuern)
+    # findUnit/unitDied trigger handles (to Disable after the first fire)
     for i, t in enumerate(mission.triggers or []):
         if t.condition == "findUnit" and list(getattr(t, "unit_checks", None) or []):
+            add(f"    Trigger {ctx['trigger_helpers_list'][i]}_self;")
+        elif t.condition == "unitDied":
             add(f"    Trigger {ctx['trigger_helpers_list'][i]}_self;")
     add("};")
     add("static MissionSave g_save;")

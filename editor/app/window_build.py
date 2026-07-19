@@ -132,6 +132,11 @@ class _BuildMixin:
             name=self.mission_name, map=self.map_name,
             type=self.mission_type, tech_tree=self.tech_tree,
             num_players=len(self.players),
+            # World-/Wraparound-Karten sind 512 Tiles breit; dort gilt der
+            # Engine-Offset -1/-1 statt +31/-1 (Codegen definiert MkXY um).
+            # World/wraparound maps are 512 tiles wide; there the engine
+            # offset is -1/-1 instead of +31/-1 (codegen redefines MkXY).
+            world_map=bool(getattr(getattr(self, "map", None), "width", 0) >= 512),
             players=[PlayerSpec(**asdict(p)) for p in self.players],
             units=units, beacons=beacons, walls_tubes=walls,
             building_groups=[BuildingGroupSpec(**asdict(g)) for g in self.building_groups],

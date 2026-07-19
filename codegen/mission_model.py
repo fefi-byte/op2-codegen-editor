@@ -380,6 +380,21 @@ class TriggerAction:
     # forEach: welcher Enumerator die Einheiten liefert
     # forEach: which enumerator yields the units
     enum_source: str = "rect"   # all | player | playerVehicles | playerBuildings | type | rect
+    # setMorale: Moralstufe des Spielers setzen/freigeben
+    # setMorale: force/free a player's morale level
+    morale_mode: str = "good"   # great | good | ok | poor | rotten | free
+    # setMusic: Songliste (SongIds-Namen) + Loop-Startindex
+    # setMusic: song list (SongIds names) + loop start index
+    songs: list = field(default_factory=list)   # ["songEden11", ...]
+    repeat_start: int = 0
+    # lavaFlowAni: Lavastrom-Animation am Vulkanhang starten/stoppen (OP2Helper)
+    # lavaFlowAni: start/stop the lava flow animation on a volcano side (OP2Helper)
+    flow_dir: str = "S"         # S | SW | SE
+    flow_freeze: bool = False   # True = FreezeFlow* statt AnimateFlow*
+    # modUnitStats: Sheet-Werte eines Einheitentyps zur Laufzeit aendern (HFL UnitInfo)
+    # modUnitStats: change a unit type's sheet values at runtime (HFL UnitInfo)
+    # [{"stat": "HitPoints", "value": 1000}, ...]
+    stat_mods: list = field(default_factory=list)
 
 
 @dataclass
@@ -412,6 +427,10 @@ class TriggerDef:
       resource      -> player, resource, amount, compare
       operational   -> player, building, count, compare
       findUnit      -> unit_checks  (alle UND-verknuepft, `enabled()`-Check pro Eintrag)
+      attacked      -> group_name   (Gruppe wird angegriffen, CreateAttackedTrigger)
+      damaged       -> group_name, damage_type  (Gruppe zu X%% zerstoert, CreateDamagedTrigger)
+      specialTarget -> target_unit, source_unit_type  (Einheit scannt Gebaeude, CreateSpecialTarget)
+      unitDied      -> target_unit  (benannte Einheit zerstoert, IsLive-Poll)
 
     A user-defined trigger: condition + actions.
     """
@@ -434,6 +453,18 @@ class TriggerDef:
     actions: list[TriggerAction] = field(default_factory=list)
     unit_checks: list[FindUnitCheck] = field(default_factory=list)
     folder: str = ""
+    # attacked/damaged: Name der ueberwachten Gruppe (Gruppen-Panel)
+    # attacked/damaged: name of the watched group (Groups panel)
+    group_name: str = ""
+    # damaged: Anteil der zerstoerten Gruppe (DamageType-Enum: 1=100%, 2=75%, 3=50%)
+    # damaged: fraction of the group destroyed (DamageType enum: 1=100%, 2=75%, 3=50%)
+    damage_type: int = 3
+    # specialTarget/unitDied: Name einer benannten platzierten Einheit
+    # specialTarget/unitDied: name of a named placed unit
+    target_unit: str = ""
+    # specialTarget: Einheitentyp, der das Ziel "scannen" muss (klassisch mapScout)
+    # specialTarget: unit type that must "scan" the target (classically mapScout)
+    source_unit_type: str = "mapScout"
 
 
 @dataclass
@@ -498,6 +529,11 @@ class Mission:
     tech_tree: str = "MULTITEK.TXT"
     type: MissionType = MissionType.Colony
     num_players: int = 1
+    # World-/Wraparound-Karte (512 Tiles breit): Engine-Offset ist dort
+    # -1/-1 statt +31/-1 -- der Codegen definiert MkXY/MkRect/XYPos um.
+    # World/wraparound map (512 tiles wide): the engine offset there is
+    # -1/-1 instead of +31/-1 -- the codegen redefines MkXY/MkRect/XYPos.
+    world_map: bool = False
 
     players: list[PlayerSpec] = field(default_factory=lambda: [PlayerSpec()])
     units: list[UnitSpec] = field(default_factory=list)

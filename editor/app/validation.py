@@ -26,6 +26,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_variables(w)
     findings += _check_groups(w)
     findings += _check_conditions(w)
+    findings += _check_sdk_gotchas(w)
     return findings
 
 
@@ -107,6 +108,57 @@ def _walk_actions(actions):
         yield a
         yield from _walk_actions(getattr(a, "then_actions", None) or [])
         yield from _walk_actions(getattr(a, "else_actions", None) or [])
+
+
+def _check_sdk_gotchas(w):
+    """Bekannte Engine-/SDK-Fallen aus dem OP2-Coding-Wiki.
+
+    Known engine/SDK gotchas from the OP2 coding wiki."""
+    out = []
+    mt = int(getattr(w, "mission_type", -1))
+    is_multi = mt <= -4      # MultiLandRush=-4 .. MultiLastOneStanding=-8
+    # 1) Failure-Conditions in Multiplayer: beim Ausloesen bekommen die
+    #    Mitspieler eine "Lost Contact"-Pause.
+    if is_multi and getattr(w, "defeats", None):
+        out.append(("warning", tr("validation.multi_failure_pause"), ("conditions", None)))
+    # 2) Sieg-Trigger mit Spieler > 0 feuern erfahrungsgemaess beim Spielstart
+    #    (Fire-Plague-Gotcha) -- Spieler 0 bevorzugen.
+    for c in (getattr(w, "victories", None) or []):
+        if int(getattr(c, "player", 0)) > 0:
+            out.append(("warning",
+                        tr("validation.victory_player_nonzero", p=c.player),
+                        ("conditions", None)))
+    # 3) Land Rush mit KI-Spieler funktioniert nicht (Coding 101 W11).
+    if mt == -4 and any(not p.is_human for p in (getattr(w, "players", None) or [])):
+        out.append(("warning", tr("validation.landrush_ai"), None))
+    # 4) mapSmallCapacityAirTransport crasht beim Bewegen (Header-Kommentar).
+    bad = "mapSmallCapacityAirTransport"
+    for oi, o in enumerate(getattr(w, "objects", None) or []):
+        if getattr(o, "map_id", "") == bad:
+            out.append(("error", tr("validation.air_transport_crash"), ("object", oi)))
+    for ti, t in enumerate(getattr(w, "triggers", None) or []):
+        for a in _walk_actions(t.actions):
+            types = [getattr(a, "unit_type", "")]
+            types += [e.get("unit_type", "") for e in (getattr(a, "unit_list", None) or [])]
+            if a.kind == "createUnit" and bad in types:
+                out.append(("error", tr("validation.air_transport_crash"), ("trigger", ti)))
+        # 5) Referenzen der neuen Trigger-Bedingungen pruefen.
+        #    Check the new trigger conditions' references.
+        all_group_names = ({g.name for g in getattr(w, "fight_groups", None) or []}
+                           | {g.name for g in getattr(w, "building_groups", None) or []}
+                           | {g.name for g in getattr(w, "reinforce_groups", None) or []}
+                           | {g.name for g in getattr(w, "mining_groups", None) or []})
+        named_units = {getattr(o, "unit_name", "") for o in (getattr(w, "objects", None) or [])
+                       if getattr(o, "unit_name", "")}
+        if t.condition in ("attacked", "damaged"):
+            if not getattr(t, "group_name", "") or t.group_name not in all_group_names:
+                out.append(("error", tr("validation.trigger_group_missing", name=t.name),
+                            ("trigger", ti)))
+        if t.condition in ("specialTarget", "unitDied"):
+            if not getattr(t, "target_unit", "") or t.target_unit not in named_units:
+                out.append(("error", tr("validation.trigger_unit_missing", name=t.name),
+                            ("trigger", ti)))
+    return out
 
 
 def _check_groups(w):

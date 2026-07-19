@@ -79,6 +79,20 @@ class TriggerPanel(QWidget):
         self.height = QSpinBox()
         self.height.setRange(1, 256)
         self.height.setValue(4)
+        # attacked/damaged: ueberwachte Gruppe; damaged: Zerstoerungs-Anteil.
+        # attacked/damaged: watched group; damaged: destruction fraction.
+        self.trigger_group = QComboBox()
+        self.damage_type = QComboBox()
+        fill_combo(self.damage_type, DAMAGE_TYPES, "damage_types")
+        # specialTarget/unitDied: benannte Einheit; specialTarget: Scanner-Typ.
+        # specialTarget/unitDied: named unit; specialTarget: scanner type.
+        self.target_unit = QComboBox()
+        self.source_unit_type = QComboBox()
+        for d, m, *_ in VEHICLES:
+            self.source_unit_type.addItem(d, m)
+        sidx = self.source_unit_type.findData("mapScout")
+        if sidx >= 0:
+            self.source_unit_type.setCurrentIndex(sidx)
 
         self.form = QFormLayout()
         self.form.addRow(tr("triggers.lbl_name"), self.name)
@@ -91,6 +105,8 @@ class TriggerPanel(QWidget):
             "compare": self.compare, "tech_id": self.tech_id, "resource": self.resource,
             "amount": self.amount, "building": self.building,
             "x": self.x, "y": self.y, "width": self.width, "height": self.height,
+            "trigger_group": self.trigger_group, "damage_type": self.damage_type,
+            "target_unit": self.target_unit, "source_unit_type": self.source_unit_type,
         }
         clabels = {
             "player": tr("triggers.lbl_player"), "marks": tr("triggers.lbl_marks"),
@@ -99,6 +115,10 @@ class TriggerPanel(QWidget):
             "amount": tr("triggers.lbl_amount"), "building": tr("triggers.lbl_building"),
             "x": tr("triggers.lbl_x"), "y": tr("triggers.lbl_y"),
             "width": tr("triggers.lbl_width"), "height": tr("triggers.lbl_height"),
+            "trigger_group": tr("triggers.lbl_group"),
+            "damage_type": tr("triggers.lbl_damage_type"),
+            "target_unit": tr("triggers.lbl_target_unit"),
+            "source_unit_type": tr("triggers.lbl_source_unit_type"),
         }
         for key, w in self._cond_rows.items():
             self.form.addRow(clabels[key], w)
@@ -106,7 +126,9 @@ class TriggerPanel(QWidget):
         self.name.textChanged.connect(self._store_current)
         self.folder.textChanged.connect(self._store_current)
         self.folder.editingFinished.connect(self._refresh_list)
-        for w in (self.cond, self.compare, self.resource, self.building):
+        for w in (self.cond, self.compare, self.resource, self.building,
+                  self.trigger_group, self.damage_type, self.target_unit,
+                  self.source_unit_type):
             w.currentIndexChanged.connect(self._store_current)
         for w in (self.player, self.count, self.tech_id, self.amount,
                   self.x, self.y, self.width, self.height):
@@ -426,6 +448,33 @@ class TriggerPanel(QWidget):
         self.y.setValue(t.y)
         self.width.setValue(t.width)
         self.height.setValue(t.height)
+        # Gruppen-/Einheiten-Combos frisch befuellen (Gruppen/benannte
+        # Einheiten koennen sich seit dem letzten Laden geaendert haben).
+        # Repopulate group/unit combos (groups/named units may have changed
+        # since the last load).
+        w = self._window
+        self.trigger_group.clear()
+        for g in (list(w.fight_groups) + list(w.building_groups)
+                  + list(w.reinforce_groups) + list(w.mining_groups)):
+            self.trigger_group.addItem(g.name, g.name)
+        gidx = self.trigger_group.findData(getattr(t, "group_name", "") or "")
+        if gidx >= 0:
+            self.trigger_group.setCurrentIndex(gidx)
+        self.target_unit.clear()
+        for o in w.objects:
+            uname = getattr(o, "unit_name", "") or ""
+            if uname:
+                self.target_unit.addItem(f"{uname} ({o.map_id})", uname)
+        uidx = self.target_unit.findData(getattr(t, "target_unit", "") or "")
+        if uidx >= 0:
+            self.target_unit.setCurrentIndex(uidx)
+        didx = self.damage_type.findData(
+            {v: k for k, v in DAMAGE_TYPES.items()}.get(int(getattr(t, "damage_type", 3) or 3)))
+        if didx >= 0:
+            self.damage_type.setCurrentIndex(didx)
+        sidx = self.source_unit_type.findData(getattr(t, "source_unit_type", "mapScout") or "mapScout")
+        if sidx >= 0:
+            self.source_unit_type.setCurrentIndex(sidx)
         if self.unit_checks_widget is not None:
             self.unit_checks_layout.removeWidget(self.unit_checks_widget)
             self.unit_checks_widget.deleteLater()
@@ -459,6 +508,10 @@ class TriggerPanel(QWidget):
         t.y = self.y.value()
         t.width = self.width.value()
         t.height = self.height.value()
+        t.group_name = self.trigger_group.currentData() or ""
+        t.damage_type = DAMAGE_TYPES.get(self.damage_type.currentData(), 3)
+        t.target_unit = self.target_unit.currentData() or ""
+        t.source_unit_type = self.source_unit_type.currentData() or "mapScout"
         item = self.tlist.currentItem()
         if item and item.data(0, Qt.UserRole) is not None:
             item.setText(0, trigger_summary(t))

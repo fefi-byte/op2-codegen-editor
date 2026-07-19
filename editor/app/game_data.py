@@ -184,6 +184,18 @@ TRIGGER_CONDITIONS = {
     "Ressource erreicht":     ("resource",      ["player", "resource", "amount", "compare"]),
     "Gebäude operativ":       ("operational",   ["player", "building", "count", "compare"]),
     "Einheit(en) an Position(en) bereit": ("findUnit", ["unit_checks"]),
+    "Gruppe wird angegriffen": ("attacked",     ["trigger_group"]),
+    "Gruppe beschädigt":      ("damaged",       ["trigger_group", "damage_type"]),
+    "Einheit scannt Gebäude": ("specialTarget", ["target_unit", "source_unit_type"]),
+    "Einheit zerstört":       ("unitDied",      ["target_unit"]),
+}
+
+# CreateDamagedTrigger: Anteil der zerstoerten Gruppe (DamageType-Enum).
+# CreateDamagedTrigger: fraction of the group destroyed (DamageType enum).
+DAMAGE_TYPES = {
+    "50 % zerstört":  3,   # Damage50
+    "75 % zerstört":  2,   # Damage75
+    "100 % zerstört": 1,   # Damage100
 }
 
 ACTION_KINDS = {
@@ -205,7 +217,49 @@ ACTION_KINDS = {
     "Einheiten-Befehl":                  "unitCmd",
     "Gebiet verteidigen (Makro)":        "defendArea",
     "Gebäude reparieren (Makro)":        "repairBuildings",
+    "EMP-Rakete abfeuern":               "empMissile",
+    "Moral setzen":                      "setMorale",
+    "Musik-Playlist setzen":             "setMusic",
+    "Lavastrom-Animation":               "lavaFlowAni",
+    "Einheiten-Werte ändern (HFL)":      "modUnitStats",
 }
+
+# setMorale: Modus -> ForceMoraleX/FreeMoraleLevel
+MORALE_MODES = {
+    "Sehr gut (Great)":   "great",
+    "Gut (Good)":         "good",
+    "Mittel (OK)":        "ok",
+    "Schlecht (Poor)":    "poor",
+    "Miserabel (Rotten)": "rotten",
+    "Freigeben (frei berechnen)": "free",
+}
+
+# lavaFlowAni: Fliessrichtung am Vulkanhang (OP2Helper Lava.h)
+FLOW_DIRS = {
+    "Süd":      "S",
+    "Südwest":  "SW",
+    "Südost":   "SE",
+}
+
+# setMusic: alle SongIds aus Outpost2DLL Enums.h (Reihenfolge = Enum-Wert).
+SONG_IDS = [
+    "songEden11", "songEden21", "songEden22", "songEden31", "songEden32",
+    "songEden33", "songEP41", "songEP42", "songEP43", "songEP51", "songEP52",
+    "songEP61", "songEP62", "songEP63", "songPlymth11", "songPlymth12",
+    "songPlymth21", "songPlymth22", "songPlymth31", "songPlymth32",
+    "songPlymth33", "songStatic01", "songStatic02", "songStatic03",
+    "songStatic04", "songStatic05",
+]
+
+# modUnitStats: HFL-UnitInfo-Setter (Anzeige-Label kommt aus i18n
+# unit_stats.<Name>, C++-Aufruf ist Set<Name>(player, value)).
+UNIT_STATS = [
+    "HitPoints", "Armor", "OreCost", "RareOreCost", "BuildTime",
+    "SightRange", "WeaponRange", "PowerRequired", "MovePoints",
+    "ConcussionDamage", "PenetrationDamage", "ReloadTime",
+    "StorageCapacity", "ProductionRate", "CargoCapacity",
+    "WorkersRequired", "ScientistsRequired",
+]
 
 # IF conditions per action: display name -> (kind, [fields])
 # Ordered lists of internal ids. Display labels come from i18n at usage

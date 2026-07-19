@@ -265,6 +265,11 @@ class ActionInlineForm(QWidget):
         "unitCmd": ["unit_ref", "unit_command"],
         "defendArea": ["player", "x", "y", "x2", "y2"],
         "repairBuildings": ["player", "x", "y", "x2", "y2"],
+        "empMissile": ["player", "x", "y", "x2", "y2"],
+        "setMorale": ["morale_mode", "morale_player"],
+        "setMusic": ["songs_editor", "repeat_start"],
+        "lavaFlowAni": ["flow_dir", "flow_freeze", "x", "y"],
+        "modUnitStats": ["stats_unit", "player", "stats_editor"],
     }
 
     _LABEL_OVERRIDES = {
@@ -273,6 +278,7 @@ class ActionInlineForm(QWidget):
         "startMining": {"x": "Mine X:", "y": "Mine Y:", "x2": "Smelter X:", "y2": "Smelter Y:"},
         "defendArea": {"x": "Ecke 1 X:", "y": "Ecke 1 Y:", "x2": "Ecke 2 X:", "y2": "Ecke 2 Y:"},
         "repairBuildings": {"x": "Ecke 1 X:", "y": "Ecke 1 Y:", "x2": "Ecke 2 X:", "y2": "Ecke 2 Y:"},
+        "empMissile": {"x": "Start X:", "y": "Start Y:", "x2": "Ziel X:", "y2": "Ziel Y:"},
     }
 
     def __init__(self, action, ctx):
@@ -744,6 +750,74 @@ class ActionInlineForm(QWidget):
         rw_lay.addWidget(self.wall_list_tree)
         rw_lay.addLayout(rw_row)
 
+        # --- setMorale: Modus + Spieler (inkl. "Alle") ---
+        # setMorale: mode + player (incl. "all")
+        self.morale_mode = QComboBox()
+        fill_combo(self.morale_mode, MORALE_MODES, "morale_modes")
+        self.morale_player = QComboBox()
+        self.morale_player.addItem(tr("action_editor.player_all"), -1)
+        for i in range(6):
+            self.morale_player.addItem(str(i), i)
+
+        # --- setMusic: Songliste + Loop-Startindex ---
+        # setMusic: song list + loop start index
+        self.song_combo = QComboBox()
+        for s in SONG_IDS:
+            self.song_combo.addItem(s, s)
+        self.song_list = QListWidget()
+        self.song_list.setMaximumHeight(110)
+        song_add_btn = QPushButton("+"); song_add_btn.setFixedWidth(28)
+        song_add_btn.clicked.connect(self._song_add)
+        song_rm_btn = QPushButton("−"); song_rm_btn.setFixedWidth(28)
+        song_rm_btn.clicked.connect(self._song_remove)
+        song_row = QHBoxLayout()
+        song_row.addWidget(self.song_combo, 1)
+        song_row.addWidget(song_add_btn)
+        song_row.addWidget(song_rm_btn)
+        self.songs_editor = QWidget()
+        song_lay = QVBoxLayout(self.songs_editor)
+        song_lay.setContentsMargins(0, 0, 0, 0)
+        song_lay.addWidget(self.song_list)
+        song_lay.addLayout(song_row)
+        self.repeat_start = QSpinBox()
+        self.repeat_start.setRange(0, 25)
+
+        # --- lavaFlowAni: Richtung + Freeze ---
+        # lavaFlowAni: direction + freeze
+        self.flow_dir = QComboBox()
+        fill_combo(self.flow_dir, FLOW_DIRS, "flow_dirs")
+        self.flow_freeze = QCheckBox(tr("action_editor.chk_flow_freeze"))
+
+        # --- modUnitStats: Einheitentyp + Wert-Liste (HFL UnitInfo) ---
+        # modUnitStats: unit type + value list (HFL UnitInfo)
+        self.stats_unit = QComboBox()
+        for d, m in ALL_UNITS:
+            self.stats_unit.addItem(d, m)
+        self.stat_combo = QComboBox()
+        for s in UNIT_STATS:
+            self.stat_combo.addItem(tr(f"unit_stats.{s}"), s)
+        self.stat_value = QSpinBox()
+        self.stat_value.setRange(0, 100000)
+        self.stat_value.setValue(100)
+        self.stats_tree = QTreeWidget()
+        self.stats_tree.setHeaderLabels([tr("action_editor.col_stat"), tr("action_editor.col_value")])
+        self.stats_tree.setRootIsDecorated(False)
+        self.stats_tree.setMaximumHeight(110)
+        stats_add_btn = QPushButton("+"); stats_add_btn.setFixedWidth(28)
+        stats_add_btn.clicked.connect(self._stats_add)
+        stats_rm_btn = QPushButton("−"); stats_rm_btn.setFixedWidth(28)
+        stats_rm_btn.clicked.connect(self._stats_remove)
+        stats_row = QHBoxLayout()
+        stats_row.addWidget(self.stat_combo, 2)
+        stats_row.addWidget(self.stat_value, 1)
+        stats_row.addWidget(stats_add_btn)
+        stats_row.addWidget(stats_rm_btn)
+        self.stats_editor = QWidget()
+        stats_lay = QVBoxLayout(self.stats_editor)
+        stats_lay.setContentsMargins(0, 0, 0, 0)
+        stats_lay.addWidget(self.stats_tree)
+        stats_lay.addLayout(stats_row)
+
         self.form = QFormLayout()
         self.form.addRow(tr("action_editor.lbl_action_type"), self.kind)
         self._rows = {
@@ -778,6 +852,10 @@ class ActionInlineForm(QWidget):
             "targ_editor": self.targ_editor,
             "unit_editor": self.unit_editor, "building_editor": self.building_editor,
             "tube_editor": self.tube_editor, "wall_editor": self.wall_editor,
+            "morale_mode": self.morale_mode, "morale_player": self.morale_player,
+            "songs_editor": self.songs_editor, "repeat_start": self.repeat_start,
+            "flow_dir": self.flow_dir, "flow_freeze": self.flow_freeze,
+            "stats_unit": self.stats_unit, "stats_editor": self.stats_editor,
         }
         labels = {
             "text": tr("action_editor.lbl_text"), "unit": tr("action_editor.lbl_unit"),
@@ -827,6 +905,14 @@ class ActionInlineForm(QWidget):
             "building_editor": tr("action_editor.lbl_building_editor"),
             "tube_editor": tr("action_editor.lbl_tube_editor"),
             "wall_editor": tr("action_editor.lbl_wall_editor"),
+            "morale_mode": tr("action_editor.lbl_morale_mode"),
+            "morale_player": tr("action_editor.lbl_player"),
+            "songs_editor": tr("action_editor.lbl_songs"),
+            "repeat_start": tr("action_editor.lbl_repeat_start"),
+            "flow_dir": tr("action_editor.lbl_flow_dir"),
+            "flow_freeze": "",
+            "stats_unit": tr("action_editor.lbl_unit"),
+            "stats_editor": tr("action_editor.lbl_stats"),
         }
         for k, w in self._rows.items():
             self.form.addRow(labels[k], w)
@@ -973,6 +1059,64 @@ class ActionInlineForm(QWidget):
             item = QTreeWidgetItem([unit_label, by_id_weapon.get(weapon, weapon), str(count)])
             item.setData(0, Qt.UserRole, (unit, weapon, count))
             self.targ_list.addTopLevelItem(item)
+
+    # --- setMusic-Songliste / setMusic song list ---
+
+    def _song_add(self):
+        s = self.song_combo.currentData()
+        if s:
+            self.song_list.addItem(s)
+            self._save()
+
+    def _song_remove(self):
+        row = self.song_list.currentRow()
+        if row >= 0:
+            self.song_list.takeItem(row)
+            self._save()
+
+    def _songs_from_list(self) -> list:
+        return [self.song_list.item(i).text() for i in range(self.song_list.count())]
+
+    def _song_list_load(self, songs):
+        self.song_list.clear()
+        for s in (songs or []):
+            self.song_list.addItem(str(s))
+
+    # --- modUnitStats-Liste / modUnitStats list ---
+
+    def _stats_add(self):
+        stat = self.stat_combo.currentData()
+        if not stat:
+            return
+        item = QTreeWidgetItem([self.stat_combo.currentText(), str(self.stat_value.value())])
+        item.setData(0, Qt.UserRole, (stat, self.stat_value.value()))
+        self.stats_tree.addTopLevelItem(item)
+        self._save()
+
+    def _stats_remove(self):
+        idx = self.stats_tree.indexOfTopLevelItem(self.stats_tree.currentItem())
+        if idx >= 0:
+            self.stats_tree.takeTopLevelItem(idx)
+            self._save()
+
+    def _stats_from_tree(self) -> list:
+        out = []
+        for i in range(self.stats_tree.topLevelItemCount()):
+            stat, value = self.stats_tree.topLevelItem(i).data(0, Qt.UserRole)
+            out.append({"stat": stat, "value": value})
+        return out
+
+    def _stats_list_load(self, stat_mods):
+        self.stats_tree.clear()
+        for m in (stat_mods or []):
+            stat = m.get("stat", "")
+            if not stat:
+                continue
+            i = self.stat_combo.findData(stat)
+            label = self.stat_combo.itemText(i) if i >= 0 else stat
+            item = QTreeWidgetItem([label, str(m.get("value", 0))])
+            item.setData(0, Qt.UserRole, (stat, m.get("value", 0)))
+            self.stats_tree.addTopLevelItem(item)
 
     # --- Angriffswellen-Liste / attack wave list ---
 
@@ -1293,6 +1437,15 @@ class ActionInlineForm(QWidget):
                 self.now.setText(tr("action_editor.chk_now_eruption"))
             else:
                 self.now.setText(tr("action_editor.chk_now_meteor"))
+            # Vortex mit Dauer 0 = Permavortex (SDK-Quirk) -- am Label zeigen.
+            # Vortex with duration 0 = permanent vortex (SDK quirk) -- show
+            # the hint on the label.
+            dur_label = self.form.labelForField(self.duration)
+            if dur_label is not None:
+                if self._current_disaster_type() == "vortex":
+                    dur_label.setText(tr("action_editor.lbl_duration_vortex"))
+                else:
+                    dur_label.setText(tr("action_editor.lbl_duration"))
         self._apply_labels(kind)
         has_primary_xy = (("x" in fields) and ("y" in fields)) or (("x_expr" in fields) and ("y_expr" in fields))
         self.form.setRowVisible(self.pick_xy_btn, has_primary_xy)
@@ -1420,6 +1573,26 @@ class ActionInlineForm(QWidget):
         self._set_combo(self.mine_ref, getattr(a, "mine_ref", "") or "")
         self._set_combo(self.smelter_ref, getattr(a, "smelter_ref", "") or "")
         self._update_mining_wait_hint()
+        # fill_combo-Combos: itemData = Label -> Label aus Wert rueckwaerts suchen
+        # fill_combo combos: itemData = label -> reverse-look up label from value
+        morale_label = {v: k for k, v in MORALE_MODES.items()}.get(
+            getattr(a, "morale_mode", "good") or "good")
+        mi = self.morale_mode.findData(morale_label)
+        if mi >= 0:
+            self.morale_mode.setCurrentIndex(mi)
+        mp = self.morale_player.findData(int(getattr(a, "player", 0)))
+        if mp >= 0:
+            self.morale_player.setCurrentIndex(mp)
+        self._song_list_load(getattr(a, "songs", None))
+        self.repeat_start.setValue(int(getattr(a, "repeat_start", 0) or 0))
+        flow_label = {v: k for k, v in FLOW_DIRS.items()}.get(
+            getattr(a, "flow_dir", "S") or "S")
+        fi = self.flow_dir.findData(flow_label)
+        if fi >= 0:
+            self.flow_dir.setCurrentIndex(fi)
+        self.flow_freeze.setChecked(bool(getattr(a, "flow_freeze", False)))
+        self._set_combo(self.stats_unit, a.unit_type)
+        self._stats_list_load(getattr(a, "stat_mods", None))
         self._loading = False
         self._update()
 
@@ -1441,9 +1614,12 @@ class ActionInlineForm(QWidget):
                   self.assign_group, self.var_name, self.mod_mode, self.spawn_mode,
                   self.wave_group, self.fg_command, self.cmd_target,
                   self.unit_ref, self.unit_command, self.cmd_unit_target,
-                  self.mine_ref, self.smelter_ref):
+                  self.mine_ref, self.smelter_ref,
+                  self.morale_mode, self.morale_player, self.flow_dir, self.stats_unit):
             w.currentIndexChanged.connect(self._save)
+        self.repeat_start.valueChanged.connect(self._save)
         self.now.toggled.connect(self._save)
+        self.flow_freeze.toggled.connect(self._save)
 
     def _save(self):
         if self._loading:
@@ -1517,6 +1693,21 @@ class ActionInlineForm(QWidget):
             a.unit_ref = self.unit_ref.currentData() or ""
             a.fg_command = self.unit_command.currentData() or "move"
             a.target = self.cmd_unit_target.currentData() or ""
+        elif k == "setMorale":
+            # fill_combo speichert das Label als itemData -> Wert nachschlagen
+            # fill_combo stores the label as itemData -> look up the value
+            a.morale_mode = MORALE_MODES.get(self.morale_mode.currentData(), "good")
+            mp = self.morale_player.currentData()
+            a.player = int(mp) if mp is not None else -1
+        elif k == "setMusic":
+            a.songs = self._songs_from_list()
+            a.repeat_start = self.repeat_start.value()
+        elif k == "lavaFlowAni":
+            a.flow_dir = FLOW_DIRS.get(self.flow_dir.currentData(), "S")
+            a.flow_freeze = self.flow_freeze.isChecked()
+        elif k == "modUnitStats":
+            a.unit_type = self.stats_unit.currentData() or "mapLynx"
+            a.stat_mods = self._stats_from_tree()
         if k in ("unitCmd", "fightGroupCmd"):
             a.patrol_points = self._patrol_points()
         a.var_name = self.var_name.currentData() or ""

@@ -175,6 +175,21 @@ def _action_summary_core(a) -> str:
         return f"DefendArea(P{a.player}, ({a.x},{a.y}) -> ({a.x2},{a.y2}))"
     if a.kind == "repairBuildings":
         return f"RepairBuildings(P{a.player}, ({a.x},{a.y}) -> ({a.x2},{a.y2}))"
+    if a.kind == "empMissile":
+        return f"EMP-Rakete(P{a.player}, ({a.x},{a.y}) -> ({a.x2},{a.y2}))"
+    if a.kind == "setMorale":
+        mode = getattr(a, "morale_mode", "good") or "good"
+        p = "alle" if int(getattr(a, "player", 0)) < 0 else f"P{a.player}"
+        return f"Moral: {mode} ({p})"
+    if a.kind == "setMusic":
+        n = len(getattr(a, "songs", None) or [])
+        return f"Musik-Playlist ({n} Songs, Loop ab {getattr(a, 'repeat_start', 0)})"
+    if a.kind == "lavaFlowAni":
+        fn = "FreezeFlow" if getattr(a, "flow_freeze", False) else "AnimateFlow"
+        return f"{fn}{getattr(a, 'flow_dir', 'S')} @ ({a.x},{a.y})"
+    if a.kind == "modUnitStats":
+        n = len(getattr(a, "stat_mods", None) or [])
+        return f"UnitInfo {getattr(a, 'unit_type', '?')}: {n} Werte (P{a.player})"
     return a.kind
 
 
@@ -217,6 +232,11 @@ _KIND_TITLE = {
     "unitCmd": "Einheiten-Befehl",
     "defendArea": "Gebiet verteidigen",
     "repairBuildings": "Gebäude reparieren",
+    "empMissile": "EMP-Rakete",
+    "setMorale": "Moral setzen",
+    "setMusic": "Musik-Playlist",
+    "lavaFlowAni": "Lavastrom-Animation",
+    "modUnitStats": "Einheiten-Werte",
 }
 
 
@@ -324,6 +344,23 @@ def action_params_summary(a) -> str:
     if a.kind in ("defendArea", "repairBuildings"):
         return (f"P{getattr(a, 'player', 0)}  Rect ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → "
                 f"({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})")
+    if a.kind == "empMissile":
+        return (f"P{getattr(a, 'player', 0)}  Start ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → "
+                f"Ziel ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})")
+    if a.kind == "setMorale":
+        p = "alle" if int(getattr(a, "player", 0)) < 0 else f"P{getattr(a, 'player', 0)}"
+        return f"{getattr(a, 'morale_mode', 'good')}  ·  {p}"
+    if a.kind == "setMusic":
+        songs = getattr(a, "songs", None) or []
+        return f"{len(songs)} Songs  ·  Loop ab Index {getattr(a, 'repeat_start', 0)}"
+    if a.kind == "lavaFlowAni":
+        mode = "Stoppen" if getattr(a, "flow_freeze", False) else "Starten"
+        return f"{mode}  ·  Richtung {getattr(a, 'flow_dir', 'S')}  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})"
+    if a.kind == "modUnitStats":
+        mods = getattr(a, "stat_mods", None) or []
+        comp = ", ".join(f"{m.get('stat', '?')}={m.get('value', 0)}" for m in mods[:3])
+        more = "…" if len(mods) > 3 else ""
+        return f"{getattr(a, 'unit_type', '?')}  P{getattr(a, 'player', 0)}  {comp}{more}"
     return ""
 
 
