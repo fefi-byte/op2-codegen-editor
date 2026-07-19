@@ -1434,7 +1434,7 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
         lines.append(f"Export void {cb_fn}() {{")
         for i, c in enumerate(checks):
             lines.append(f"    UnitEx _u{i} = unitOnTile({_xy(c.x, c.y)});")
-            lines.append(f"    bool _ready{i} = _u{i}.unitID != 0 && _u{i}.IsLive() "
+            lines.append(f"    bool _ready{i} = isCompleted(_u{i}) "
                          f"&& _u{i}.GetType() == {mapid(c.unit_type)};")
         all_ready = " && ".join(f"_ready{i}" for i in range(len(checks)))
         lines.append(f"    if (!({all_ready})) return;")
@@ -1700,6 +1700,7 @@ def _repair_building_take_lines(group, var: str,
             f"    while (_e.GetNext(_u)) {{",
             f"        LOCATION _loc = _u.Location();",
             f"        if (!(_loc == _a)) continue;",
+            f"        if (!isCompleted(_u)) continue;",
             f"        bool _member = false;",
             f"        GroupEnumerator _ge({var});",
             f"        UnitEx _m;",
@@ -1749,7 +1750,7 @@ def _mining_link_lines(var: str, spec, mine_expr: str, smelter_expr: str, n) -> 
     return [
         f"UnitEx _mine = {mine_expr};",
         f"UnitEx _smelter = {smelter_expr};",
-        f"if (_mine.unitID != 0 && _smelter.unitID != 0) {{",
+        f"if (isCompleted(_mine) && isCompleted(_smelter)) {{",
         f"    MAP_RECT _area = {area};",
         f"    {var}.Setup(_mine, _smelter, _area);",
         f"    {var}.SetTargCount(mapCargoTruck, mapNone, {n});",
@@ -1822,7 +1823,7 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         # Run Setup only the FIRST time resp. when mine/smelter are new
         # units (after destruction + rebuild) -- otherwise the truck route
         # would restart every mark.
-        body.append(f"    if (_mine.unitID != 0 && _smelter.unitID != 0 &&")
+        body.append(f"    if (isCompleted(_mine) && isCompleted(_smelter) &&")
         body.append(f"        (_mine.unitID != {ids_var}[0] || _smelter.unitID != {ids_var}[1])) {{")
         body.append(f"        MAP_RECT _area = {area};")
         body.append(f"        {var}.Setup(_mine, _smelter, _area);")
@@ -1838,7 +1839,7 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
             continue
         body.append(f"if ({armed_var}) {{")
         body.append(f"    UnitEx _b = unitOnTile({_xy(action.x, action.y)});")
-        body.append(f"    if (_b.unitID != 0 && _b.GetType() == {mapid(action.building_type)}) {{")
+        body.append(f"    if (isCompleted(_b) && _b.GetType() == {mapid(action.building_type)}) {{")
         body.append(f"        bool _member = false;")
         body.append(f"        GroupEnumerator _ge({var});")
         body.append(f"        UnitEx _m;")
@@ -2092,6 +2093,16 @@ def generate_levelmain(mission: Mission) -> str:
     add("    UnitEx _u;")
     add("    while (_e.GetNext(_u)) if (_u.GetType() == type) ++_n;")
     add("    return _n;")
+    add("}")
+    add("")
+    add("// Fertig errichtet? Gebaeude im Bau (moDevelop/moBuild/moBuildMine)")
+    add("// duerfen noch NICHT in Gruppen uebernommen oder verknuepft werden.")
+    add("// Fully erected? Buildings under construction (moDevelop/moBuild/")
+    add("// moBuildMine) must NOT yet be taken into groups or linked.")
+    add("static bool isCompleted(UnitEx u) {")
+    add("    if (u.unitID == 0 || !u.IsLive()) return false;")
+    add("    ActionType _a = u.GetCurAction();")
+    add("    return _a != moDevelop && _a != moBuild && _a != moBuildMine;")
     add("}")
     add("")
 
