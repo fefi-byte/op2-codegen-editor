@@ -1630,15 +1630,18 @@ def _repair_building_take_lines(group, var: str,
                                 entries: list[tuple[str, int, int]]) -> list[str]:
     """Selbstheil-Bloecke fuer Roster-Gebaeude: je Gebaeude eine
     PlayerBuildingEnum-Suche (typgenau, engine-seitige Gebaeudeliste) mit
-    Positions-Toleranz +-2 Kacheln (Anker-Verschiebung bei geraden
-    Footprints) und Mitglieds-Guard -- wiederholtes TakeUnit wuerde den
-    Bau-Zustand der Gruppen-KI jede Mark zuruecksetzen.
+    exaktem Positionsvergleich -- die Engine baut Gebaeude immer exakt an
+    ihrer alten Position wieder auf, und Location() liefert die
+    CreateUnit-Koordinate 1:1 zurueck. Dazu Mitglieds-Guard --
+    wiederholtes TakeUnit wuerde den Bau-Zustand der Gruppen-KI jede Mark
+    zuruecksetzen.
 
     Self-heal blocks for roster buildings: one PlayerBuildingEnum search
-    per building (type-exact, engine-side building list) with a +-2 tile
-    position tolerance (anchor shift for even footprints) and a membership
-    guard -- repeated TakeUnit would reset the group AI's build state
-    every mark.
+    per building (type-exact, engine-side building list) with an exact
+    position match -- the engine always rebuilds buildings at their exact
+    old spot, and Location() returns the CreateUnit coordinate 1:1. Plus
+    a membership guard -- repeated TakeUnit would reset the group AI's
+    build state every mark.
     """
     out: list[str] = []
     for (btype, x, y) in entries:
@@ -1649,8 +1652,7 @@ def _repair_building_take_lines(group, var: str,
             f"    LOCATION _a = {_xy(x, y)};",
             f"    while (_e.GetNext(_u)) {{",
             f"        LOCATION _loc = _u.Location();",
-            f"        if (_loc.x < _a.x - 2 || _loc.x > _a.x + 2 ||",
-            f"            _loc.y < _a.y - 2 || _loc.y > _a.y + 2) continue;",
+            f"        if (!(_loc == _a)) continue;",
             f"        bool _member = false;",
             f"        GroupEnumerator _ge({var});",
             f"        UnitEx _m;",
