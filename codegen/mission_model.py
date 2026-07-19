@@ -178,6 +178,13 @@ class BuildingGroupSpec:
     rect_height: int = 8
     unit_ids: list[str] = field(default_factory=list)
     folder: str = ""
+    # ALLE Start-Gebaeude des Besitzers in die Record-Liste aufnehmen
+    # (Basis-Wiederaufbau), nicht nur die Roster-Gebaeude. Minen ausgenommen
+    # (brauchen eine eigene Gruppe mit Robo-Miner).
+    # Record ALL of the owner's starting buildings (base rebuild), not just
+    # the roster buildings. Mines excluded (need their own group with a
+    # Robo-Miner).
+    record_all: bool = True
 
 
 @dataclass

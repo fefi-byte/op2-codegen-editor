@@ -161,6 +161,19 @@ def _check_building_group_builders(w):
         if 0 <= p < len(players) and getattr(players[p], "is_human", True):
             out.append(("warning", tr("validation.bg_human_player", name=g.name, p=p),
                         ("group", None)))
+    # Mehrere record_all-Gruppen desselben Spielers rekordieren dieselben
+    # Gebaeude doppelt -- beide Gruppen wuerden um den Wiederaufbau
+    # konkurrieren.
+    # Several record_all groups of the same player record the same
+    # buildings twice -- both groups would compete for the rebuild.
+    from collections import Counter
+    ra = Counter(int(getattr(g, "player", 0))
+                 for g in (getattr(w, "building_groups", None) or [])
+                 if getattr(g, "record_all", True))
+    for p, n in sorted(ra.items()):
+        if n > 1:
+            out.append(("warning", tr("validation.record_all_conflict", p=p, n=n),
+                        ("group", None)))
     return out
 
 

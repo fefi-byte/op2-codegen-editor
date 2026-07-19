@@ -1530,11 +1530,17 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
         # Record the roster's starting buildings: "This should include any
         # buildings the AI starts the game with" (W9) -- otherwise the
         # group never rebuilds destroyed starting buildings.
-        roster_buildings = _roster_building_entries(mission, g)
-        if roster_buildings:
+        record_entries = list(_roster_building_entries(mission, g))
+        if getattr(g, "record_all", True):
+            seen = {(x, y) for (_t, _c, x, y) in record_entries}
+            for entry in _player_start_buildings(mission, int(g.player)):
+                if (entry[2], entry[3]) not in seen:
+                    record_entries.append(entry)
+                    seen.add((entry[2], entry[3]))
+        if record_entries:
             lines.append(f"    {{")
             lines.append(f"        LOCATION _l;")
-            for (btype, cargo, x, y) in roster_buildings:
+            for (btype, cargo, x, y) in record_entries:
                 lines.append(f"        _l = {_xy(x, y)};")
                 lines.append(f"        {var}.RecordBuilding(_l, {btype}, {cargo});")
             lines.append(f"    }}")
@@ -1636,6 +1642,32 @@ def _roster_building_entries(mission: Mission, group) -> list[tuple[str, str, in
         btype = mapid(u.unit_type)
         if btype == "mapRareOreMine":
             btype = "mapCommonOreMine"
+        cargo = mapid(u.cargo) if (u.cargo and u.cargo != "mapNone") else "mapNone"
+        out.append((btype, cargo, int(u.x), int(u.y)))
+    return out
+
+
+def _player_start_buildings(mission: Mission, player: int) -> list[tuple[str, str, int, int]]:
+    """ALLE Start-Gebaeude eines Spielers als (map_id, cargo, x, y) --
+    fuer record_all-BuildingGroups (Basis-Wiederaufbau). Minen ausgenommen:
+    deren Wiederaufbau braucht eine eigene Gruppe mit Robo-Miner
+    (klassisches RebuildMines-Muster), die Eintraege kommen dort ueber das
+    Roster.
+
+    ALL of a player's starting buildings as (map_id, cargo, x, y) -- for
+    record_all building groups (base rebuild). Mines excluded: rebuilding
+    them needs a dedicated group with a Robo-Miner (classic RebuildMines
+    pattern); those entries come via that group's roster.
+    """
+    out: list[tuple[str, str, int, int]] = []
+    for u in (mission.units or []):
+        if int(u.player) != int(player):
+            continue
+        if _strip_map(u.unit_type) not in _BUILDING_TYPES:
+            continue
+        btype = mapid(u.unit_type)
+        if btype in ("mapCommonOreMine", "mapRareOreMine"):
+            continue
         cargo = mapid(u.cargo) if (u.cargo and u.cargo != "mapNone") else "mapNone"
         out.append((btype, cargo, int(u.x), int(u.y)))
     return out

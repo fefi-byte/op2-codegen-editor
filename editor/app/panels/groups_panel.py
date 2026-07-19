@@ -88,6 +88,8 @@ class GroupsPanel(QWidget):
         self.form.addRow(tr("groups.row_rect_height"), self.rect_h)
         self.form.addRow("", self.pick_rect)
         self.form.addRow(tr("groups.row_units"), self.unit_list)
+        self.record_all = QCheckBox(tr("groups.chk_record_all"))
+        self.form.addRow(self.record_all)
         self.form.addRow(tr("groups.row_targets"), self.target_text)
 
         self.name.textChanged.connect(self._store_current)
@@ -96,6 +98,7 @@ class GroupsPanel(QWidget):
         for w in (self.player, self.rect_x, self.rect_y, self.rect_w, self.rect_h):
             w.valueChanged.connect(self._store_current)
         self.unit_list.itemChanged.connect(self._store_current)
+        self.record_all.toggled.connect(self._store_current)
         self.target_text.textChanged.connect(self._store_current)
 
         detail_inner = QWidget()
@@ -378,6 +381,10 @@ class GroupsPanel(QWidget):
         for widget in (self.rect_x, self.rect_y, self.rect_w, self.rect_h, self.pick_rect):
             self.form.setRowVisible(widget, has_rect)
         self.form.setRowVisible(self.target_text, is_reinforce)
+        is_building = not (is_reinforce or is_fight or is_mining)
+        self.form.setRowVisible(self.record_all, is_building)
+        if is_building:
+            self.record_all.setChecked(bool(getattr(group, "record_all", True)))
         rect_label = tr("groups.row_idle_rect") if (is_fight or is_mining) else tr("groups.row_build_rect")
         self.form.setRowVisible(self.rect_section_label, has_rect)
         self.rect_section_label.setText(rect_label)
@@ -445,6 +452,8 @@ class GroupsPanel(QWidget):
             if item.checkState() == Qt.Checked:
                 selected.append(item.data(Qt.UserRole))
         group.unit_ids = selected
+        if not (is_reinforce or is_fight or is_mining):
+            group.record_all = self.record_all.isChecked()
         if is_reinforce:
             group.targets = self._targets_from_text(self.target_text.toPlainText())
         item = self.glist.currentItem()
