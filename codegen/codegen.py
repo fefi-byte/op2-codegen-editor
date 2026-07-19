@@ -314,10 +314,27 @@ def _emit_base_layout(mission: Mission) -> list[str]:
             else:
                 vehicles.append(u)
 
+        beacon_tiles = {(int(b.x), int(b.y)) for b in beacons}
         for u in buildings:
             cargo = mapid(u.cargo) if (u.cargo and u.cargo != "mapNone") else "mapNone"
+            btype = mapid(u.unit_type)
+            if btype == "mapRareOreMine":
+                # Per DLL erzeugte Rare-Ore-Mines funktionieren nicht (Coding
+                # 101 W9): stattdessen Rare-Beacon + CommonOreMine auf dem
+                # Feld -- die Engine macht daraus eine echte Rare-Ore-Mine.
+                # Liegt schon ein (Editor-)Beacon auf dem Feld, wird keiner
+                # doppelt erzeugt.
+                # DLL-created rare ore mines do not work (Coding 101 W9):
+                # emit a rare beacon + CommonOreMine instead -- the engine
+                # turns that into a working rare ore mine. If an (editor)
+                # beacon already sits on the tile, none is duplicated.
+                if (int(u.x), int(u.y)) not in beacon_tiles:
+                    lines.append(
+                        f"        TethysGame::CreateBeacon(mapMiningBeacon, "
+                        f"{_xypos(u.x, u.y)}, OreTypeRare, BarRandom, VariantRandom);")
+                btype = "mapCommonOreMine"
             lines.append(
-                f"        TethysGame::CreateUnit(_u, {mapid(u.unit_type)}, "
+                f"        TethysGame::CreateUnit(_u, {btype}, "
                 f"{_xy(u.x, u.y)}, {pidx}, {cargo}, 0);")
 
         for u in vehicles:
@@ -567,8 +584,18 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
         for e in entries:
             wt = e.get("weapon_type") or "mapNone"
             weapon = mapid(wt) if wt != "mapNone" else "mapNone"
+            utype = mapid(e.get("unit_type", "mapScout"))
+            if utype == "mapRareOreMine":
+                # Per DLL erzeugte Rare-Ore-Mines funktionieren nicht (Coding
+                # 101 W9): Rare-Beacon + CommonOreMine emittieren.
+                # DLL-created rare ore mines do not work (Coding 101 W9):
+                # emit a rare beacon + CommonOreMine instead.
+                lines.append(
+                    f"{indent}    TethysGame::CreateBeacon(mapMiningBeacon, "
+                    f"{_xypos(e.get('x', 0), e.get('y', 0))}, OreTypeRare, BarRandom, VariantRandom);")
+                utype = "mapCommonOreMine"
             lines.append(
-                f"{indent}    TethysGame::CreateUnit(_u, {mapid(e.get('unit_type', 'mapScout'))}, "
+                f"{indent}    TethysGame::CreateUnit(_u, {utype}, "
                 f"{_xy(e.get('x', 0), e.get('y', 0))}, {int(action.player)}, {weapon}, 0);"
             )
         lines.append(f"{indent}}}")
@@ -598,15 +625,25 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
             for p in zone:
                 lines.append(
                     f"{indent}GameMap::SetLavaPossible({_xy(int(p[0]), int(p[1]))}, 1);")
-            lines.append(
-                f"{indent}TethysGame::SetEruption({xy}, "
-                f"{int(getattr(action, 'spread_speed', 15))});")
+            spread = int(getattr(action, "spread_speed", 15))
+            lines.append(f"{indent}TethysGame::SetEruption({xy}, {spread});")
+            # Ohne SetLavaSpeed fliesst die Lava nicht mit der erwarteten
+            # Geschwindigkeit (klassisches Rezept: beide Aufrufe, siehe
+            # Coding 101 W4). / Without SetLavaSpeed the lava does not flow
+            # at the expected speed (classic recipe: both calls).
+            lines.append(f"{indent}TethysGame::SetLavaSpeed({spread});")
             return lines
         if dtype == "blight":
+            # Der Blight hat KEINE automatische Warnmeldung -- eine eigene
+            # message-Aktion davor ist empfehlenswert. Spread skaliert mit
+            # der Kartengroesse. / The blight has NO automatic warning
+            # message -- a preceding message action is recommended. Spread
+            # scales with map size.
+            spread = int(getattr(action, "spread_speed", 15)) or 15
             return [
                 f"{indent}GameMap::SetVirusUL("
                 f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, 1);",
-                f"{indent}TethysGame::SetMicrobeSpreadSpeed(20);",
+                f"{indent}TethysGame::SetMicrobeSpreadSpeed({spread});",
             ]
         if dtype == "unblight":
             return [
@@ -1057,26 +1094,31 @@ def _patrol_locations(action) -> list[str]:
 
 
 def _emit_patrol_route(indent: str, action, gvar: str, *, braces: bool = True) -> list[str]:
-    """PatrolRoute-Setup fuer eine FightGroup: Wegpunkt-Array (x = -1
-    terminiert bei weniger als 8 Punkten, siehe Structs.h) + SetPatrolMode +
-    DoPatrolOnly.
+    """PatrolRoute-Setup fuer eine FightGroup: Wegpunkt-Array (immer mit
+    x = -1 terminiert, siehe Structs.h) + SetPatrolMode + DoPatrolOnly.
 
-    PatrolRoute setup for a FightGroup: waypoint array (x = -1 terminated
-    when fewer than 8 points, see Structs.h) + SetPatrolMode + DoPatrolOnly.
+    WICHTIG: Die Engine BEHAELT den Pointer auf Route und Wegpunktliste
+    (verifiziert in TitanAPI groups.hpp) -- beide muessen den Aufruf
+    ueberleben, deshalb `static`. Jede Emissionsstelle hat ihren eigenen
+    Block-Scope und damit ihre eigene statische Kopie.
+
+    PatrolRoute setup for a FightGroup: waypoint array (always terminated
+    with x = -1, see Structs.h) + SetPatrolMode + DoPatrolOnly.
+
+    IMPORTANT: The engine KEEPS the pointer to the route and waypoint list
+    (verified in TitanAPI groups.hpp) -- both must outlive the call, hence
+    `static`. Each emission site has its own block scope and therefore its
+    own static copy.
     """
-    pts = _patrol_locations(action)
-    if len(pts) < 8:
-        pts = pts + ["LOCATION(-1, -1)"]
+    pts = _patrol_locations(action) + ["LOCATION(-1, -1)"]
     out = []
     if braces:
         out.append(f"{indent}{{")
         inner = indent + "    "
     else:
         inner = indent
-    out.append(f"{inner}LOCATION _wps[] = {{ {', '.join(pts)} }};")
-    out.append(f"{inner}PatrolRoute _route;")
-    out.append(f"{inner}_route.unknown1 = 0;")
-    out.append(f"{inner}_route.waypoints = _wps;")
+    out.append(f"{inner}static LOCATION _wps[] = {{ {', '.join(pts)} }};")
+    out.append(f"{inner}static PatrolRoute _route = {{ 0, _wps }};")
     out.append(f"{inner}{gvar}.SetPatrolMode(_route);")
     out.append(f"{inner}{gvar}.DoPatrolOnly();")
     if braces:
@@ -1553,6 +1595,19 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         body.append(f"if ({armed_var} && !{launched_var} && {fg}.TotalUnitCount() >= {total}) {{")
         body.append(f"    {launched_var} = true;")
         body.extend(f"    {line}" for line in launch)
+        if auto_attack:
+            # Sirbomber-Muster (Coding 101 W10): sobald die Welle angreift,
+            # den Nachschub kappen -- sonst produziert die ReinforceGroup
+            # endlos Einzel-Einheiten, die der kaempfenden Gruppe direkt in
+            # die Spielerbasis hinterherlaufen.
+            # Sirbomber pattern (Coding 101 W10): once the wave attacks, cut
+            # the supply -- otherwise the ReinforceGroup endlessly produces
+            # single units that trail the fighting group straight into the
+            # player's base.
+            src_var = ctx["group_vars"].get(getattr(action, "source_group_name", "") or "")
+            if src_var:
+                body.append(f"    {src_var}.UnRecordVehGroup({fg});")
+            body.append(f"    {fg}.ClearTargCount();")
         body.append(f"}}")
 
     return body
@@ -1815,9 +1870,21 @@ def generate_levelmain(mission: Mission) -> str:
     # --- Exports (Level-Metadaten) ---
     num_players = max(1, len(mission.players or []) or 1)
     tech_tree = (getattr(mission, "tech_tree", None) or "MULTITEK.TXT").strip() or "MULTITEK.TXT"
+    # Multiplayer-Missionen mit KI-Spielern brauchen DescBlockEx.aiPlayerCount
+    # (sonst kennt OP2 die KI-Slots nicht); bei Colony/Kampagne bleibt 0.
+    # Multiplayer missions with AI players need DescBlockEx.aiPlayerCount
+    # (otherwise OP2 does not know about the AI slots); Colony/campaign: 0.
+    num_ai = 0
+    if mission.type not in (MissionType.Colony, MissionType.AutoDemo, MissionType.Tutorial):
+        num_ai = sum(1 for p in (mission.players or []) if not p.is_human)
+        # AIModDesc.numPlayers zaehlt in Multiplayer nur MENSCHLICHE Spieler
+        # (max 6); KI-Slots meldet DescBlockEx (Coding 101 W11).
+        # In multiplayer AIModDesc.numPlayers counts HUMAN players only
+        # (max 6); AI slots are reported via DescBlockEx (Coding 101 W11).
+        num_players = max(1, num_players - num_ai)
     add(f"ExportLevelDetailsFull({_cpp_string(mission.name)}, {_cpp_string(mission.map)}, "
         f"{_cpp_string(tech_tree)}, {_mission_type_literal(mission.type)}, {num_players}, 12, 0)")
-    add("Export const AIModDescEx DescBlockEx = { 0 };")
+    add(f"Export const AIModDescEx DescBlockEx = {{ {num_ai} }};")
     add("")
 
     # --- InitProc ---
