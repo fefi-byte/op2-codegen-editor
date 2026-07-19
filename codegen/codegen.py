@@ -256,11 +256,20 @@ def _emit_player_setup(idx: int, p: PlayerSpec) -> list[str]:
     return lines
 
 
-def _emit_base_layout(mission: Mission) -> list[str]:
+def _emit_base_layout(mission: Mission, ctx: dict) -> list[str]:
     """Emit the initial base per player: beacons, tubes/walls, buildings, vehicles.
 
     The classic SDK has no BaseLayout convenience -- everything is created
     directly via TethysGame::CreateBeacon / CreateWallOrTube / CreateUnit.
+
+    Einheiten, die spaeter referenziert werden (Gruppen-Roster, benannte
+    Einheiten), werden DIREKT in ihr Handle erzeugt (ctx["uid_handle_vars"])
+    -- das klassische, bewaehrte Muster. Positions-Enumeration in InitProc
+    entfaellt damit komplett.
+
+    Units that are referenced later (group rosters, named units) are created
+    DIRECTLY into their handle (ctx["uid_handle_vars"]) -- the classic,
+    proven pattern. No position enumeration in InitProc anymore.
     """
     by_player_units: dict[int, list] = {}
     for u in (mission.units or []):
@@ -314,6 +323,7 @@ def _emit_base_layout(mission: Mission) -> list[str]:
             else:
                 vehicles.append(u)
 
+        handle_vars = ctx.get("uid_handle_vars", {})
         beacon_tiles = {(int(b.x), int(b.y)) for b in beacons}
         for u in buildings:
             cargo = mapid(u.cargo) if (u.cargo and u.cargo != "mapNone") else "mapNone"
@@ -333,8 +343,9 @@ def _emit_base_layout(mission: Mission) -> list[str]:
                         f"        TethysGame::CreateBeacon(mapMiningBeacon, "
                         f"{_xypos(u.x, u.y)}, OreTypeRare, BarRandom, VariantRandom);")
                 btype = "mapCommonOreMine"
+            uvar = handle_vars.get(getattr(u, "uid", ""), "_u")
             lines.append(
-                f"        TethysGame::CreateUnit(_u, {btype}, "
+                f"        TethysGame::CreateUnit({uvar}, {btype}, "
                 f"{_xy(u.x, u.y)}, {pidx}, {cargo}, 0);")
 
         for u in vehicles:
@@ -342,8 +353,9 @@ def _emit_base_layout(mission: Mission) -> list[str]:
             facing_idx = int(getattr(u, "rotation", 0)) % 8
             facing = ("East", "SouthEast", "South", "SouthWest",
                       "West", "NorthWest", "North", "NorthEast")[facing_idx]
+            uvar = handle_vars.get(getattr(u, "uid", ""), "_u")
             lines.append(
-                f"        TethysGame::CreateUnit(_u, {mapid(u.unit_type)}, "
+                f"        TethysGame::CreateUnit({uvar}, {mapid(u.unit_type)}, "
                 f"{_xy(u.x, u.y)}, {pidx}, {weapon}, {facing});")
 
         lines.append(f"    }}")
@@ -1505,7 +1517,7 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
         var = ctx["group_vars"][g.name]
         lines.append(f"    {var} = CreateBuildingGroup(Player[{int(g.player)}]);")
         lines.append(f"    {{ MAP_RECT _r = {_rect(g.rect_x, g.rect_y, g.rect_x + g.rect_width, g.rect_y + g.rect_height)}; {var}.SetRect(_r); }}")
-        lines.extend(_emit_take_units(mission, g, var, label="BuildingGroup"))
+        lines.extend(_emit_take_units(mission, g, var, ctx, label="BuildingGroup"))
         # Sollstaerken fuer die Baufahrzeuge (klassisches W9-Rezept) -- sonst
         # ersetzt die Gruppe verlorene ConVecs/RoboMiner/Earthworker nicht.
         # Target counts for the builder vehicles (classic W9 recipe) --
@@ -1522,7 +1534,7 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
         lines.append(f"    {var} = CreateBuildingGroup(Player[{int(g.player)}]);")
         # Vehicle-Factories (oder andere Builder-Einheiten) der ReinforceGroup
         # zuweisen, sonst hat sie keine Quelle fuer Verstaerkungen.
-        lines.extend(_emit_take_units(mission, g, var, label="ReinforceGroup"))
+        lines.extend(_emit_take_units(mission, g, var, ctx, label="ReinforceGroup"))
         for t in (getattr(g, "targets", None) or []):
             target_var = ctx["group_vars"].get(t.group_name)
             if target_var:
@@ -1537,7 +1549,7 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
         var = ctx["group_vars"][g.name]
         lines.append(f"    {var} = CreateFightGroup(Player[{int(g.player)}]);")
         lines.append(f"    {{ MAP_RECT _r = {_rect(g.idle_x, g.idle_y, g.idle_x + g.idle_width, g.idle_y + g.idle_height)}; {var}.SetRect(_r); }}")
-        lines.extend(_emit_take_units(mission, g, var, label="FightGroup"))
+        lines.extend(_emit_take_units(mission, g, var, ctx, label="FightGroup"))
 
     for g in minings:
         var = ctx["group_vars"][g.name]
@@ -1548,7 +1560,7 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
         # No SetRect() here: a MiningGroup's unload area only ever comes via
         # Setup()'s area argument -- that happens per action (see
         # "startMining" in _emit_action_body), not here at group creation.
-        lines.extend(_emit_take_units(mission, g, var, label="MiningGroup"))
+        lines.extend(_emit_take_units(mission, g, var, ctx, label="MiningGroup"))
 
     return lines
 
@@ -1643,7 +1655,10 @@ def _take_units_loop(group, var: str, positions: list[tuple[int, int]], *,
             f"        while (_ge.GetNext(_m)) {{",
             f"            if (_m.unitID == _u.unitID) {{ _member = true; break; }}",
             f"        }}",
-            f"        if (!_member) {var}.TakeUnit(_u);",
+            f"        if (!_member) {{",
+            f"            {var}.TakeUnit(_u);",
+            f'            op2::log::linef("Repair: Einheit %d -> Gruppe wieder aufgenommen", _u.unitID);',
+            f"        }}",
         ]
     else:
         out.append(f"        {var}.TakeUnit(_u);")
@@ -1654,16 +1669,25 @@ def _take_units_loop(group, var: str, positions: list[tuple[int, int]], *,
     return out
 
 
-def _emit_take_units(mission: Mission, group, var: str, *, label: str) -> list[str]:
-    """Emit a PlayerUnitEnum-Schleife die im Editor markierte Units der Group
-    EINMALIG (InitProc) zuweist. Funktioniert sowohl fuer Vehicles (Factories
-    sind Buildings) als auch fuer Combat-Units / ConVecs / Trucks.
+def _emit_take_units(mission: Mission, group, var: str, ctx: dict, *, label: str) -> list[str]:
+    """Roster-Einheiten der Group EINMALIG (InitProc) per DIREKTEM Handle
+    zuweisen -- die Handles wurden in _emit_base_layout von CreateUnit
+    befuellt (klassisches Muster, exakt wie Sirbombers W9-Beispiel).
+
+    Assign the group's roster units ONCE (InitProc) via DIRECT handle --
+    the handles were filled by CreateUnit in _emit_base_layout (classic
+    pattern, exactly like Sirbomber's W9 example).
     """
-    positions = _take_units_positions(mission, group)
-    if not positions:
-        return []
-    out: list[str] = [f"    // Einheiten der {label} '{group.name}' zuweisen"]
-    out.extend(f"    {line}" for line in _take_units_loop(group, var, positions))
+    uids = [u for u in (getattr(group, "unit_ids", None) or []) if u]
+    handle_vars = ctx.get("uid_handle_vars", {})
+    out: list[str] = []
+    for uid in uids:
+        hvar = handle_vars.get(uid)
+        if not hvar:
+            continue
+        if not out:
+            out.append(f"    // Einheiten der {label} '{group.name}' zuweisen")
+        out.append(f"    if ({hvar}.unitID != 0) {var}.TakeUnit({hvar});")
     return out
 
 
@@ -1904,10 +1928,33 @@ def _build_codegen_context(mission: Mission) -> dict:
     # Benannte platzierte Einheiten: UnitEx-Handles in g_save fuer unitCmd.
     # Named placed units: UnitEx handles in g_save for unitCmd actions.
     ctx["unit_vars"] = {}
+    ctx["unit_vars_by_uid"] = {}
     for u in (mission.units or []):
         name = (getattr(u, "unit_name", "") or "").strip()
         if name and name not in ctx["unit_vars"]:
-            ctx["unit_vars"][name] = f"_unit_{_ident(name)}"
+            var = f"_unit_{_ident(name)}"
+            ctx["unit_vars"][name] = var
+            if getattr(u, "uid", ""):
+                ctx["unit_vars_by_uid"][u.uid] = var
+    # uid -> Handle-Variable fuer ALLE spaeter referenzierten Einheiten:
+    # benannte Einheiten (g_save-Var) + Gruppen-Roster (_boot_N, file-scope).
+    # Sie werden in _emit_base_layout DIREKT per CreateUnit befuellt --
+    # klassisches Muster, keine Positions-Enumeration in InitProc.
+    # uid -> handle variable for ALL units referenced later: named units
+    # (g_save var) + group rosters (_boot_N, file scope). They are filled
+    # DIRECTLY by CreateUnit in _emit_base_layout -- classic pattern, no
+    # position enumeration in InitProc.
+    ctx["uid_handle_vars"] = dict(ctx["unit_vars_by_uid"])
+    ctx["boot_handle_vars"] = []
+    boot_idx = 0
+    for attr in ("building_groups", "reinforce_groups", "fight_groups", "mining_groups"):
+        for g in (getattr(mission, attr, None) or []):
+            for uid in (getattr(g, "unit_ids", None) or []):
+                if uid and uid not in ctx["uid_handle_vars"]:
+                    var = f"_boot_{boot_idx}"
+                    ctx["uid_handle_vars"][uid] = var
+                    ctx["boot_handle_vars"].append(var)
+                    boot_idx += 1
     return ctx
 
 
@@ -2077,6 +2124,17 @@ def generate_levelmain(mission: Mission) -> str:
         add(f"static UnitEx& {var} = g_save.{var};")
     add("")
 
+    # Handles fuer Gruppen-Roster-Einheiten ohne Namen: werden im BaseLayout
+    # direkt von CreateUnit befuellt und in InitProc per TakeUnit uebergeben.
+    # Nur fuer InitProc gebraucht -> kein g_save noetig.
+    # Handles for unnamed group roster units: filled directly by CreateUnit
+    # in the base layout and handed over via TakeUnit in InitProc. Only
+    # needed during InitProc -> no g_save required.
+    for var in ctx.get("boot_handle_vars", []):
+        add(f"static UnitEx {var};")
+    if ctx.get("boot_handle_vars"):
+        add("")
+
     # No-Op-Callback fuer Trigger, die nur als Sieg-/Niederlagen-Bedingung
     # dienen (klassische Konvention, wird auch von OP2Helper referenziert).
     # No-op callback for triggers that only serve as victory/defeat
@@ -2126,25 +2184,14 @@ def generate_levelmain(mission: Mission) -> str:
             add(line)
         add("")
 
-    # Base layout
-    for line in _emit_base_layout(mission):
+    # Base layout. Benannte Einheiten + Gruppen-Roster-Einheiten werden
+    # darin DIREKT in ihre Handles erzeugt (kein findUnitAt/Enumeration --
+    # klassisches Muster, verlaesslich auch waehrend InitProc).
+    # Base layout. Named units + group roster units are created DIRECTLY
+    # into their handles inside it (no findUnitAt/enumeration -- classic
+    # pattern, reliable during InitProc too).
+    for line in _emit_base_layout(mission, ctx):
         add(line)
-
-    # Benannte Einheiten einfangen: nach dem BaseLayout steht jede Einheit
-    # noch auf ihrer Platzierungs-Kachel; LocationEnumerator findet Gebaeude
-    # wie Fahrzeuge.
-    # Capture named units: right after the base layout every unit still sits
-    # on its placement tile; LocationEnumerator finds buildings and vehicles
-    # alike.
-    if ctx["unit_vars"]:
-        add("")
-        add("    // --- Named units ---")
-        for u in (mission.units or []):
-            name = (getattr(u, "unit_name", "") or "").strip()
-            var = ctx["unit_vars"].get(name)
-            if not var:
-                continue
-            add(f"    {var} = findUnitAt({_xy(u.x, u.y)}, {mapid(u.unit_type)}, {int(u.player)});")
 
     # Groups (declared in g_save, assigned here)
     for line in _emit_groups(mission, ctx):
