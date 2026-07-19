@@ -1592,63 +1592,65 @@ def _roster_targ_counts(mission: Mission, group) -> list[tuple[str, str, int]]:
     return [(t, w, n) for (t, w), n in sorted(counts.items())]
 
 
-def _take_units_positions(mission: Mission, group) -> list[tuple[int, int]]:
-    """Resolve a group's assigned unit_ids to their (editor) tile positions.
+def _roster_building_entries(mission: Mission, group) -> list[tuple[str, int, int]]:
+    """Roster-GEBAEUDE einer Gruppe als (map_id, editor_x, editor_y).
 
-    Sucht die UnitSpec-Eintraege mit passender uid in mission.units und
-    sammelt ihre (editor) Tile-Position.
+    Nur Gebaeude: der Selbstheil-Callback nimmt zerstoerte + von der Engine
+    an derselben Stelle wieder errichtete Gebaeude erneut auf; verlorene
+    FAHRZEUGE ersetzt stattdessen die Sollstaerke (SetTargCount +
+    ReinforceGroup). mapRareOreMine wird wie im BaseLayout als
+    mapCommonOreMine behandelt (Rare-Ore-Mine-Gotcha).
+
+    A group's roster BUILDINGS as (map_id, editor_x, editor_y). Buildings
+    only: the self-heal callback re-takes destroyed buildings the engine
+    rebuilt in place; lost VEHICLES are replaced via target counts
+    (SetTargCount + ReinforceGroup) instead. mapRareOreMine is treated as
+    mapCommonOreMine, same as in the base layout (rare ore mine gotcha).
     """
     uids = list(getattr(group, "unit_ids", None) or [])
     if not uids:
         return []
     by_uid = {getattr(u, "uid", ""): u for u in (mission.units or [])
               if getattr(u, "uid", "")}
-    positions: list[tuple[int, int]] = []
+    out: list[tuple[str, int, int]] = []
     for uid in uids:
         u = by_uid.get(uid)
         if u is None:
             continue
-        positions.append((int(u.x), int(u.y)))
-    return positions
+        if _strip_map(u.unit_type) not in _BUILDING_TYPES:
+            continue
+        btype = mapid(u.unit_type)
+        if btype == "mapRareOreMine":
+            btype = "mapCommonOreMine"
+        out.append((btype, int(u.x), int(u.y)))
+    return out
 
 
-def _take_units_loop(group, var: str, positions: list[tuple[int, int]], *,
-                     guard_membership: bool = False) -> list[str]:
-    """Der Enumerator-Loop, der eine lebende Einheit an `positions` per
-    Group.TakeUnit uebernimmt. In einen eigenen { }-Block gewickelt, damit
-    mehrere solcher Bloecke gefahrlos in EINER Funktion aneinandergereiht
-    werden koennen (z.B. im wiederkehrenden Reparatur-Callback).
+def _repair_building_take_lines(group, var: str,
+                                entries: list[tuple[str, int, int]]) -> list[str]:
+    """Selbstheil-Bloecke fuer Roster-Gebaeude: je Gebaeude eine
+    PlayerBuildingEnum-Suche (typgenau, engine-seitige Gebaeudeliste) mit
+    Positions-Toleranz +-2 Kacheln (Anker-Verschiebung bei geraden
+    Footprints) und Mitglieds-Guard -- wiederholtes TakeUnit wuerde den
+    Bau-Zustand der Gruppen-KI jede Mark zuruecksetzen.
 
-    `guard_membership`: Einheiten, die schon Mitglied sind, NICHT erneut
-    uebernehmen -- ein wiederholtes TakeUnit (z.B. jede Mark im Reparatur-
-    Callback) setzt sonst den Bau-/Arbeitszustand der Gruppen-KI staendig
-    zurueck, und die Gruppe baut nie etwas fertig.
-
-    The enumerator loop that assigns any live unit at `positions` to `var`
-    via TakeUnit(). Wrapped in its own { } block so several of these can
-    safely be concatenated in ONE function (e.g. the recurring repair
-    callback, see _emit_group_repair).
-
-    `guard_membership`: do NOT re-take units that are already members -- a
-    repeated TakeUnit (e.g. every mark in the repair callback) constantly
-    resets the group AI's build/work state, and the group never finishes
-    building anything.
+    Self-heal blocks for roster buildings: one PlayerBuildingEnum search
+    per building (type-exact, engine-side building list) with a +-2 tile
+    position tolerance (anchor shift for even footprints) and a membership
+    guard -- repeated TakeUnit would reset the group AI's build state
+    every mark.
     """
-    if not positions:
-        return []
-    conds = " || ".join(
-        f"(_loc == {_xy(x, y)})" for (x, y) in positions
-    )
-    out = [
-        f"{{",
-        f"    PlayerUnitEnum _e({int(group.player)});",
-        f"    UnitEx _u;",
-        f"    while (_e.GetNext(_u)) {{",
-        f"        LOCATION _loc = _u.Location();",
-        f"        if (!({conds})) continue;",
-    ]
-    if guard_membership:
+    out: list[str] = []
+    for (btype, x, y) in entries:
         out += [
+            f"{{",
+            f"    PlayerBuildingEnum _e({int(group.player)}, {btype});",
+            f"    UnitEx _u;",
+            f"    LOCATION _a = {_xy(x, y)};",
+            f"    while (_e.GetNext(_u)) {{",
+            f"        LOCATION _loc = _u.Location();",
+            f"        if (_loc.x < _a.x - 2 || _loc.x > _a.x + 2 ||",
+            f"            _loc.y < _a.y - 2 || _loc.y > _a.y + 2) continue;",
             f"        bool _member = false;",
             f"        GroupEnumerator _ge({var});",
             f"        UnitEx _m;",
@@ -1657,15 +1659,11 @@ def _take_units_loop(group, var: str, positions: list[tuple[int, int]], *,
             f"        }}",
             f"        if (!_member) {{",
             f"            {var}.TakeUnit(_u);",
-            f'            op2::log::linef("Repair: Einheit %d -> Gruppe wieder aufgenommen", _u.unitID);',
+            f'            op2::log::linef("Repair: {btype} (Einheit %d) -> Gruppe wieder aufgenommen", _u.unitID);',
             f"        }}",
+            f"    }}",
+            f"}}",
         ]
-    else:
-        out.append(f"        {var}.TakeUnit(_u);")
-    out += [
-        f"    }}",
-        f"}}",
-    ]
     return out
 
 
@@ -1747,9 +1745,9 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
     for attr in ("building_groups", "reinforce_groups", "mining_groups"):
         for g in (getattr(mission, attr, None) or []):
             var = ctx["group_vars"][g.name]
-            positions = _take_units_positions(mission, g)
-            if positions:
-                body.extend(_take_units_loop(g, var, positions, guard_membership=True))
+            entries = _roster_building_entries(mission, g)
+            if entries:
+                body.extend(_repair_building_take_lines(g, var, entries))
 
     for action, armed_var in ctx.get("mining_actions", []):
         var = ctx["group_vars"].get(action.group_name, None)
