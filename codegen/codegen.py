@@ -1505,6 +1505,12 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
         lines.append(f"    {var} = CreateBuildingGroup(Player[{int(g.player)}]);")
         lines.append(f"    {{ MAP_RECT _r = {_rect(g.rect_x, g.rect_y, g.rect_x + g.rect_width, g.rect_y + g.rect_height)}; {var}.SetRect(_r); }}")
         lines.extend(_emit_take_units(mission, g, var, label="BuildingGroup"))
+        # Sollstaerken fuer die Baufahrzeuge (klassisches W9-Rezept) -- sonst
+        # ersetzt die Gruppe verlorene ConVecs/RoboMiner/Earthworker nicht.
+        # Target counts for the builder vehicles (classic W9 recipe) --
+        # otherwise the group does not replace lost ConVecs/miners/earthworkers.
+        for (t, w, n) in _roster_targ_counts(mission, g):
+            lines.append(f"    {var}.SetTargCount({t}, {w}, {n});")
 
     for g in reinforces:
         var = ctx["group_vars"][g.name]
@@ -1540,6 +1546,33 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
         lines.extend(_emit_take_units(mission, g, var, label="MiningGroup"))
 
     return lines
+
+
+def _roster_targ_counts(mission: Mission, group) -> list[tuple[str, str, int]]:
+    """Sollstaerken aus dem Gruppen-Roster ableiten: je Fahrzeugtyp (+Waffe)
+    die Anzahl der zugewiesenen Einheiten. Klassisches W9-Rezept
+    (Construction.SetTargCount(mapConVec, mapNone, 3)) -- ohne Sollstaerke
+    ersetzt die Gruppe verlorene Baufahrzeuge nicht.
+
+    Derive target counts from the group's roster: per vehicle type (+weapon)
+    the number of assigned units. Classic W9 recipe
+    (Construction.SetTargCount(mapConVec, mapNone, 3)) -- without a target
+    count the group does not replace lost builder vehicles.
+    """
+    uids = set(getattr(group, "unit_ids", None) or [])
+    if not uids:
+        return []
+    counts: dict[tuple[str, str], int] = {}
+    for u in (mission.units or []):
+        if getattr(u, "uid", "") not in uids:
+            continue
+        t = _strip_map(u.unit_type)
+        if t in _BUILDING_TYPES:
+            continue  # nur Fahrzeuge / vehicles only
+        weapon = mapid(u.cargo) if (u.cargo and u.cargo != "mapNone") else "mapNone"
+        key = (mapid(u.unit_type), weapon)
+        counts[key] = counts.get(key, 0) + 1
+    return [(t, w, n) for (t, w), n in sorted(counts.items())]
 
 
 def _take_units_positions(mission: Mission, group) -> list[tuple[int, int]]:

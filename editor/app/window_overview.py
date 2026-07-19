@@ -80,6 +80,12 @@ class _OverviewMixin:
             self.validation_panel.refresh()
         if hasattr(self, "_overlay_items"):
             self._refresh_overlays()
+        # Geplante Gebaeude/Leitungen aus Trigger-Aktionen neu zeichnen --
+        # jede Trigger-/Aktions-Aenderung laeuft ueber _refresh_overview.
+        # Redraw planned buildings/lines from trigger actions -- every
+        # trigger/action edit goes through _refresh_overview.
+        if hasattr(self, "_planned_items"):
+            self._redraw_planned_actions()
         expanded = {self.overview.topLevelItem(i).text(0).split(" (")[0]
                     for i in range(self.overview.topLevelItemCount())
                     if self.overview.topLevelItem(i).isExpanded()}

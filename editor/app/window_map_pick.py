@@ -466,36 +466,102 @@ class _MapPickMixin:
             self.scene.removeItem(item)
         self._planned_items = []
 
-    def _add_planned_rect(self, x, y, w, h, color, brush_style=Qt.BDiagPattern):
+    def _add_planned_rect(self, x, y, w, h, color, brush_style=Qt.BDiagPattern,
+                          tooltip="", label=""):
         rect = QGraphicsRectItem(x * SCENE_TILE, y * SCENE_TILE, w * SCENE_TILE, h * SCENE_TILE)
         rect.setPen(QPen(color, 2, Qt.DashLine))
         brush = QBrush(QColor(color.red(), color.green(), color.blue(), 80))
         brush.setStyle(brush_style)
         rect.setBrush(brush)
         rect.setZValue(900)
+        if tooltip:
+            rect.setToolTip(tooltip)
         self.scene.addItem(rect)
         self._planned_items.append(rect)
+        if label:
+            t = QGraphicsSimpleTextItem(label)
+            f = QFont()
+            f.setPointSize(7)
+            t.setFont(f)
+            t.setBrush(QBrush(color))
+            t.setPos(x * SCENE_TILE + 2, y * SCENE_TILE + 1)
+            t.setZValue(901)
+            if tooltip:
+                t.setToolTip(tooltip)
+            self.scene.addItem(t)
+            self._planned_items.append(t)
 
-    def _add_planned_building(self, x, y, building_type, color):
+    def _add_planned_building(self, x, y, building_type, color, tooltip="", label=""):
         fw, fh = STRUCTURE_FOOTPRINTS.get(building_type, (1, 1))
-        self._add_planned_rect(x - fw // 2, y - fh // 2, fw, fh, color)
+        self._add_planned_rect(x - fw // 2, y - fh // 2, fw, fh, color,
+                               tooltip=tooltip, label=label)
 
     def _redraw_planned_actions(self):
+        """Alle durch Trigger-Aktionen GEPLANTEN Gebaeude/Einheiten/Leitungen
+        gestrichelt auf der Karte zeigen -- inkl. Listen-Eintraegen
+        (building_list/unit_list/...) und verschachtelten Wenn/Dann-Aktionen.
+        Tooltip + Label nennen den verursachenden Trigger.
+
+        Show everything trigger actions PLAN to build (buildings/units/
+        tubes/walls) as dashed outlines on the map -- incl. list entries
+        (building_list/unit_list/...) and nested if/then actions. Tooltip +
+        label name the owning trigger.
+        """
         self._clear_planned_actions()
+
+        def walk(actions):
+            for a in (actions or []):
+                yield a
+                yield from walk(getattr(a, "then_actions", None))
+                yield from walk(getattr(a, "else_actions", None))
+
         for trigger in self.triggers:
-            for action in trigger.actions:
+            tip = tr("map_overlay.planned_by_trigger", name=trigger.name)
+            for action in walk(trigger.actions):
                 if action.kind == "recordBuilding":
-                    fw, fh = STRUCTURE_FOOTPRINTS.get(action.building_type, (1, 1))
-                    self._add_planned_rect(
-                        action.x - fw // 2, action.y - fh // 2,
-                        fw, fh, QColor(255, 120, 255))
+                    entries = list(getattr(action, "building_list", None) or [])
+                    if not entries:
+                        entries = [{"building_type": action.building_type,
+                                    "x": action.x, "y": action.y}]
+                    for e in entries:
+                        bt = e.get("building_type", "mapCommandCenter")
+                        self._add_planned_building(
+                            int(e.get("x", 0)), int(e.get("y", 0)), bt,
+                            QColor(255, 120, 255),
+                            tooltip=f"{tip}\n{bt}", label=trigger.name)
+                elif action.kind == "createUnit":
+                    entries = list(getattr(action, "unit_list", None) or [])
+                    if not entries:
+                        entries = [{"unit_type": action.unit_type,
+                                    "x": action.x, "y": action.y}]
+                    color = PLAYER_COLORS[int(getattr(action, "player", 0)) % len(PLAYER_COLORS)]
+                    for e in entries:
+                        ut = e.get("unit_type", "mapScout")
+                        self._add_planned_building(
+                            int(e.get("x", 0)), int(e.get("y", 0)), ut,
+                            color, tooltip=f"{tip}\n{ut}", label=trigger.name)
                 elif action.kind == "recordTube":
-                    for tx, ty in self._line_tiles(action.x, action.y, action.x2, action.y2):
-                        self._add_planned_rect(tx, ty, 1, 1, QColor(120, 220, 255), Qt.Dense4Pattern)
+                    entries = list(getattr(action, "tube_list", None) or [])
+                    if not entries:
+                        entries = [{"x": action.x, "y": action.y,
+                                    "x2": action.x2, "y2": action.y2}]
+                    for e in entries:
+                        for tx, ty in self._line_tiles(int(e.get("x", 0)), int(e.get("y", 0)),
+                                                       int(e.get("x2", 0)), int(e.get("y2", 0))):
+                            self._add_planned_rect(tx, ty, 1, 1, QColor(120, 220, 255),
+                                                   Qt.Dense4Pattern, tooltip=tip)
                 elif action.kind == "recordWall":
-                    for tx, ty in self._line_tiles(action.x, action.y, action.x2, action.y2):
-                        self._add_planned_rect(tx, ty, 1, 1, QColor(255, 180, 80), Qt.Dense4Pattern)
+                    entries = list(getattr(action, "wall_list", None) or [])
+                    if not entries:
+                        entries = [{"x": action.x, "y": action.y,
+                                    "x2": action.x2, "y2": action.y2}]
+                    for e in entries:
+                        for tx, ty in self._line_tiles(int(e.get("x", 0)), int(e.get("y", 0)),
+                                                       int(e.get("x2", 0)), int(e.get("y2", 0))):
+                            self._add_planned_rect(tx, ty, 1, 1, QColor(255, 180, 80),
+                                                   Qt.Dense4Pattern, tooltip=tip)
                 elif (action.kind == "createDisaster"
                       and getattr(action, "disaster_type", "") == "eruption"):
                     for xy in getattr(action, "lava_zone", []) or []:
-                        self._add_planned_rect(xy[0], xy[1], 1, 1, QColor(255, 100, 0))
+                        self._add_planned_rect(xy[0], xy[1], 1, 1, QColor(255, 100, 0),
+                                               tooltip=tip)

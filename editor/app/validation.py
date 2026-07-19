@@ -27,6 +27,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_groups(w)
     findings += _check_conditions(w)
     findings += _check_sdk_gotchas(w)
+    findings += _check_building_group_builders(w)
     return findings
 
 
@@ -108,6 +109,58 @@ def _walk_actions(actions):
         yield a
         yield from _walk_actions(getattr(a, "then_actions", None) or [])
         yield from _walk_actions(getattr(a, "else_actions", None) or [])
+
+
+def _check_building_group_builders(w):
+    """Bau-Voraussetzungen von BuildingGroups (Sirbombers W9-Rezept): damit
+    RecordBuilding-Eintraege tatsaechlich gebaut werden, braucht die Gruppe
+    ConVecs + eine StructureFactory im Roster (fuer Minen: einen RoboMiner)
+    und der Besitzer muss ein KI-Spieler sein.
+
+    Build prerequisites of BuildingGroups (Sirbomber's W9 recipe): for
+    RecordBuilding entries to actually get built, the group needs ConVecs +
+    a StructureFactory in its roster (for mines: a RoboMiner) and the owner
+    must be an AI player.
+    """
+    out = []
+    # Welche Gruppen bekommen recordBuilding-Eintraege (per Gruppen-Panel
+    # spielt keine Rolle -- entscheidend sind die Aktionen)?
+    recorded: dict[str, set] = {}
+    for t in (getattr(w, "triggers", None) or []):
+        for a in _walk_actions(t.actions):
+            if a.kind != "recordBuilding" or not getattr(a, "group_name", ""):
+                continue
+            entries = list(getattr(a, "building_list", None) or [])
+            if not entries:
+                entries = [{"building_type": getattr(a, "building_type", "")}]
+            types = {e.get("building_type", "") for e in entries}
+            recorded.setdefault(a.group_name, set()).update(types)
+    if not recorded:
+        return out
+    uid_types = {getattr(o, "uid", ""): getattr(o, "map_id", "")
+                 for o in (getattr(w, "objects", None) or [])}
+    players = getattr(w, "players", None) or []
+    for g in (getattr(w, "building_groups", None) or []):
+        if g.name not in recorded:
+            continue
+        roster = {uid_types.get(uid, "") for uid in (getattr(g, "unit_ids", None) or [])}
+        mines_only = recorded[g.name] <= {"mapCommonOreMine", "mapRareOreMine"}
+        if mines_only:
+            if "mapRoboMiner" not in roster:
+                out.append(("warning", tr("validation.bg_no_miner", name=g.name),
+                            ("group", None)))
+        else:
+            if "mapConVec" not in roster:
+                out.append(("warning", tr("validation.bg_no_convec", name=g.name),
+                            ("group", None)))
+            if "mapStructureFactory" not in roster:
+                out.append(("warning", tr("validation.bg_no_structure_factory", name=g.name),
+                            ("group", None)))
+        p = int(getattr(g, "player", 0))
+        if 0 <= p < len(players) and getattr(players[p], "is_human", True):
+            out.append(("warning", tr("validation.bg_human_player", name=g.name, p=p),
+                        ("group", None)))
+    return out
 
 
 def _check_sdk_gotchas(w):
