@@ -1506,6 +1506,16 @@ class ActionInlineForm(QWidget):
         self.rt_x2.setValue(a.x2); self.rt_y2.setValue(a.y2)
         self.rw_x.setValue(a.x); self.rw_y.setValue(a.y)
         self.rw_x2.setValue(a.x2); self.rw_y2.setValue(a.y2)
+        # Auch die Typ-Combos der Eingabezeilen vorbelegen -- sonst springen
+        # sie nach einem Karten-Pick (Formular-Neuaufbau) auf den ersten
+        # Eintrag zurueck.
+        # Seed the input rows' type combos too -- otherwise they jump back
+        # to the first entry after a map pick (form rebuild).
+        self._set_combo(self.cu_unit, a.unit_type)
+        self._set_combo(self.cu_weapon, a.weapon_type)
+        self._set_combo(self.rb_building, a.building_type)
+        self._set_combo(self.rb_weapon, a.weapon_type)
+        self._set_combo(self.rw_wall, a.wall_type)
         self._set_combo(self.disaster_type, self._disaster_type_from_action(a))
         self.x_expr.setValue(getattr(a, "x_expr", 0))
         self.y_expr.setValue(getattr(a, "y_expr", 0))
@@ -1615,7 +1625,9 @@ class ActionInlineForm(QWidget):
                   self.wave_group, self.fg_command, self.cmd_target,
                   self.unit_ref, self.unit_command, self.cmd_unit_target,
                   self.mine_ref, self.smelter_ref,
-                  self.morale_mode, self.morale_player, self.flow_dir, self.stats_unit):
+                  self.morale_mode, self.morale_player, self.flow_dir, self.stats_unit,
+                  self.cu_unit, self.cu_weapon, self.rb_building, self.rb_weapon,
+                  self.rw_wall):
             w.currentIndexChanged.connect(self._save)
         self.repeat_start.valueChanged.connect(self._save)
         self.now.toggled.connect(self._save)
@@ -1653,12 +1665,21 @@ class ActionInlineForm(QWidget):
             a.targ_counts = self._targ_counts_from_list()
         elif k == "createUnit":
             a.unit_list = self._unit_list_from_tree()
+            # Auswahl der Eingabezeile in den Legacy-Feldern merken, damit
+            # sie den Karten-Pick-Roundtrip (Formular-Neuaufbau) ueberlebt.
+            # Remember the input row's selection in the legacy fields so it
+            # survives the map-pick round trip (form rebuild).
+            a.unit_type = self.cu_unit.currentData() or a.unit_type
+            a.weapon_type = self.cu_weapon.currentData() or "mapNone"
         elif k == "recordBuilding":
             a.building_list = self._building_list_from_tree()
+            a.building_type = self.rb_building.currentData() or a.building_type
+            a.weapon_type = self.rb_weapon.currentData() or "mapNone"
         elif k == "recordTube":
             a.tube_list = self._tube_list_from_tree()
         elif k == "recordWall":
             a.wall_list = self._wall_list_from_tree()
+            a.wall_type = self.rw_wall.currentData() or a.wall_type
         elif k == "assignToGroup":
             a.group_name = self.assign_group.currentData() or ""
         elif k == "startMining":

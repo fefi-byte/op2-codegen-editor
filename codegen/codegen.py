@@ -1595,32 +1595,58 @@ def _take_units_positions(mission: Mission, group) -> list[tuple[int, int]]:
     return positions
 
 
-def _take_units_loop(group, var: str, positions: list[tuple[int, int]]) -> list[str]:
+def _take_units_loop(group, var: str, positions: list[tuple[int, int]], *,
+                     guard_membership: bool = False) -> list[str]:
     """Der Enumerator-Loop, der eine lebende Einheit an `positions` per
     Group.TakeUnit uebernimmt. In einen eigenen { }-Block gewickelt, damit
     mehrere solcher Bloecke gefahrlos in EINER Funktion aneinandergereiht
     werden koennen (z.B. im wiederkehrenden Reparatur-Callback).
 
+    `guard_membership`: Einheiten, die schon Mitglied sind, NICHT erneut
+    uebernehmen -- ein wiederholtes TakeUnit (z.B. jede Mark im Reparatur-
+    Callback) setzt sonst den Bau-/Arbeitszustand der Gruppen-KI staendig
+    zurueck, und die Gruppe baut nie etwas fertig.
+
     The enumerator loop that assigns any live unit at `positions` to `var`
     via TakeUnit(). Wrapped in its own { } block so several of these can
     safely be concatenated in ONE function (e.g. the recurring repair
     callback, see _emit_group_repair).
+
+    `guard_membership`: do NOT re-take units that are already members -- a
+    repeated TakeUnit (e.g. every mark in the repair callback) constantly
+    resets the group AI's build/work state, and the group never finishes
+    building anything.
     """
     if not positions:
         return []
     conds = " || ".join(
         f"(_loc == {_xy(x, y)})" for (x, y) in positions
     )
-    return [
+    out = [
         f"{{",
         f"    PlayerUnitEnum _e({int(group.player)});",
         f"    UnitEx _u;",
         f"    while (_e.GetNext(_u)) {{",
         f"        LOCATION _loc = _u.Location();",
-        f"        if ({conds}) {var}.TakeUnit(_u);",
+        f"        if (!({conds})) continue;",
+    ]
+    if guard_membership:
+        out += [
+            f"        bool _member = false;",
+            f"        GroupEnumerator _ge({var});",
+            f"        UnitEx _m;",
+            f"        while (_ge.GetNext(_m)) {{",
+            f"            if (_m.unitID == _u.unitID) {{ _member = true; break; }}",
+            f"        }}",
+            f"        if (!_member) {var}.TakeUnit(_u);",
+        ]
+    else:
+        out.append(f"        {var}.TakeUnit(_u);")
+    out += [
         f"    }}",
         f"}}",
     ]
+    return out
 
 
 def _emit_take_units(mission: Mission, group, var: str, *, label: str) -> list[str]:
@@ -1683,18 +1709,25 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
     """
     body: list[str] = []
 
+    # WICHTIG: alles hier laeuft jede Mark und MUSS idempotent sein --
+    # wiederholtes TakeUnit/Setup setzt den Arbeitszustand der Gruppen-KI
+    # zurueck (die Gruppe baut/faehrt dann nie fertig).
+    # IMPORTANT: everything here runs every mark and MUST be idempotent --
+    # repeated TakeUnit/Setup resets the group AI's work state (the group
+    # then never finishes building/hauling).
     for attr in ("building_groups", "reinforce_groups", "mining_groups"):
         for g in (getattr(mission, attr, None) or []):
             var = ctx["group_vars"][g.name]
             positions = _take_units_positions(mission, g)
             if positions:
-                body.extend(_take_units_loop(g, var, positions))
+                body.extend(_take_units_loop(g, var, positions, guard_membership=True))
 
     for action, armed_var in ctx.get("mining_actions", []):
         var = ctx["group_vars"].get(action.group_name, None)
         spec = ctx.get("mining_group_specs", {}).get(action.group_name)
         if not var or spec is None:
             continue
+        ids_var = ctx.get("mining_ids_vars", {}).get(id(action))
         mine_ref = getattr(action, "mine_ref", "") or ""
         smelter_ref = getattr(action, "smelter_ref", "") or ""
         mine_expr = ((ctx.get("unit_vars", {}).get(mine_ref) if mine_ref else None)
@@ -1702,9 +1735,25 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         smelter_expr = ((ctx.get("unit_vars", {}).get(smelter_ref) if smelter_ref else None)
                         or f"unitOnTile({_xy(action.x2, action.y2)})")
         n = _expr_or_int(action.target_count)
-        link = _mining_link_lines(var, spec, mine_expr, smelter_expr, n)
+        area = _rect(spec.idle_x, spec.idle_y,
+                     spec.idle_x + spec.idle_width, spec.idle_y + spec.idle_height)
         body.append(f"if ({armed_var}) {{")
-        body.extend(f"    {line}" for line in link)
+        body.append(f"    UnitEx _mine = {mine_expr};")
+        body.append(f"    UnitEx _smelter = {smelter_expr};")
+        # Setup nur beim ERSTEN Mal bzw. wenn Mine/Smelter neue Einheiten
+        # sind (nach Zerstoerung + Wiederaufbau) -- sonst wuerde die
+        # Truck-Route jede Mark neu gestartet.
+        # Run Setup only the FIRST time resp. when mine/smelter are new
+        # units (after destruction + rebuild) -- otherwise the truck route
+        # would restart every mark.
+        body.append(f"    if (_mine.unitID != 0 && _smelter.unitID != 0 &&")
+        body.append(f"        (_mine.unitID != {ids_var}[0] || _smelter.unitID != {ids_var}[1])) {{")
+        body.append(f"        MAP_RECT _area = {area};")
+        body.append(f"        {var}.Setup(_mine, _smelter, _area);")
+        body.append(f"        {var}.SetTargCount(mapCargoTruck, mapNone, {n});")
+        body.append(f"        {ids_var}[0] = _mine.unitID;")
+        body.append(f"        {ids_var}[1] = _smelter.unitID;")
+        body.append(f"    }}")
         body.append(f"}}")
 
     for action, armed_var in ctx.get("assign_actions", []):
@@ -1714,7 +1763,13 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         body.append(f"if ({armed_var}) {{")
         body.append(f"    UnitEx _b = unitOnTile({_xy(action.x, action.y)});")
         body.append(f"    if (_b.unitID != 0 && _b.GetType() == {mapid(action.building_type)}) {{")
-        body.append(f"        {var}.TakeUnit(_b);")
+        body.append(f"        bool _member = false;")
+        body.append(f"        GroupEnumerator _ge({var});")
+        body.append(f"        UnitEx _m;")
+        body.append(f"        while (_ge.GetNext(_m)) {{")
+        body.append(f"            if (_m.unitID == _b.unitID) {{ _member = true; break; }}")
+        body.append(f"        }}")
+        body.append(f"        if (!_member) {var}.TakeUnit(_b);")
         body.append(f"    }}")
         body.append(f"}}")
 
@@ -1803,6 +1858,7 @@ def _build_codegen_context(mission: Mission) -> dict:
     # -- the loop variable is only valid within its own iteration. Must stay
     # in sync with the same check in _emit_action_body("startMining").
     ctx["mining_action_vars"] = {}
+    ctx["mining_ids_vars"] = {}
     ctx["mining_actions"] = []
     ctx["assign_action_vars"] = {}
     ctx["assign_actions"] = []
@@ -1820,6 +1876,7 @@ def _build_codegen_context(mission: Mission) -> dict:
                     continue
                 armed_var = f"_mining_armed_{mining_idx}"
                 ctx["mining_action_vars"][id(a)] = armed_var
+                ctx["mining_ids_vars"][id(a)] = f"_mining_ids_{mining_idx}"
                 ctx["mining_actions"].append((a, armed_var))
                 mining_idx += 1
             elif a.kind == "assignToGroup":
@@ -1969,6 +2026,12 @@ def generate_levelmain(mission: Mission) -> str:
             add(f"    int {v.name} = {init};")
     for armed_var in ctx.get("mining_action_vars", {}).values():
         add(f"    bool {armed_var} = false;")
+    for ids_var in ctx.get("mining_ids_vars", {}).values():
+        # unitIDs der aktuell verknuepften Mine/Smelter -- Setup laeuft nur
+        # bei Aenderung erneut (siehe _emit_group_repair_body).
+        # unitIDs of the currently linked mine/smelter -- Setup only re-runs
+        # on change (see _emit_group_repair_body).
+        add(f"    int {ids_var}[2] = {{ 0, 0 }};")
     for armed_var in ctx.get("assign_action_vars", {}).values():
         add(f"    bool {armed_var} = false;")
     for (_a, armed_var, launched_var) in ctx.get("wave_actions", []):
@@ -1995,6 +2058,8 @@ def generate_levelmain(mission: Mission) -> str:
         add(f"static {ctype}& {v.name} = g_save.{v.name};")
     for armed_var in ctx.get("mining_action_vars", {}).values():
         add(f"static bool& {armed_var} = g_save.{armed_var};")
+    for ids_var in ctx.get("mining_ids_vars", {}).values():
+        add(f"static int (&{ids_var})[2] = g_save.{ids_var};")
     for armed_var in ctx.get("assign_action_vars", {}).values():
         add(f"static bool& {armed_var} = g_save.{armed_var};")
     for (_a, armed_var, launched_var) in ctx.get("wave_actions", []):

@@ -106,7 +106,21 @@ class _PlacementMixin:
 
     def _on_tile_hover(self, tx, ty):
         self.coord_label.setText(f"Tile: {tx}, {ty}")
-        if self._action_pick and self._action_pick["kind"] in ("recordBuilding", "assignToGroup"):
+        # Footprint-Vorschau am Cursor: auch fuer den "primary"-Pick der
+        # recordBuilding-/createUnit-/assignToGroup-Formulare (dort kommt
+        # der Gebaeudetyp aus der Aktion, siehe _draw_action_building_preview).
+        # Footprint preview at the cursor: also for the "primary" pick of
+        # the recordBuilding/createUnit/assignToGroup forms (the building
+        # type comes from the action there).
+        hover_building_pick = (
+            self._action_pick
+            and (self._action_pick["kind"] in ("recordBuilding", "assignToGroup")
+                 or (self._action_pick["kind"] == "action_field"
+                     and self._action_pick.get("field") == "primary"
+                     and getattr(self._action_pick.get("action"), "kind", "")
+                     in ("recordBuilding", "createUnit", "assignToGroup")))
+        )
+        if hover_building_pick:
             if self.map is not None and 0 <= tx < self.map.width and 0 <= ty < self.map.height:
                 self._draw_action_building_preview(tx, ty)
             else:

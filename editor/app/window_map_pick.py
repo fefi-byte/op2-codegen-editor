@@ -404,7 +404,17 @@ class _MapPickMixin:
 
     def _draw_action_building_preview(self, tx, ty):
         self._clear_action_preview()
-        building_type = self._action_pick["building_type"]
+        # Typ entweder direkt im Pick-Request (Legacy-Pfade) oder aus der
+        # Aktion des Formular-Picks (recordBuilding/createUnit-Eingabezeile).
+        # Type either directly in the pick request (legacy paths) or from
+        # the form pick's action (recordBuilding/createUnit input row).
+        building_type = self._action_pick.get("building_type")
+        if not building_type:
+            action = self._action_pick.get("action")
+            if getattr(action, "kind", "") == "createUnit":
+                building_type = getattr(action, "unit_type", "")
+            else:
+                building_type = getattr(action, "building_type", "")
         fw, fh = STRUCTURE_FOOTPRINTS.get(building_type, (1, 1))
         x0 = (tx - fw // 2) * SCENE_TILE
         y0 = (ty - fh // 2) * SCENE_TILE
@@ -525,10 +535,12 @@ class _MapPickMixin:
                                     "x": action.x, "y": action.y}]
                     for e in entries:
                         bt = e.get("building_type", "mapCommandCenter")
+                        short = bt[3:] if bt.startswith("map") else bt
                         self._add_planned_building(
                             int(e.get("x", 0)), int(e.get("y", 0)), bt,
                             QColor(255, 120, 255),
-                            tooltip=f"{tip}\n{bt}", label=trigger.name)
+                            tooltip=f"{tip}\n{bt}",
+                            label=f"{trigger.name} · {short}")
                 elif action.kind == "createUnit":
                     entries = list(getattr(action, "unit_list", None) or [])
                     if not entries:
@@ -537,9 +549,11 @@ class _MapPickMixin:
                     color = PLAYER_COLORS[int(getattr(action, "player", 0)) % len(PLAYER_COLORS)]
                     for e in entries:
                         ut = e.get("unit_type", "mapScout")
+                        short = ut[3:] if ut.startswith("map") else ut
                         self._add_planned_building(
                             int(e.get("x", 0)), int(e.get("y", 0)), ut,
-                            color, tooltip=f"{tip}\n{ut}", label=trigger.name)
+                            color, tooltip=f"{tip}\n{ut}",
+                            label=f"{trigger.name} · {short}")
                 elif action.kind == "recordTube":
                     entries = list(getattr(action, "tube_list", None) or [])
                     if not entries:
