@@ -1524,6 +1524,20 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
         # otherwise the group does not replace lost ConVecs/miners/earthworkers.
         for (t, w, n) in _roster_targ_counts(mission, g):
             lines.append(f"    {var}.SetTargCount({t}, {w}, {n});")
+        # Start-Gebaeude des Rosters rekordieren: "This should include any
+        # buildings the AI starts the game with" (W9) -- sonst baut die
+        # Gruppe zerstoerte Startgebaeude nie wieder auf.
+        # Record the roster's starting buildings: "This should include any
+        # buildings the AI starts the game with" (W9) -- otherwise the
+        # group never rebuilds destroyed starting buildings.
+        roster_buildings = _roster_building_entries(mission, g)
+        if roster_buildings:
+            lines.append(f"    {{")
+            lines.append(f"        LOCATION _l;")
+            for (btype, cargo, x, y) in roster_buildings:
+                lines.append(f"        _l = {_xy(x, y)};")
+                lines.append(f"        {var}.RecordBuilding(_l, {btype}, {cargo});")
+            lines.append(f"    }}")
         # Diagnose ins Log: 0 Einheiten => Positions-Uebernahme fehlgeschlagen.
         # Diagnostics to the log: 0 units => position take-over failed.
         lines.append(f'    op2::log::linef("InitProc: BuildingGroup \'{g.name}\' -> %d Einheiten", '
@@ -1592,7 +1606,7 @@ def _roster_targ_counts(mission: Mission, group) -> list[tuple[str, str, int]]:
     return [(t, w, n) for (t, w), n in sorted(counts.items())]
 
 
-def _roster_building_entries(mission: Mission, group) -> list[tuple[str, int, int]]:
+def _roster_building_entries(mission: Mission, group) -> list[tuple[str, str, int, int]]:
     """Roster-GEBAEUDE einer Gruppe als (map_id, editor_x, editor_y).
 
     Nur Gebaeude: der Selbstheil-Callback nimmt zerstoerte + von der Engine
@@ -1601,7 +1615,7 @@ def _roster_building_entries(mission: Mission, group) -> list[tuple[str, int, in
     ReinforceGroup). mapRareOreMine wird wie im BaseLayout als
     mapCommonOreMine behandelt (Rare-Ore-Mine-Gotcha).
 
-    A group's roster BUILDINGS as (map_id, editor_x, editor_y). Buildings
+    A group's roster BUILDINGS as (map_id, cargo, editor_x, editor_y). Buildings
     only: the self-heal callback re-takes destroyed buildings the engine
     rebuilt in place; lost VEHICLES are replaced via target counts
     (SetTargCount + ReinforceGroup) instead. mapRareOreMine is treated as
@@ -1612,7 +1626,7 @@ def _roster_building_entries(mission: Mission, group) -> list[tuple[str, int, in
         return []
     by_uid = {getattr(u, "uid", ""): u for u in (mission.units or [])
               if getattr(u, "uid", "")}
-    out: list[tuple[str, int, int]] = []
+    out: list[tuple[str, str, int, int]] = []
     for uid in uids:
         u = by_uid.get(uid)
         if u is None:
@@ -1622,12 +1636,13 @@ def _roster_building_entries(mission: Mission, group) -> list[tuple[str, int, in
         btype = mapid(u.unit_type)
         if btype == "mapRareOreMine":
             btype = "mapCommonOreMine"
-        out.append((btype, int(u.x), int(u.y)))
+        cargo = mapid(u.cargo) if (u.cargo and u.cargo != "mapNone") else "mapNone"
+        out.append((btype, cargo, int(u.x), int(u.y)))
     return out
 
 
 def _repair_building_take_lines(group, var: str,
-                                entries: list[tuple[str, int, int]]) -> list[str]:
+                                entries: list[tuple[str, str, int, int]]) -> list[str]:
     """Selbstheil-Bloecke fuer Roster-Gebaeude: je Gebaeude eine
     PlayerBuildingEnum-Suche (typgenau, engine-seitige Gebaeudeliste) mit
     exaktem Positionsvergleich -- die Engine baut Gebaeude immer exakt an
@@ -1644,7 +1659,7 @@ def _repair_building_take_lines(group, var: str,
     build state every mark.
     """
     out: list[str] = []
-    for (btype, x, y) in entries:
+    for (btype, _cargo, x, y) in entries:
         out += [
             f"{{",
             f"    PlayerBuildingEnum _e({int(group.player)}, {btype});",
