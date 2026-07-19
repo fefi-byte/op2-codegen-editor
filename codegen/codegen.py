@@ -1691,7 +1691,8 @@ def _repair_building_take_lines(group, var: str,
     build state every mark.
     """
     out: list[str] = []
-    for (btype, _cargo, x, y) in entries:
+    for n, (btype, _cargo, x, y) in enumerate(entries):
+        seen = f"_seen_{_ident(group.name)}_{n}"
         out += [
             f"{{",
             f"    PlayerBuildingEnum _e({int(group.player)}, {btype});",
@@ -1700,7 +1701,12 @@ def _repair_building_take_lines(group, var: str,
             f"    while (_e.GetNext(_u)) {{",
             f"        LOCATION _loc = _u.Location();",
             f"        if (!(_loc == _a)) continue;",
-            f"        if (!isCompleted(_u)) continue;",
+            f"        static int {seen} = 0;",
+            f"        if (!isCompleted(_u)) {{ {seen} = 0; continue; }}",
+            f"        if ({seen} != _u.unitID) {{",
+            f"            {seen} = _u.unitID;",
+            f"            continue;  // erst 1 Mark stabil fertig, dann uebernehmen",
+            f"        }}",
             f"        bool _member = false;",
             f"        GroupEnumerator _ge({var});",
             f"        UnitEx _m;",
@@ -1837,9 +1843,13 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         var = ctx["group_vars"].get(action.group_name, None)
         if not var:
             continue
+        seen = f"_seen_assign_{armed_var.rsplit('_', 1)[-1]}"
         body.append(f"if ({armed_var}) {{")
         body.append(f"    UnitEx _b = unitOnTile({_xy(action.x, action.y)});")
-        body.append(f"    if (isCompleted(_b) && _b.GetType() == {mapid(action.building_type)}) {{")
+        body.append(f"    static int {seen} = 0;")
+        body.append(f"    if (!isCompleted(_b)) {seen} = 0;")
+        body.append(f"    else if ({seen} != _b.unitID) {seen} = _b.unitID;  // erst 1 Mark stabil")
+        body.append(f"    else if (_b.GetType() == {mapid(action.building_type)}) {{")
         body.append(f"        bool _member = false;")
         body.append(f"        GroupEnumerator _ge({var});")
         body.append(f"        UnitEx _m;")
