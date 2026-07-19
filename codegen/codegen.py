@@ -676,11 +676,12 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
         for e in entries:
             wt = e.get("weapon_type") or "mapNone"
             cargo = mapid(wt) if wt != "mapNone" else "mapNone"
+            bt = mapid(e.get("building_type", "mapCommandCenter"))
             lines.append(f"{indent}    _l = {_xy(e.get('x', 0), e.get('y', 0))};")
+            lines.append(f"{indent}    {var}.RecordBuilding(_l, {bt}, {cargo});")
             lines.append(
-                f"{indent}    {var}.RecordBuilding(_l, "
-                f"{mapid(e.get('building_type', 'mapCommandCenter'))}, {cargo});"
-            )
+                f'{indent}    op2::log::linef("RecordBuilding: {bt} @ ({int(e.get("x", 0))},'
+                f'{int(e.get("y", 0))}) -> Gruppe mit %d Einheiten", {var}.TotalUnitCount());')
         lines.append(f"{indent}}}")
         return lines
 
@@ -1511,6 +1512,10 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
         # otherwise the group does not replace lost ConVecs/miners/earthworkers.
         for (t, w, n) in _roster_targ_counts(mission, g):
             lines.append(f"    {var}.SetTargCount({t}, {w}, {n});")
+        # Diagnose ins Log: 0 Einheiten => Positions-Uebernahme fehlgeschlagen.
+        # Diagnostics to the log: 0 units => position take-over failed.
+        lines.append(f'    op2::log::linef("InitProc: BuildingGroup \'{g.name}\' -> %d Einheiten", '
+                     f"{var}.TotalUnitCount());")
 
     for g in reinforces:
         var = ctx["group_vars"][g.name]

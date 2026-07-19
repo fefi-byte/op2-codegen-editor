@@ -28,6 +28,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_conditions(w)
     findings += _check_sdk_gotchas(w)
     findings += _check_building_group_builders(w)
+    findings += _check_tubes(w)
     return findings
 
 
@@ -160,6 +161,29 @@ def _check_building_group_builders(w):
         if 0 <= p < len(players) and getattr(players[p], "is_human", True):
             out.append(("warning", tr("validation.bg_human_player", name=g.name, p=p),
                         ("group", None)))
+    return out
+
+
+def _check_tubes(w):
+    """Gebaeude ohne Tube-Verbindung zum Command Center sind im Spiel
+    DEAKTIVIERT -- eine Basis mit mehreren Gebaeuden, aber ganz ohne
+    Tubes, kann nicht funktionieren (Fabriken produzieren nichts).
+
+    Buildings without a tube connection to the Command Center are DISABLED
+    in-game -- a base with several structures but no tubes at all cannot
+    work (factories produce nothing).
+    """
+    objects = getattr(w, "objects", None) or []
+    has_tube = any(getattr(o, "map_id", "") == "mapTube" for o in objects)
+    if has_tube:
+        return []
+    out = []
+    from collections import Counter
+    per_player = Counter(o.player for o in objects
+                         if getattr(o, "kind", "") == "structure")
+    for p, n in sorted(per_player.items()):
+        if n >= 2:
+            out.append(("warning", tr("validation.no_tubes", p=p, n=n), None))
     return out
 
 
