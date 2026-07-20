@@ -262,7 +262,8 @@ class ActionInlineForm(QWidget):
         "fightGroupCmd": ["wave_group", "fg_command"],
         "unitCmd": ["unit_ref", "unit_command"],
         "defendArea": ["player", "x", "y", "x2", "y2"],
-        "repairBuildings": ["player", "x", "y", "x2", "y2"],
+        "repairBuildings": ["group", "repair_zones_editor", "repair_thresholds_editor",
+                            "repair_default"],
         "empMissile": ["player", "x", "y", "x2", "y2"],
         "setMorale": ["morale_mode", "morale_player"],
         "setMusic": ["songs_editor", "repeat_start"],
@@ -820,6 +821,68 @@ class ActionInlineForm(QWidget):
         stats_lay.addWidget(self.stats_tree)
         stats_lay.addLayout(stats_row)
 
+        # --- repairBuildings v2: Zonenliste + Schwellenliste + Standard ---
+        # repairBuildings v2: zone list + threshold list + default
+        self.rz_x, self.rz_y = QSpinBox(), QSpinBox()
+        self.rz_x2, self.rz_y2 = QSpinBox(), QSpinBox()
+        for w in (self.rz_x, self.rz_y, self.rz_x2, self.rz_y2):
+            w.setRange(0, 1023)
+        self.repair_zones_tree = QTreeWidget()
+        self.repair_zones_tree.setHeaderLabels(["X1", "Y1", "X2", "Y2"])
+        self.repair_zones_tree.setRootIsDecorated(False)
+        self.repair_zones_tree.setMaximumHeight(90)
+        rz_pick_btn = QPushButton("📍"); rz_pick_btn.setFixedWidth(28)
+        rz_pick_btn.setToolTip(tr("action_editor.tooltip_pick_repair_zone"))
+        rz_pick_btn.clicked.connect(lambda: self._request_pick("repair_zone"))
+        rz_add_btn = QPushButton("+"); rz_add_btn.setFixedWidth(28)
+        rz_add_btn.clicked.connect(self._rz_add)
+        rz_rm_btn = QPushButton("−"); rz_rm_btn.setFixedWidth(28)
+        rz_rm_btn.clicked.connect(self._rz_remove)
+        rz_row = QHBoxLayout()
+        for w in (self.rz_x, self.rz_y, self.rz_x2, self.rz_y2):
+            rz_row.addWidget(w, 1)
+        rz_row.addWidget(rz_pick_btn)
+        rz_row.addWidget(rz_add_btn)
+        rz_row.addWidget(rz_rm_btn)
+        self.repair_zones_editor = QWidget()
+        self.repair_zones_editor.setToolTip(tr("action_editor.tooltip_repair_zones"))
+        rz_lay = QVBoxLayout(self.repair_zones_editor)
+        rz_lay.setContentsMargins(0, 0, 0, 0)
+        rz_lay.addWidget(self.repair_zones_tree)
+        rz_lay.addLayout(rz_row)
+
+        self.rth_building = QComboBox()
+        for d, m, _ in STRUCTURES:
+            self.rth_building.addItem(d, m)
+        self.rth_damage = QSpinBox()
+        self.rth_damage.setRange(1, 100000)
+        self.rth_damage.setValue(200)
+        self.repair_thresholds_tree = QTreeWidget()
+        self.repair_thresholds_tree.setHeaderLabels(
+            [tr("action_editor.col_building"), tr("action_editor.col_damage")])
+        self.repair_thresholds_tree.setRootIsDecorated(False)
+        self.repair_thresholds_tree.setMaximumHeight(90)
+        rth_add_btn = QPushButton("+"); rth_add_btn.setFixedWidth(28)
+        rth_add_btn.clicked.connect(self._rth_add)
+        rth_rm_btn = QPushButton("−"); rth_rm_btn.setFixedWidth(28)
+        rth_rm_btn.clicked.connect(self._rth_remove)
+        rth_row = QHBoxLayout()
+        rth_row.addWidget(self.rth_building, 2)
+        rth_row.addWidget(self.rth_damage, 1)
+        rth_row.addWidget(rth_add_btn)
+        rth_row.addWidget(rth_rm_btn)
+        self.repair_thresholds_editor = QWidget()
+        self.repair_thresholds_editor.setToolTip(tr("action_editor.tooltip_repair_thresholds"))
+        rth_lay = QVBoxLayout(self.repair_thresholds_editor)
+        rth_lay.setContentsMargins(0, 0, 0, 0)
+        rth_lay.addWidget(self.repair_thresholds_tree)
+        rth_lay.addLayout(rth_row)
+
+        self.repair_default = QSpinBox()
+        self.repair_default.setRange(1, 100000)
+        self.repair_default.setValue(50)
+        self.repair_default.setToolTip(tr("action_editor.tooltip_repair_default"))
+
         self.form = QFormLayout()
         self.form.addRow(tr("action_editor.lbl_action_type"), self.kind)
         self._rows = {
@@ -854,6 +917,9 @@ class ActionInlineForm(QWidget):
             "targ_editor": self.targ_editor,
             "unit_editor": self.unit_editor, "building_editor": self.building_editor,
             "tube_editor": self.tube_editor, "wall_editor": self.wall_editor,
+            "repair_zones_editor": self.repair_zones_editor,
+            "repair_thresholds_editor": self.repair_thresholds_editor,
+            "repair_default": self.repair_default,
             "morale_mode": self.morale_mode, "morale_player": self.morale_player,
             "songs_editor": self.songs_editor, "repeat_start": self.repeat_start,
             "flow_dir": self.flow_dir, "flow_freeze": self.flow_freeze,
@@ -907,6 +973,9 @@ class ActionInlineForm(QWidget):
             "building_editor": tr("action_editor.lbl_building_editor"),
             "tube_editor": tr("action_editor.lbl_tube_editor"),
             "wall_editor": tr("action_editor.lbl_wall_editor"),
+            "repair_zones_editor": tr("action_editor.lbl_repair_zones"),
+            "repair_thresholds_editor": tr("action_editor.lbl_repair_thresholds"),
+            "repair_default": tr("action_editor.lbl_repair_default"),
             "morale_mode": tr("action_editor.lbl_morale_mode"),
             "morale_player": tr("action_editor.lbl_player"),
             "songs_editor": tr("action_editor.lbl_songs"),
@@ -1119,6 +1188,68 @@ class ActionInlineForm(QWidget):
             item = QTreeWidgetItem([label, str(m.get("value", 0))])
             item.setData(0, Qt.UserRole, (stat, m.get("value", 0)))
             self.stats_tree.addTopLevelItem(item)
+
+    # --- repairBuildings: Zonen- und Schwellenliste ---
+    # repairBuildings: zone and threshold lists
+
+    def _rz_add(self):
+        vals = (self.rz_x.value(), self.rz_y.value(), self.rz_x2.value(), self.rz_y2.value())
+        item = QTreeWidgetItem([str(v) for v in vals])
+        item.setData(0, Qt.UserRole, vals)
+        self.repair_zones_tree.addTopLevelItem(item)
+        self._save()
+
+    def _rz_remove(self):
+        idx = self.repair_zones_tree.indexOfTopLevelItem(self.repair_zones_tree.currentItem())
+        if idx >= 0:
+            self.repair_zones_tree.takeTopLevelItem(idx)
+            self._save()
+
+    def _rz_from_tree(self) -> list:
+        out = []
+        for i in range(self.repair_zones_tree.topLevelItemCount()):
+            x, y, x2, y2 = self.repair_zones_tree.topLevelItem(i).data(0, Qt.UserRole)
+            out.append({"x": x, "y": y, "x2": x2, "y2": y2})
+        return out
+
+    def _rz_load(self, zones):
+        self.repair_zones_tree.clear()
+        for z in (zones or []):
+            vals = (int(z.get("x", 0)), int(z.get("y", 0)),
+                    int(z.get("x2", 0)), int(z.get("y2", 0)))
+            item = QTreeWidgetItem([str(v) for v in vals])
+            item.setData(0, Qt.UserRole, vals)
+            self.repair_zones_tree.addTopLevelItem(item)
+
+    def _rth_add(self):
+        item = QTreeWidgetItem([self.rth_building.currentText(), str(self.rth_damage.value())])
+        item.setData(0, Qt.UserRole, (self.rth_building.currentData(), self.rth_damage.value()))
+        self.repair_thresholds_tree.addTopLevelItem(item)
+        self._save()
+
+    def _rth_remove(self):
+        idx = self.repair_thresholds_tree.indexOfTopLevelItem(
+            self.repair_thresholds_tree.currentItem())
+        if idx >= 0:
+            self.repair_thresholds_tree.takeTopLevelItem(idx)
+            self._save()
+
+    def _rth_from_tree(self) -> list:
+        out = []
+        for i in range(self.repair_thresholds_tree.topLevelItemCount()):
+            bt, dmg = self.repair_thresholds_tree.topLevelItem(i).data(0, Qt.UserRole)
+            out.append({"building_type": bt, "damage": dmg})
+        return out
+
+    def _rth_load(self, thresholds):
+        self.repair_thresholds_tree.clear()
+        by_id_building = {m: d for d, m, _ in STRUCTURES}
+        for t in (thresholds or []):
+            bt = t.get("building_type", "mapTokamak")
+            dmg = int(t.get("damage", 200))
+            item = QTreeWidgetItem([by_id_building.get(bt, bt), str(dmg)])
+            item.setData(0, Qt.UserRole, (bt, dmg))
+            self.repair_thresholds_tree.addTopLevelItem(item)
 
     # --- Angriffswellen-Liste / attack wave list ---
 
@@ -1612,6 +1743,9 @@ class ActionInlineForm(QWidget):
         self.flow_freeze.setChecked(bool(getattr(a, "flow_freeze", False)))
         self._set_combo(self.stats_unit, a.unit_type)
         self._stats_list_load(getattr(a, "stat_mods", None))
+        self._rz_load(getattr(a, "repair_zones", None))
+        self._rth_load(getattr(a, "repair_thresholds", None))
+        self.repair_default.setValue(int(getattr(a, "repair_default_damage", 50) or 50))
         self._loading = False
         self._update()
 
@@ -1639,6 +1773,7 @@ class ActionInlineForm(QWidget):
                   self.rw_wall):
             w.currentIndexChanged.connect(self._save)
         self.repeat_start.valueChanged.connect(self._save)
+        self.repair_default.valueChanged.connect(self._save)
         self.now.toggled.connect(self._save)
         self.flow_freeze.toggled.connect(self._save)
 
@@ -1738,6 +1873,10 @@ class ActionInlineForm(QWidget):
         elif k == "modUnitStats":
             a.unit_type = self.stats_unit.currentData() or "mapLynx"
             a.stat_mods = self._stats_from_tree()
+        elif k == "repairBuildings":
+            a.repair_zones = self._rz_from_tree()
+            a.repair_thresholds = self._rth_from_tree()
+            a.repair_default_damage = self.repair_default.value()
         if k in ("unitCmd", "fightGroupCmd"):
             a.patrol_points = self._patrol_points()
         a.var_name = self.var_name.currentData() or ""

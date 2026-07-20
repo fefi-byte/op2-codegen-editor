@@ -1070,25 +1070,16 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
         ]
 
     if k == "repairBuildings":
-        # High-level: collect the player's Repair Vehicles (and ConVecs as
-        # fallback repairers) into a group guarding the rect -- guarding
-        # repair units auto-repair damaged structures in their area.
-        p = int(action.player)
-        return [
-            f"{indent}{{",
-            f"{indent}    FightGroup _fg = CreateFightGroup(Player[{p}]);",
-            f"{indent}    MAP_RECT _r = {_rect(action.x, action.y, action.x2, action.y2)};",
-            f"{indent}    _fg.SetRect(_r);",
-            f"{indent}    _fg.AddGuardedRect(_r);",
-            f"{indent}    PlayerUnitEnum _e({p});",
-            f"{indent}    UnitEx _u;",
-            f"{indent}    while (_e.GetNext(_u)) {{",
-            f"{indent}        if (_u.GetType() == mapRepairVehicle "
-            f"|| _u.GetType() == mapConVec) _fg.TakeUnit(_u);",
-            f"{indent}    }}",
-            f"{indent}    _fg.DoGuardRect();",
-            f"{indent}}}",
-        ]
+        # Makro v2: schaltet den Reparatur-Scan scharf; das eigentliche
+        # Pruefen/Beauftragen macht der missionsweite Reparatur-Timer
+        # (Zonen, Schwellen-Hysterese, Fahrzeug-Praeferenz).
+        # Macro v2: arms the repair scan; the actual checking/tasking runs
+        # in the mission-wide repair timer (zones, threshold hysteresis,
+        # vehicle preference).
+        armed_var = ctx.get("repair_action_vars", {}).get(id(action))
+        if not armed_var:
+            return [f"{indent}// TODO repairBuildings: armed flag not declared"]
+        return [f"{indent}{armed_var} = true;"]
 
     if k == "modVar":
         var = getattr(action, "var_name", "") or "unknownVar"
@@ -1945,6 +1936,78 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         body.append(f"    }}")
         body.append(f"}}")
 
+    # --- Reparatur-Makro v2: Zonen scannen, ab Schwelle beauftragen ---
+    # --- Repair macro v2: scan zones, task vehicles from the threshold up ---
+    for ridx, (action, armed_var) in enumerate(ctx.get("repair_actions", [])):
+        gvar = ctx["group_vars"].get(getattr(action, "group_name", "") or "")
+        if not gvar:
+            continue
+        gplayer = 0
+        colony_eden = True
+        for attr in ("building_groups", "reinforce_groups"):
+            for g in (getattr(mission, attr, None) or []):
+                if g.name == (getattr(action, "group_name", "") or ""):
+                    gplayer = int(g.player)
+        players = mission.players or []
+        if 0 <= gplayer < len(players):
+            colony_eden = (players[gplayer].colony == Colony.Eden)
+        # Kolonie-Praeferenz: Spezialist zuerst, dann der andere, ConVec zuletzt
+        # Colony preference: specialist first, then the other, ConVec last
+        first, second = (("mapRepairVehicle", "mapSpider") if colony_eden
+                         else ("mapSpider", "mapRepairVehicle"))
+        zones = list(getattr(action, "repair_zones", None) or [])
+        if not zones:
+            zones = [{"x": action.x, "y": action.y, "x2": action.x2, "y2": action.y2}]
+        thresholds = list(getattr(action, "repair_thresholds", None) or [])
+        default_dmg = int(getattr(action, "repair_default_damage", 50) or 50)
+        thr_lines = [f"        int _thr = {default_dmg};"]
+        first_kw = "if"
+        for t in thresholds:
+            bt = mapid(t.get("building_type", ""))
+            if not bt or bt == "mapNone":
+                continue
+            thr_lines.append(f"        {first_kw} (_bt == {bt}) _thr = {int(t.get('damage', default_dmg))};")
+            first_kw = "else if"
+        body.append(f"if ({armed_var}) {{")
+        body.append(f"    int _issued[8]; int _nIssued = 0;")
+        for z in zones:
+            zrect = _rect(int(z.get("x", 0)), int(z.get("y", 0)),
+                          int(z.get("x2", 0)), int(z.get("y2", 0)))
+            body.append(f"    {{")
+            body.append(f"    MAP_RECT _z = {zrect};")
+            body.append(f"    InRectEnumerator _e(_z);")
+            body.append(f"    UnitEx _b;")
+            body.append(f"    while (_e.GetNext(_b)) {{")
+            body.append(f"        if (!_b.IsBuilding() || !_b.IsLive() || _b.OwnerID() != {gplayer}) continue;")
+            body.append(f"        map_id _bt = _b.GetType();")
+            body.extend(thr_lines)
+            body.append(f"        if (_b.GetDamage() < _thr) continue;")
+            body.append(f"        // freies Fahrzeug der Gruppe suchen (Praeferenz-Rangfolge)")
+            body.append(f"        UnitEx _best; int _bestRank = 99;")
+            body.append(f"        GroupEnumerator _ge({gvar});")
+            body.append(f"        UnitEx _v;")
+            body.append(f"        while (_ge.GetNext(_v)) {{")
+            body.append(f"            if (!_v.IsVehicle() || !_v.IsLive()) continue;")
+            body.append(f"            if (_v.GetLastCommand() != ctNop) continue;")
+            body.append(f"            bool _busy = false;")
+            body.append(f"            for (int _i = 0; _i < _nIssued; ++_i) if (_issued[_i] == _v.unitID) _busy = true;")
+            body.append(f"            if (_busy) continue;")
+            body.append(f"            int _rank = 99;")
+            body.append(f"            map_id _vt = _v.GetType();")
+            body.append(f"            if (_vt == {first}) _rank = 0;")
+            body.append(f"            else if (_vt == {second}) _rank = 1;")
+            body.append(f"            else if (_vt == mapConVec) _rank = 2;")
+            body.append(f"            if (_rank < _bestRank) {{ _bestRank = _rank; _best = _v; }}")
+            body.append(f"        }}")
+            body.append(f"        if (_bestRank < 99 && _nIssued < 8) {{")
+            body.append(f"            _best.DoRepair(_b);")
+            body.append(f"            _issued[_nIssued++] = _best.unitID;")
+            body.append(f'            op2::log::linef("Repair-Auftrag: Fahrzeug %d -> Gebaeude %d (Schaden %d)", _best.unitID, _b.unitID, _b.GetDamage());')
+            body.append(f"        }}")
+            body.append(f"    }}")
+            body.append(f"    }}")
+        body.append(f"}}")
+
     for action, armed_var, launched_var in ctx.get("wave_actions", []):
         fg = ctx["group_vars"].get(getattr(action, "group_var_name", "") or "")
         if not fg:
@@ -2036,9 +2099,12 @@ def _build_codegen_context(mission: Mission) -> dict:
     ctx["assign_actions"] = []
     ctx["wave_action_vars"] = {}
     ctx["wave_actions"] = []
+    ctx["repair_action_vars"] = {}
+    ctx["repair_actions"] = []
     mining_idx = 0
     assign_idx = 0
     wave_idx = 0
+    repair_idx = 0
     for t in (mission.triggers or []):
         for a in _walk_actions(t.actions):
             if a.kind == "startMining":
@@ -2056,6 +2122,11 @@ def _build_codegen_context(mission: Mission) -> dict:
                 ctx["assign_action_vars"][id(a)] = armed_var
                 ctx["assign_actions"].append((a, armed_var))
                 assign_idx += 1
+            elif a.kind == "repairBuildings":
+                armed_var = f"_repair_armed_{repair_idx}"
+                ctx["repair_action_vars"][id(a)] = armed_var
+                ctx["repair_actions"].append((a, armed_var))
+                repair_idx += 1
             elif a.kind == "sendAttackWave":
                 mode = getattr(a, "spawn_mode", "spawn") or "spawn"
                 if mode == "spawn":
@@ -2277,6 +2348,8 @@ def generate_levelmain(mission: Mission) -> str:
         add(f"    int {ids_var}[2] = {{ 0, 0 }};")
     for armed_var in ctx.get("assign_action_vars", {}).values():
         add(f"    bool {armed_var} = false;")
+    for armed_var in ctx.get("repair_action_vars", {}).values():
+        add(f"    bool {armed_var} = false;")
     for (_a, armed_var, launched_var) in ctx.get("wave_actions", []):
         add(f"    bool {armed_var} = false;")
         add(f"    bool {launched_var} = false;")
@@ -2304,6 +2377,8 @@ def generate_levelmain(mission: Mission) -> str:
     for ids_var in ctx.get("mining_ids_vars", {}).values():
         add(f"static int (&{ids_var})[2] = g_save.{ids_var};")
     for armed_var in ctx.get("assign_action_vars", {}).values():
+        add(f"static bool& {armed_var} = g_save.{armed_var};")
+    for armed_var in ctx.get("repair_action_vars", {}).values():
         add(f"static bool& {armed_var} = g_save.{armed_var};")
     for (_a, armed_var, launched_var) in ctx.get("wave_actions", []):
         add(f"static bool& {armed_var} = g_save.{armed_var};")

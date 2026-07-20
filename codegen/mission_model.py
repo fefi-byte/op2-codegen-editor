@@ -429,6 +429,20 @@ class TriggerAction:
     # modUnitStats: change a unit type's sheet values at runtime (HFL UnitInfo)
     # [{"stat": "HitPoints", "value": 1000}, ...]
     stat_mods: list = field(default_factory=list)
+    # repairBuildings (Makro v2): Zonenliste + Schadensschwellen je
+    # Gebaeudetyp (Hysterese: erst ab Schwelle reparieren) + ausfuehrende
+    # BuildingGroup (group_name). Fahrzeug-Praeferenz: Kolonie-Spezialist
+    # (Eden RepairVehicle / Plymouth Spider) vor dem anderen, ConVec als
+    # Fallback; nur freie Fahrzeuge (Befehl ctNop).
+    # repairBuildings (macro v2): zone list + damage thresholds per building
+    # type (hysteresis: only repair from the threshold up) + executing
+    # BuildingGroup (group_name). Vehicle preference: colony specialist
+    # (Eden RepairVehicle / Plymouth Spider) before the other, ConVec as
+    # fallback; idle vehicles only (command ctNop).
+    repair_zones: list = field(default_factory=list)   # [{"x","y","x2","y2"}]
+    repair_thresholds: list = field(
+        default_factory=lambda: [{"building_type": "mapTokamak", "damage": 200}])
+    repair_default_damage: int = 50
 
 
 @dataclass

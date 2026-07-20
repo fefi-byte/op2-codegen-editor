@@ -87,7 +87,7 @@ class _MapPickMixin:
                 self._update_lava_rect_preview(tx, ty, tx, ty)
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" \
-                and self._action_pick.get("field") in ({"rect"} | set(_RECT_PICK_FIELDS)):
+                and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)):
             tx, ty = self._clamp_tile(tx, ty)
             self._action_pick_start = (tx, ty)
             x, y, w, h = self._rect_from_tiles(tx, ty, tx, ty)
@@ -123,7 +123,7 @@ class _MapPickMixin:
                     f"{abs(tx-sx)+1}x{abs(ty-sy)+1}")
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" \
-                and self._action_pick.get("field") in ({"rect"} | set(_RECT_PICK_FIELDS)) \
+                and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)) \
                 and self._action_pick_start is not None:
             sx, sy = self._action_pick_start
             x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
@@ -166,7 +166,7 @@ class _MapPickMixin:
                 self._lava_paint_add(tx, ty)
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" \
-                and self._action_pick.get("field") in ({"rect"} | set(_RECT_PICK_FIELDS)):
+                and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)):
             if self._action_pick_start is None:
                 self._end_action_pick()
                 return
@@ -174,7 +174,11 @@ class _MapPickMixin:
             x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
             action = self._action_pick["action"]
             field = self._action_pick.get("field")
-            if field == "rect":
+            if field == "repair_zone":
+                zones = list(getattr(action, "repair_zones", None) or [])
+                zones.append({"x": x, "y": y, "x2": x + w - 1, "y2": y + h - 1})
+                action.repair_zones = zones
+            elif field == "rect":
                 action.rect_x, action.rect_y = x, y
                 action.rect_width, action.rect_height = w, h
             else:
@@ -367,7 +371,7 @@ class _MapPickMixin:
         if (
             request["kind"] in ("recordTube", "recordWall")
             or (request["kind"] == "action_field"
-                and request.get("field") in ({"rect"} | set(_RECT_PICK_FIELDS) | _LINE_PICK_FIELDS))
+                and request.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS) | _LINE_PICK_FIELDS))
         ):
             self.view.rect_select_enabled = True
         self.view.setCursor(Qt.CrossCursor)
@@ -385,6 +389,7 @@ class _MapPickMixin:
                 "idle_rect": "Idle-Bereich aufziehen (Klick + Ziehen)",
                 "area_rect": "Zielbereich aufziehen (Klick + Ziehen)",
                 "patrol_point": "Wegpunkte anklicken (bis 8) — Rechtsklick beendet",
+                "repair_zone": "Reparatur-Zone aufziehen (Klick + Ziehen)",
                 "tube_line": "Rohrleitung aufziehen (nur X oder Y, Klick + Ziehen)",
                 "wall_line": "Mauerabschnitt aufziehen (nur X oder Y, Klick + Ziehen)",
             }.get(request.get("field"), "Klick: Karte fuer Aktion picken"),

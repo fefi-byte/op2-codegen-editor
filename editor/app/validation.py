@@ -29,6 +29,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_sdk_gotchas(w)
     findings += _check_building_group_builders(w)
     findings += _check_unit_names(w)
+    findings += _check_repair_actions(w)
     findings += _check_mine_beacons(w)
     findings += _check_tubes(w)
     return findings
@@ -253,6 +254,35 @@ def _check_unit_names(w):
         elif src_name not in rg_names:
             out.append(("error", tr("validation.mining_source_missing", name=g.name,
                                     ref=src_name), ("group", None)))
+    return out
+
+
+def _check_repair_actions(w):
+    """repairBuildings v2: Gruppe muss existieren und ein reparaturfaehiges
+    Fahrzeug (RepairVehicle/Spider/ConVec) im Roster haben.
+
+    repairBuildings v2: the group must exist and have a repair-capable
+    vehicle (RepairVehicle/Spider/ConVec) in its roster.
+    """
+    out = []
+    uid_types = {getattr(o, "uid", ""): getattr(o, "map_id", "")
+                 for o in (getattr(w, "objects", None) or [])}
+    bg_by_name = {g.name: g for g in (getattr(w, "building_groups", None) or [])}
+    repair_caps = {"mapRepairVehicle", "mapSpider", "mapConVec"}
+    for ti, t in enumerate(getattr(w, "triggers", None) or []):
+        for a in _walk_actions(t.actions):
+            if a.kind != "repairBuildings":
+                continue
+            gname = getattr(a, "group_name", "") or ""
+            if not gname or gname not in bg_by_name:
+                out.append(("error", tr("validation.repair_no_group", name=t.name),
+                            ("trigger", ti)))
+                continue
+            roster = {uid_types.get(uid, "") for uid in
+                      (getattr(bg_by_name[gname], "unit_ids", None) or [])}
+            if not (roster & repair_caps):
+                out.append(("warning", tr("validation.repair_no_vehicle",
+                                          name=gname), ("trigger", ti)))
     return out
 
 
