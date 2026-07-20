@@ -2084,8 +2084,10 @@ class ActionListWidget(QWidget):
 
     def _add(self):
         menu = QMenu(self)
-        for label, k in ACTION_KINDS.items():
-            menu.addAction(tr(f"action_kinds.{k}")).setData(k)
+        for gkey, kinds in ACTION_MENU_GROUPS.items():
+            sub = menu.addMenu(tr(f"action_groups.{gkey}"))
+            for k in kinds:
+                sub.addAction(tr(f"action_kinds.{k}")).setData(k)
         picked = menu.exec(QCursor.pos())
         if picked is None:
             return

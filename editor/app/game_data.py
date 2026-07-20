@@ -250,6 +250,24 @@ ACTION_KINDS = {
     "Einheiten-Werte ändern (HFL)":      "modUnitStats",
 }
 
+# Gruppierung des "+ Aktion"-Menues (Untermenue -> Aktions-Kinds).
+# "noop" und "defendArea" werden bewusst NICHT mehr angeboten (Platzhalter
+# bzw. durch FightGroups + Gruppen-Befehl abgeloest); bestehende Projekte
+# mit diesen Aktionen laden und bauen aber weiterhin.
+# Grouping of the "+ add action" menu (submenu -> action kinds).
+# "noop" and "defendArea" are deliberately NOT offered any more (placeholder
+# resp. superseded by FightGroups + group command); existing projects using
+# them still load and build.
+ACTION_MENU_GROUPS = {
+    "general":  ["if", "message", "modVar", "createTrigger"],
+    "units":    ["createUnit", "unitCmd", "fightGroupCmd",
+                 "assignToGroup", "setTargCount"],
+    "record":   ["recordBuilding", "recordTube", "recordWall"],
+    "macros":   ["startMining", "sendAttackWave", "repairBuildings"],
+    "effects":  ["createDisaster", "empMissile", "lavaFlowAni",
+                 "setMorale", "setMusic", "modUnitStats"],
+}
+
 # setMorale: Modus -> ForceMoraleX/FreeMoraleLevel
 MORALE_MODES = {
     "Sehr gut (Great)":   "great",
