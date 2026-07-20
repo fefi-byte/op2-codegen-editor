@@ -158,6 +158,7 @@ class _ProjectMixin:
             map_source=Path(map_source) if map_source else None,
             techtree_source=None,
             dll_basename=mission_project.default_dll_basename(self.dll_name),
+            briefing=self.briefing,
         )
 
     def _save_to_folder(self, folder: Path) -> bool:

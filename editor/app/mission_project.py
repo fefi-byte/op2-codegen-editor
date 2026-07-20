@@ -81,6 +81,7 @@ def write_mission_folder(
     map_source: Path | None,
     techtree_source: Path | None = None,
     dll_basename: str = "cMission",
+    briefing: str = "",
 ) -> dict[str, Path]:
     """Schreibt eine vollstaendige OP2MissionSDK-Mission in den Ordner.
 
@@ -124,6 +125,34 @@ def write_mission_folder(
         target = folder / name
         _copy_template(name, target)
         written[name] = target
+
+    # 3b) Vor-Spielstart-Briefing: Dialog-Quelle, Ressourcen-Skript und der
+    #     Text als ANSI-Datei (RICHEDIT erwartet cp1252 + CRLF).
+    # 3b) Pre-game briefing: dialog source, resource script and the text as
+    #     an ANSI file (RICHEDIT expects cp1252 + CRLF).
+    if (briefing or "").strip():
+        for tpl, out_name in (("briefing_dialog.cpp.template", "briefing_dialog.cpp"),
+                              ("briefing.rc.template", "briefing.rc"),
+                              ("briefing_resource.h.template", "resource.h")):
+            target = folder / out_name
+            _copy_template(tpl, target)
+            written[out_name] = target
+        crlf = "\r\n"
+        text = briefing.replace(crlf, "\n").replace("\n", crlf)
+        btxt = folder / "briefing.txt"
+        btxt.write_bytes(text.encode("cp1252", errors="replace"))
+        written["briefing.txt"] = btxt
+    else:
+        # Briefing entfernt: alte Dateien loeschen, sonst baut CMake den
+        # Dialog weiter mit ein und zeigt den veralteten Text.
+        # Briefing removed: delete stale files, otherwise CMake keeps
+        # building the dialog and shows the outdated text.
+        for out_name in ("briefing_dialog.cpp", "briefing.rc",
+                         "resource.h", "briefing.txt"):
+            try:
+                (folder / out_name).unlink()
+            except FileNotFoundError:
+                pass
 
     # 4) Karte kopieren (sofern gefunden)
     if map_source and map_source.is_file():

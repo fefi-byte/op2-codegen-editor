@@ -2556,8 +2556,22 @@ def generate_levelmain(mission: Mission) -> str:
     add(f"Export const AIModDescEx DescBlockEx = {{ {num_ai} }};")
     add("")
 
+    has_briefing = bool((getattr(mission, "briefing", "") or "").strip())
+    if has_briefing:
+        add("// Vor-Spielstart-Briefing (briefing_dialog.cpp + briefing.rc):")
+        add("// modaler Dialog waehrend der Missions-Initialisierung.")
+        add("// Pre-game briefing (briefing_dialog.cpp + briefing.rc):")
+        add("// modal dialog during mission initialization.")
+        add("extern void ShowBriefing();")
+        add("extern void* g_briefing_hinst;")
+        add("")
+
     # --- InitProc ---
     add("static void initProc() {")
+    if has_briefing:
+        add("    // Briefing VOR dem Spielstart anzeigen (blockiert bis CONTINUE).")
+        add("    // Show the briefing BEFORE game start (blocks until CONTINUE).")
+        add("    ShowBriefing();")
     add('    op2::log::line("InitProc: starting");')
     add("    if (HFLInit() != HFLLOADED) {")
     add('        op2::log::line("InitProc: HFLInit FAILED");')
@@ -2603,13 +2617,6 @@ def generate_levelmain(mission: Mission) -> str:
         add("")
         add(f"    AddGameMessage({_cpp_string(mission.start_message.text)});")
 
-    # Briefing: einen Tick nach Spielstart als Dialogbox zeigen (in InitProc
-    # selbst waere die Box noch vor dem Spielfeld sichtbar).
-    # Briefing: shown as a dialog box one tick after game start (inside
-    # InitProc the box would appear before the game view).
-    if (getattr(mission, "briefing", "") or "").strip():
-        add("")
-        add('    CreateTimeTrigger(1, 1, 1, "_briefing_cb");')
 
     # Victory / defeat conditions
     if mission.victories:
@@ -2653,17 +2660,6 @@ def generate_levelmain(mission: Mission) -> str:
             add(line)
         add("")
 
-    # Missions-Briefing als Dialogbox (per Export-Namen registriert).
-    # Mission briefing as a dialog box (registered via export name).
-    if (getattr(mission, "briefing", "") or "").strip():
-        cap = f"{mission.name} - Briefing"
-        add("// Missions-Briefing / mission briefing")
-        add("Export void _briefing_cb() {")
-        add(f"    TethysGameEx::MsgBox(NULL, {_cpp_string(mission.briefing)}, "
-            f"{_cpp_string(cap)}, MB_OK | MB_ICONINFORMATION);")
-        add("}")
-        add("")
-
     # Missionsweiter Reparatur-Callback (per Export-Namen registriert).
     # Mission-wide repair callback (registered via export name).
     if repair_body:
@@ -2695,8 +2691,10 @@ def generate_levelmain(mission: Mission) -> str:
     add("// Trigger-Stubs, armed-Flags).")
     add("ExportSaveLoadData(g_save)")
     add("")
-    add('extern "C" int __stdcall DllMain(void*, unsigned long reason, void*) {')
+    add('extern "C" int __stdcall DllMain(void* inst, unsigned long reason, void*) {')
     add("    if (reason == 1 /* DLL_PROCESS_ATTACH */) {")
+    if has_briefing:
+        add("        g_briefing_hinst = inst;")
     add('        op2::crash::installHandler();')
     add('        op2::log::setTickSource([] { return TethysGame::Tick(); });')
     add("    }")
