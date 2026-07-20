@@ -28,6 +28,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_conditions(w)
     findings += _check_sdk_gotchas(w)
     findings += _check_building_group_builders(w)
+    findings += _check_mine_beacons(w)
     findings += _check_tubes(w)
     return findings
 
@@ -141,16 +142,19 @@ def _check_building_group_builders(w):
     uid_types = {getattr(o, "uid", ""): getattr(o, "map_id", "")
                  for o in (getattr(w, "objects", None) or [])}
     players = getattr(w, "players", None) or []
+    mine_types = {"mapCommonOreMine", "mapRareOreMine"}
     for g in (getattr(w, "building_groups", None) or []):
         if g.name not in recorded:
             continue
         roster = {uid_types.get(uid, "") for uid in (getattr(g, "unit_ids", None) or [])}
-        mines_only = recorded[g.name] <= {"mapCommonOreMine", "mapRareOreMine"}
-        if mines_only:
-            if "mapRoboMiner" not in roster:
-                out.append(("warning", tr("validation.bg_no_miner", name=g.name),
-                            ("group", None)))
-        else:
+        records_mines = bool(recorded[g.name] & mine_types)
+        records_other = bool(recorded[g.name] - mine_types)
+        # Minen baut ein Robo-Miner (Beacon-Deploy), keine ConVec+Kit-Kette.
+        # Mines are built by a Robo-Miner (beacon deploy), not ConVec+kit.
+        if records_mines and "mapRoboMiner" not in roster:
+            out.append(("warning", tr("validation.bg_no_miner", name=g.name),
+                        ("group", None)))
+        if records_other:
             if "mapConVec" not in roster:
                 out.append(("warning", tr("validation.bg_no_convec", name=g.name),
                             ("group", None)))
@@ -174,6 +178,37 @@ def _check_building_group_builders(w):
         if n > 1:
             out.append(("warning", tr("validation.record_all_conflict", p=p, n=n),
                         ("group", None)))
+    return out
+
+
+def _check_mine_beacons(w):
+    """Eine Mine entsteht nur AUF einem Mining Beacon ("Beacon vor Mine").
+    Rekordierte Minen-Positionen ohne Beacon werden nie gebaut.
+
+    A mine only appears ON a mining beacon ("beacon before mine"). Recorded
+    mine positions without a beacon never get built.
+    """
+    out = []
+    beacon_tiles = {(int(o.tile_x), int(o.tile_y))
+                    for o in (getattr(w, "objects", None) or [])
+                    if getattr(o, "kind", "") == "beacon"}
+    mine_types = {"mapCommonOreMine", "mapRareOreMine"}
+    for ti, t in enumerate(getattr(w, "triggers", None) or []):
+        for a in _walk_actions(t.actions):
+            if a.kind != "recordBuilding":
+                continue
+            entries = list(getattr(a, "building_list", None) or [])
+            if not entries:
+                entries = [{"building_type": getattr(a, "building_type", ""),
+                            "x": getattr(a, "x", 0), "y": getattr(a, "y", 0)}]
+            for e in entries:
+                if e.get("building_type", "") in mine_types:
+                    pos = (int(e.get("x", 0)), int(e.get("y", 0)))
+                    if pos not in beacon_tiles:
+                        out.append(("warning",
+                                    tr("validation.mine_no_beacon",
+                                       name=t.name, x=pos[0], y=pos[1]),
+                                    ("trigger", ti)))
     return out
 
 

@@ -689,6 +689,14 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
             wt = e.get("weapon_type") or "mapNone"
             cargo = mapid(wt) if wt != "mapNone" else "mapNone"
             bt = mapid(e.get("building_type", "mapCommandCenter"))
+            if bt == "mapRareOreMine":
+                # Rare-Ore-Mine nie direkt bauen (Coding 101 W9): als
+                # CommonOreMine rekordieren -- auf einem Rare-Beacon macht
+                # die Engine daraus die Rare-Variante.
+                # Never build a rare ore mine directly (Coding 101 W9):
+                # record a CommonOreMine -- on a rare beacon the engine
+                # turns it into the rare variant.
+                bt = "mapCommonOreMine"
             lines.append(f"{indent}    _l = {_xy(e.get('x', 0), e.get('y', 0))};")
             lines.append(f"{indent}    {var}.RecordBuilding(_l, {bt}, {cargo});")
             lines.append(
