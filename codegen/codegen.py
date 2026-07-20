@@ -1295,28 +1295,65 @@ _VEHICLE_MAPIDS = {
 }
 
 
+def _building_pass_prologue(ev: str, player_expr: str, depth: int,
+                            with_vehicles: bool) -> tuple[list[str], str, int]:
+    """Prolog + while-Bedingung fuer 'alle Gebaeude eines Spielers'.
+
+    PlayerBuildingEnum kennt KEIN Wildcard -- mapAny liefert schlicht
+    nichts (in-game bestaetigt). Daher eine Typ-Schleife ueber den
+    zusammenhaengenden Gebaeude-Block mapCommonOreMine..mapTokamak, pro
+    Typ ein frischer typgenauer Enumerator (der ist in-game bewaehrt).
+    Mit with_vehicles laeuft davor eine Extra-Runde ueber den
+    Fahrzeug-Enumerator (der Gebaeude-Enumerator bekommt in dieser Runde
+    einen Fahrzeugtyp als Filter und bleibt damit garantiert leer).
+
+    PlayerBuildingEnum has NO wildcard -- mapAny simply yields nothing
+    (confirmed in-game). So we loop over the contiguous building block
+    mapCommonOreMine..mapTokamak with a fresh type-exact enumerator per
+    type (that one is battle-tested in-game). With with_vehicles an extra
+    leading pass runs the vehicle enumerator (the building enumerator gets
+    a vehicle type as filter in that pass, guaranteed empty).
+    """
+    bt = f"_bt{depth}"
+    start = f"(int)mapCommonOreMine{' - 1' if with_vehicles else ''}"
+    pro = []
+    if with_vehicles:
+        pro.append(f"PlayerVehicleEnum {ev}v({player_expr});")
+    pro.append(f"for (int {bt} = {start}; {bt} <= (int)mapTokamak; ++{bt}) {{")
+    if with_vehicles:
+        pro.append(f"    PlayerBuildingEnum {ev}b({player_expr}, "
+                   f"{bt} < (int)mapCommonOreMine ? mapCargoTruck : (map_id){bt});")
+        cond = (f"({bt} < (int)mapCommonOreMine ? "
+                f"{ev}v.GetNext(@U@) : {ev}b.GetNext(@U@))")
+    else:
+        pro.append(f"    PlayerBuildingEnum {ev}b({player_expr}, (map_id){bt});")
+        cond = f"{ev}b.GetNext(@U@)"
+    return pro, cond, 1
+
+
 def _for_each_prologue(action, depth: int) -> tuple[list[str], str, list[str], int]:
     """Liefert (Prolog, while-Bedingung mit @U@-Platzhalter, Filter, Klammern).
 
-    WICHTIG: PlayerUnitEnum enumeriert nur Fahrzeuge -- Gebaeude kommen
-    ausschliesslich ueber PlayerBuildingEnum (mapAny = alle Typen).
-    IMPORTANT: PlayerUnitEnum only enumerates vehicles -- buildings only
-    come via PlayerBuildingEnum (mapAny = all types).
+    WICHTIG: PlayerUnitEnum/PlayerVehicleEnum enumerieren nur Fahrzeuge --
+    Gebaeude kommen ausschliesslich ueber den typgenauen PlayerBuildingEnum
+    (siehe _building_pass_prologue).
+    IMPORTANT: PlayerUnitEnum/PlayerVehicleEnum only enumerate vehicles --
+    buildings only come via the type-exact PlayerBuildingEnum (see
+    _building_pass_prologue).
     """
     src = getattr(action, "enum_source", "rect") or "rect"
     p = int(getattr(action, "player", 0))
     ev = f"_e{depth}"
     if src == "player":
-        # Fahrzeuge UND Gebaeude: erst der eine Enumerator, dann der andere.
-        # Vehicles AND buildings: one enumerator first, then the other.
-        return ([f"PlayerVehicleEnum {ev}v({p});",
-                 f"PlayerBuildingEnum {ev}b({p}, mapAny);"],
-                f"({ev}v.GetNext(@U@) || {ev}b.GetNext(@U@))", [], 0)
+        pro, cond, braces = _building_pass_prologue(ev, str(p), depth,
+                                                    with_vehicles=True)
+        return pro, cond, [], braces
     if src == "playerVehicles":
         return [f"PlayerVehicleEnum {ev}({p});"], f"{ev}.GetNext(@U@)", [], 0
     if src == "playerBuildings":
-        return ([f"PlayerBuildingEnum {ev}({p}, mapAny);"],
-                f"{ev}.GetNext(@U@)", [], 0)
+        pro, cond, braces = _building_pass_prologue(ev, str(p), depth,
+                                                    with_vehicles=False)
+        return pro, cond, [], braces
     if src in ("all", "type"):
         # Alle Spieler durchlaufen (die Engine hat keinen globalen Enumerator).
         # Iterate all players (the engine has no global enumerator).
@@ -1330,10 +1367,10 @@ def _for_each_prologue(action, depth: int) -> tuple[list[str], str, list[str], i
                     [f"unit.GetType() == {mapid(ut)}"], 1
             pro = [head, f"    PlayerBuildingEnum {ev}({pv}, {mapid(ut)});"]
             return pro, f"{ev}.GetNext(@U@)", [], 1
-        pro = [head,
-               f"    PlayerVehicleEnum {ev}v({pv});",
-               f"    PlayerBuildingEnum {ev}b({pv}, mapAny);"]
-        return pro, f"({ev}v.GetNext(@U@) || {ev}b.GetNext(@U@))", [], 1
+        inner_pro, cond, _ = _building_pass_prologue(ev, pv, depth,
+                                                     with_vehicles=True)
+        pro = [head] + [f"    {l}" for l in inner_pro]
+        return pro, cond, [], 2
     # default: rect
     rect = _rect(action.x, action.y, action.x2, action.y2)
     return ([f"MAP_RECT _rr{depth} = {rect};",
