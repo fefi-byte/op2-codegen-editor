@@ -32,6 +32,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_repair_actions(w)
     findings += _check_mine_beacons(w)
     findings += _check_tubes(w)
+    findings += _check_loop_refs(w)
     return findings
 
 
@@ -522,4 +523,35 @@ def _check_conditions(w):
     if any(c.kind == "lastStanding" for c in w.victories):
         if not any(not p.is_human for p in w.players):
             out.append(("error", tr("validation.last_standing_no_ai"), ("conditions", None)))
+    return out
+
+
+def _check_loop_refs(w):
+    """Schleifen-Referenzen (<loop>/<loop:outer>) ausserhalb einer
+    forEach-Schleife emittieren keinen Code -- als Fehler melden.
+
+    Loop references (<loop>/<loop:outer>) outside a forEach loop emit no
+    code -- report as an error."""
+    out = []
+    LOOP_FIELDS = ("unit_ref", "target", "mine_ref", "smelter_ref")
+
+    def walk(actions, depth, ti, tname):
+        for a in (actions or []):
+            d = depth
+            if getattr(a, "kind", "") == "if" and                     (getattr(a, "loop_mode", "none") or "none") == "forEach":
+                d = depth + 1
+            if getattr(a, "kind", "") != "if":
+                for f in LOOP_FIELDS:
+                    v = getattr(a, f, "") or ""
+                    if v in ("<loop>", "<loop:outer>") and depth == 0:
+                        out.append(("error",
+                                    tr("validation.loop_ref_outside",
+                                       t=tname, kind=getattr(a, "kind", "?")),
+                                    ("trigger", ti)))
+                        break
+            walk(getattr(a, "then_actions", None), d, ti, tname)
+            walk(getattr(a, "else_actions", None), d, ti, tname)
+
+    for ti, t in enumerate(getattr(w, "triggers", None) or []):
+        walk(t.actions, 0, ti, t.name)
     return out

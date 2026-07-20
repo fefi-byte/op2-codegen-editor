@@ -482,9 +482,16 @@ def _resolve_loop_ref(ref: str, depth: int) -> str | None:
     name at the given nesting depth. Returns None if `ref` isn't a loop
     sentinel (caller should fall back to a named-unit lookup)."""
     if ref == "<loop>":
-        return _loop_var(depth)
+        return _loop_var(depth) if depth >= 1 else None
     if ref == "<loop:outer>":
-        return _loop_var(depth - 1) if depth >= 2 else None
+        # In einer einfachen (nicht verschachtelten) Schleife IST die
+        # "aeussere" Schleife die aktuelle -- sonst fiele der Befehl trotz
+        # klarer Nutzerabsicht stillschweigend weg.
+        # In a plain (non-nested) loop the "outer" loop IS the current one --
+        # otherwise the command would silently vanish despite clear intent.
+        if depth >= 2:
+            return _loop_var(depth - 1)
+        return _loop_var(depth) if depth >= 1 else None
     return None
 
 
