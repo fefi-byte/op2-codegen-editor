@@ -276,6 +276,7 @@ class ActionInlineForm(QWidget):
 
     _VIS = {
         "message": ["text"],
+        "showDialog": ["caption", "dialog_text"],
         "createUnit": ["unit_editor", "player"],
         "createDisaster": ["disaster_type", "x_expr", "y_expr"],
         "createTrigger": ["target"],
@@ -322,6 +323,13 @@ class ActionInlineForm(QWidget):
         self.kind.currentIndexChanged.connect(self._update)
 
         self.text = QLineEdit(tr("action_editor.default_message"))
+        # showDialog: Titel + mehrzeiliger Text
+        # showDialog: caption + multi-line body
+        self.caption = QLineEdit()
+        self.caption.setPlaceholderText(tr("action_editor.caption_placeholder"))
+        self.dialog_text = QPlainTextEdit()
+        self.dialog_text.setPlaceholderText(tr("action_editor.dialog_placeholder"))
+        self.dialog_text.setMaximumHeight(110)
         self.unit = QComboBox()
         for d, m in ALL_UNITS:
             self.unit.addItem(d, m)
@@ -926,6 +934,7 @@ class ActionInlineForm(QWidget):
         self.form.addRow(tr("action_editor.lbl_comment"), self.comment)
         self._rows = {
             "text": self.text, "unit": self.unit, "weapon": self.weapon,
+            "caption": self.caption, "dialog_text": self.dialog_text,
             "x": self.x, "y": self.y, "x2": self.x2, "y2": self.y2,
             "x_expr": self.x_expr, "y_expr": self.y_expr,
             "x2_expr": self.x2_expr, "y2_expr": self.y2_expr,
@@ -966,6 +975,8 @@ class ActionInlineForm(QWidget):
         }
         labels = {
             "text": tr("action_editor.lbl_text"), "unit": tr("action_editor.lbl_unit"),
+            "caption": tr("action_editor.lbl_caption"),
+            "dialog_text": tr("action_editor.lbl_dialog_text"),
             "weapon": tr("action_editor.lbl_weapon_cargo"),
             "x": tr("action_editor.lbl_x"), "y": tr("action_editor.lbl_y"),
             "x2": tr("action_editor.lbl_x2"), "y2": tr("action_editor.lbl_y2"),
@@ -1689,6 +1700,8 @@ class ActionInlineForm(QWidget):
         self._set_kind(a.kind)
         self.comment.setText(getattr(a, "comment", "") or "")
         self.text.setText(a.text)
+        self.caption.setText(getattr(a, "caption", "") or "")
+        self.dialog_text.setPlainText(a.text if a.kind == "showDialog" else "")
         self._set_combo(self.unit, a.unit_type)
         self._set_combo(self.weapon, a.weapon_type)
         self.x.setValue(a.x); self.y.setValue(a.y); self.x2.setValue(a.x2); self.y2.setValue(a.y2)
@@ -1810,6 +1823,8 @@ class ActionInlineForm(QWidget):
     def _connect_save_signals(self):
         self.text.textChanged.connect(self._save)
         self.comment.textChanged.connect(self._save)
+        self.caption.textChanged.connect(self._save)
+        self.dialog_text.textChanged.connect(self._save)
         self.group_var_name.currentIndexChanged.connect(self._save)
         for w in (self.x, self.y, self.x2, self.y2, self.player, self.priority, self.spread_speed,
                   self.attack_x, self.attack_y, self.attack_x2, self.attack_y2,
@@ -1843,6 +1858,9 @@ class ActionInlineForm(QWidget):
         a.kind = k
         a.comment = self.comment.text().strip()
         a.text = self.text.text()
+        if k == "showDialog":
+            a.text = self.dialog_text.toPlainText()
+            a.caption = self.caption.text().strip()
         a.unit_type = self.unit.currentData() or ""
         a.weapon_type = self.weapon.currentData() or "mapNone"
         a.x = self.x.value(); a.y = self.y.value()

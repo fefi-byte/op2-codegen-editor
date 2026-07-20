@@ -10,7 +10,8 @@ class MissionSetupDialog(QDialog):
     def __init__(self, parent, mission_name: str, mission_type: MissionType,
                  tech_tree: str, diff_setup: DifficultySetup,
                  variables: list[VariableDef],
-                 map_names: list[str] | None = None, current_map: str = ""):
+                 map_names: list[str] | None = None, current_map: str = "",
+                 briefing: str = ""):
         super().__init__(parent)
         self.setWindowTitle(tr("setup.title"))
         self.resize(560, 580)
@@ -41,12 +42,18 @@ class MissionSetupDialog(QDialog):
                 self.type_combo.setCurrentIndex(i)
                 break
         self.tech_edit = QLineEdit(tech_tree)
+        # Briefing: Dialogbox kurz nach Spielstart (leer = kein Briefing).
+        # Briefing: dialog box shortly after game start (empty = none).
+        self.briefing_edit = QPlainTextEdit(briefing)
+        self.briefing_edit.setPlaceholderText(tr("setup.briefing_placeholder"))
+        self.briefing_edit.setMaximumHeight(100)
 
         form = QFormLayout()
         form.addRow(tr("setup.lbl_map"), self.map_combo)
         form.addRow(tr("setup.lbl_mission_name"), self.name_edit)
         form.addRow(tr("setup.lbl_mission_type"), self.type_combo)
         form.addRow(tr("setup.lbl_tech_tree"), self.tech_edit)
+        form.addRow(tr("setup.lbl_briefing"), self.briefing_edit)
 
         # --- Schwierigkeit ---
         self.hard_spin = QSpinBox(); self.hard_spin.setRange(0, 1000); self.hard_spin.setValue(diff_setup.hard)
@@ -139,6 +146,10 @@ class MissionSetupDialog(QDialog):
     @property
     def tech_tree(self) -> str:
         return self.tech_edit.text().strip() or "MULTITEK.TXT"
+
+    @property
+    def briefing(self) -> str:
+        return self.briefing_edit.toPlainText().strip()
 
     @property
     def diff_setup(self) -> DifficultySetup:

@@ -38,6 +38,7 @@ class EditorWindow(
         self.mission_name = "Editor Mission"
         self.mission_type: MissionType = MissionType.Colony
         self.tech_tree: str = "MULTITEK.TXT"
+        self.briefing: str = ""
         self.diff_setup: DifficultySetup = DifficultySetup()
         self.variables: list[VariableDef] = []
         self.players: list[PlayerSpec] = [PlayerSpec()]

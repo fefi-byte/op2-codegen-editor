@@ -32,6 +32,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_repair_actions(w)
     findings += _check_mine_beacons(w)
     findings += _check_loop_refs(w)
+    findings += _check_dialogs(w)
     return findings
 
 
@@ -551,4 +552,29 @@ def _check_loop_refs(w):
 
     for ti, t in enumerate(getattr(w, "triggers", None) or []):
         walk(t.actions, 0, ti, t.name)
+    return out
+
+
+def _check_dialogs(w):
+    """MsgBox blockiert das lokale Spiel bis OK -- in Multiplayer-Missionen
+    droht damit Desync/Haenger.
+
+    MsgBox blocks the local game until OK -- in multiplayer missions that
+    risks desync/hangs."""
+    out = []
+    mt = int(getattr(w, "mission_type", -1))
+    if mt > -4:      # nur Multiplayer (-4..-8) betrifft es / multiplayer only
+        return out
+    has_dialog = bool((getattr(w, "briefing", "") or "").strip())
+    def walk(actions):
+        nonlocal has_dialog
+        for a in (actions or []):
+            if getattr(a, "kind", "") == "showDialog":
+                has_dialog = True
+            walk(getattr(a, "then_actions", None))
+            walk(getattr(a, "else_actions", None))
+    for t in (getattr(w, "triggers", None) or []):
+        walk(t.actions)
+    if has_dialog:
+        out.append(("warning", tr("validation.dialog_multiplayer"), None))
     return out

@@ -68,9 +68,11 @@ class _BuildMixin:
             self, self.mission_name, self.mission_type,
             self.tech_tree, self.diff_setup, self.variables,
             map_names=self.res.names(), current_map=self.map_name or "",
+            briefing=self.briefing,
         )
         if dlg.exec() == QDialog.Accepted:
             self.mission_name = dlg.mission_name
+            self.briefing = dlg.briefing
             self.mission_type = dlg.mission_type
             self.tech_tree = dlg.tech_tree
             self.diff_setup = dlg.diff_setup
@@ -153,6 +155,7 @@ class _BuildMixin:
             mining_groups=[MiningGroupSpec(**asdict(g)) for g in self.mining_groups],
             triggers=list(self.triggers),
             start_message=StartMessage(tr("window.default_start_message")),
+            briefing=self.briefing,
             victories=list(self.victories), defeats=list(self.defeats),
             difficulty=DifficultySetup(
                 hard=self.diff_setup.hard,

@@ -312,6 +312,9 @@ class TriggerAction:
     # Optional author note; emitted as a // comment in the generated code.
     comment: str = ""
     text: str = ""
+    # showDialog: Fenstertitel der Dialogbox (leer = Missionsname)
+    # showDialog: window title of the dialog box (empty = mission name)
+    caption: str = ""
     unit_type: str = "mapScout"
     weapon_type: str = "mapNone"
     target_count: int | str = 1   # int oder Ausdruck (z.B. "ceil(5 * diff / 10)")
@@ -587,6 +590,11 @@ class Mission:
     # World/wraparound map (512 tiles wide): the engine offset there is
     # -1/-1 instead of +31/-1 -- the codegen redefines MkXY/MkRect/XYPos.
     world_map: bool = False
+    # Briefing-Text: wird kurz nach Spielstart als Dialogbox angezeigt
+    # (OP2 hat keinen eigenen Briefing-Screen fuer Custom-Missionen).
+    # Briefing text: shown as a dialog box shortly after game start
+    # (OP2 has no dedicated briefing screen for custom missions).
+    briefing: str = ""
 
     players: list[PlayerSpec] = field(default_factory=lambda: [PlayerSpec()])
     units: list[UnitSpec] = field(default_factory=list)

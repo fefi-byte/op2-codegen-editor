@@ -228,6 +228,7 @@ ACTION_KINDS = {
     "Leere Aktion (Platzhalter)":        "noop",
     "Wenn / Dann / Sonst (Bedingungsblock)": "if",
     "Nachricht anzeigen":                "message",
+    "Dialog anzeigen":                   "showDialog",
     "Einheit erzeugen":                  "createUnit",
     "Katastrophe ausloesen":             "createDisaster",
     "Anderen Trigger erstellen (Laufzeit)": "createTrigger",
@@ -259,7 +260,7 @@ ACTION_KINDS = {
 # resp. superseded by FightGroups + group command); existing projects using
 # them still load and build.
 ACTION_MENU_GROUPS = {
-    "general":  ["if", "message", "modVar", "createTrigger"],
+    "general":  ["if", "message", "showDialog", "modVar", "createTrigger"],
     "units":    ["createUnit", "unitCmd", "fightGroupCmd",
                  "assignToGroup", "setTargCount"],
     "record":   ["recordBuilding", "recordTube", "recordWall"],

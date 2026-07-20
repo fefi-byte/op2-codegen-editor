@@ -139,6 +139,9 @@ def _action_summary_core(a) -> str:
             f"{e.get('wall_type', '?')}@({e.get('x', 0)},{e.get('y', 0)})->({e.get('x2', 0)},{e.get('y2', 0)})"
             for e in entries)
         return f"{a.group_name}.RecordWall({len(entries)}x: {comp})"
+    if a.kind == "showDialog":
+        t = (a.text or "").replace("\n", " ")
+        return f"MsgBox({t[:40]}{'…' if len(t) > 40 else ''})"
     if a.kind == "setTargCount":
         source = f" via {a.source_group_name} P{a.reinforce_priority}" if a.source_group_name else ""
         entries = list(getattr(a, "targ_counts", None) or [])
@@ -305,6 +308,9 @@ def action_params_summary(a) -> str:
             return (f"{getattr(a, 'group_name', '?')}  ·  {e.get('wall_type', '?')}  "
                     f"({e.get('x', 0)},{e.get('y', 0)}) → ({e.get('x2', 0)},{e.get('y2', 0)})")
         return f"{getattr(a, 'group_name', '?')}  ·  {len(entries)} Abschnitte"
+    if a.kind == "showDialog":
+        t = (getattr(a, "text", "") or "").replace("\n", " ")
+        return f"\u201e{t[:48]}{'…' if len(t) > 48 else ''}\u201c"
     if a.kind == "setTargCount":
         gname = getattr(a, "group_name", "") or "?"
         src = getattr(a, "source_group_name", "") or ""

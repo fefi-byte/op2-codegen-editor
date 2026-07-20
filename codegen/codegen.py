@@ -594,6 +594,16 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
     if k == "message":
         return [f"{indent}AddGameMessage({_cpp_string(action.text)});"]
 
+    if k == "showDialog":
+        # Echte Dialogbox ueber dem Spiel (HFL TethysGameEx::MsgBox).
+        # Blockiert bis OK -- fuer Story-Dialoge in Einzelspieler-Missionen.
+        # Real dialog box over the game (HFL TethysGameEx::MsgBox).
+        # Blocks until OK -- for story dialogs in single-player missions.
+        cap = (getattr(action, "caption", "") or "").strip() \
+            or ctx.get("mission_name", "Outpost 2")
+        return [f"{indent}TethysGameEx::MsgBox(NULL, {_cpp_string(action.text)}, "
+                f"{_cpp_string(cap)}, MB_OK | MB_ICONINFORMATION);"]
+
     if k == "createUnit":
         entries = list(getattr(action, "unit_list", None) or [])
         if not entries:
@@ -2207,6 +2217,7 @@ def _build_codegen_context(mission: Mission) -> dict:
     ctx["mining_actions"] = []
     ctx["assign_action_vars"] = {}
     ctx["assign_actions"] = []
+    ctx["mission_name"] = mission.name
     ctx["wave_action_vars"] = {}
     ctx["wave_actions"] = []
     ctx["repair_action_vars"] = {}
@@ -2592,6 +2603,14 @@ def generate_levelmain(mission: Mission) -> str:
         add("")
         add(f"    AddGameMessage({_cpp_string(mission.start_message.text)});")
 
+    # Briefing: einen Tick nach Spielstart als Dialogbox zeigen (in InitProc
+    # selbst waere die Box noch vor dem Spielfeld sichtbar).
+    # Briefing: shown as a dialog box one tick after game start (inside
+    # InitProc the box would appear before the game view).
+    if (getattr(mission, "briefing", "") or "").strip():
+        add("")
+        add('    CreateTimeTrigger(1, 1, 1, "_briefing_cb");')
+
     # Victory / defeat conditions
     if mission.victories:
         add("")
@@ -2632,6 +2651,17 @@ def generate_levelmain(mission: Mission) -> str:
     for i, t in enumerate(mission.triggers or []):
         for line in _emit_trigger_helper(t, ctx["trigger_helpers_list"][i], ctx):
             add(line)
+        add("")
+
+    # Missions-Briefing als Dialogbox (per Export-Namen registriert).
+    # Mission briefing as a dialog box (registered via export name).
+    if (getattr(mission, "briefing", "") or "").strip():
+        cap = f"{mission.name} - Briefing"
+        add("// Missions-Briefing / mission briefing")
+        add("Export void _briefing_cb() {")
+        add(f"    TethysGameEx::MsgBox(NULL, {_cpp_string(mission.briefing)}, "
+            f"{_cpp_string(cap)}, MB_OK | MB_ICONINFORMATION);")
+        add("}")
         add("")
 
     # Missionsweiter Reparatur-Callback (per Export-Namen registriert).
