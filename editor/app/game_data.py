@@ -95,6 +95,32 @@ WEAPON_UNITS = {"mapLynx", "mapPanther", "mapTiger", "mapSpider", "mapScorpion",
 # Units/buildings for "create unit" actions (display name -> map_id)
 ALL_UNITS = [(d, m) for d, m, _ in STRUCTURES] + [(d, m) for d, m, _ in VEHICLES]
 VEHICLE_UNITS = [(d, m) for d, m, _ in VEHICLES]
+
+# Spaceport-Produkte: Raketen, Satelliten und Starship-Module (map_id-Enum
+# 0x58-0x6B). Werden per DoProduce am Spaceport gebaut; SULV/RLV/EMP Missile
+# landen auf der Startrampe statt in einer Bucht.
+# Spaceport products: rockets, satellites and starship modules (map_id enum
+# 0x58-0x6B). Built via DoProduce at the Spaceport; SULV/RLV/EMP Missile end
+# up on the launch pad instead of in a bay.
+SPACEPORT_PRODUCTS = [
+    ("SULV (Rakete)",          "mapSULV"),
+    ("RLV (wiederverwendbar)", "mapRLV"),
+    ("EMP Missile",            "mapEMPMissile"),
+    ("EDWARD Satellite",       "mapEDWARDSatellite"),
+    ("Solar Power Satellite",  "mapSolarSatellite"),
+    ("Ion Drive Module",       "mapIonDriveModule"),
+    ("Fusion Drive Module",    "mapFusionDriveModule"),
+    ("Command Module",         "mapCommandModule"),
+    ("Fueling Systems",        "mapFuelingSystems"),
+    ("Habitat Ring",           "mapHabitatRing"),
+    ("Sensor Package",         "mapSensorPackage"),
+    ("Skydock",                "mapSkydock"),
+    ("Stasis Systems",         "mapStasisSystems"),
+    ("Orbital Package",        "mapOrbitalPackage"),
+    ("Phoenix Module",         "mapPhoenixModule"),
+    ("Evacuation Module",      "mapEvacuationModule"),
+    ("Children Module",        "mapChildrenModule"),
+]
 MILITARY_VEHICLES = [
     (d, m) for d, m, _ in VEHICLES
     if m in ("mapLynx", "mapPanther", "mapTiger", "mapSpider", "mapScorpion")

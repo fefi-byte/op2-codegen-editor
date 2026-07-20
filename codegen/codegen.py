@@ -1038,6 +1038,28 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
             return lines
         if cmd == "transfer":
             return [f"{indent}{uvar}.DoTransfer({int(action.player)});"]
+        if cmd == "produce":
+            # HFL DoProduce: kann -- anders als Unit::DoDevelop -- auch
+            # Lynx/Panther/Tiger mit Waffe bauen; am Spaceport landen
+            # SULV/RLV/EMP Missile direkt auf der Startrampe.
+            # HFL DoProduce: unlike Unit::DoDevelop it can also build
+            # Lynx/Panther/Tiger with a weapon; at the Spaceport,
+            # SULV/RLV/EMP Missile end up on the launch pad directly.
+            ut = mapid(getattr(action, "unit_type", "") or "mapSULV")
+            wt = getattr(action, "weapon_type", "") or "mapNone"
+            wt = mapid(wt) if wt != "mapNone" else "mapNone"
+            return [f"{indent}{uvar}.DoProduce({ut}, {wt});"]
+        if cmd == "launch":
+            # DoLaunch erwartet PIXEL-Koordinaten (Kachel * 32, +16 =
+            # Kachelmitte) -- gleiche Offset-Logik wie XYPos/MkXY.
+            # DoLaunch expects PIXEL coordinates (tile * 32, +16 = tile
+            # centre) -- same offset logic as XYPos/MkXY.
+            return [
+                f"{indent}{{",
+                f"{indent}    LOCATION _lp = {pos};",
+                f"{indent}    {uvar}.DoLaunch(_lp.x * 32 + 16, _lp.y * 32 + 16, 1);",
+                f"{indent}}}",
+            ]
         if cmd == "repair":
             tname = getattr(action, "target", "") or ""
             tvar = _resolve_loop_ref(tname, depth) or ctx.get("unit_vars", {}).get(tname)

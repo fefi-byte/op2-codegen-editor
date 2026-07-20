@@ -95,6 +95,27 @@ _UNIT_COMMANDS_BUILDING = [
     ("transfer", "uc_transfer"),
 ]
 _VEHICLE_IDS = {m for _, m, _ in VEHICLES}
+# Gebaeude mit Produktionsbefehl (DoProduce); der Spaceport kann zusaetzlich
+# Raketen starten (DoLaunch).
+# Buildings with a production command (DoProduce); the Spaceport can also
+# launch rockets (DoLaunch).
+_FACTORY_IDS = {"mapVehicleFactory", "mapStructureFactory",
+                "mapArachnidFactory", "mapSpaceport"}
+
+
+def produce_items_for(map_id: str) -> list[tuple[str, str]]:
+    """Baubare Produkte je Fabriktyp / producible items per factory type."""
+    if map_id == "mapSpaceport":
+        return list(SPACEPORT_PRODUCTS)
+    if map_id == "mapArachnidFactory":
+        return [(d, m) for d, m in VEHICLE_UNITS if m in ("mapSpider", "mapScorpion")]
+    if map_id == "mapVehicleFactory":
+        return [(d, m) for d, m in VEHICLE_UNITS if m not in ("mapSpider", "mapScorpion")]
+    if map_id == "mapStructureFactory":
+        # Structure Kits -- gleiche map_ids wie die Gebaeude selbst.
+        # Structure kits -- same map_ids as the buildings themselves.
+        return [(d, m) for d, m, _ in STRUCTURES]
+    return []
 
 
 def unit_commands_for(map_id: str) -> list[tuple[str, str]]:
@@ -114,6 +135,11 @@ def unit_commands_for(map_id: str) -> list[tuple[str, str]]:
         if map_id in WEAPON_UNITS:
             cmds.insert(2, ("attackGround", "uc_attack_ground"))
         return cmds
+    if map_id in _FACTORY_IDS:
+        cmds = [("produce", "uc_produce")]
+        if map_id == "mapSpaceport":
+            cmds.append(("launch", "uc_launch"))
+        return cmds + list(_UNIT_COMMANDS_BUILDING)
     return list(_UNIT_COMMANDS_BUILDING)
 
 
@@ -555,6 +581,10 @@ class ActionInlineForm(QWidget):
         self.unit_ref.currentIndexChanged.connect(self._update_unit_commands)
         self.unit_command = QComboBox()
         self.unit_command.currentIndexChanged.connect(self._update)
+        # Produkt fuer den Produktionsbefehl (Inhalt haengt am Fabriktyp).
+        # Product for the produce command (contents depend on factory type).
+        self.produce_item = QComboBox()
+        self.produce_item.currentIndexChanged.connect(self._save)
         self._fill_unit_commands()
         # Ziel-Einheit fuer den Reparieren-Befehl / target unit for repair
         self.cmd_unit_target = QComboBox()
@@ -922,6 +952,7 @@ class ActionInlineForm(QWidget):
             "wave_group": self.wave_group, "fg_command": self.fg_command,
             "cmd_target": self.cmd_target, "cmd_rect_w": self.cmd_rect_w,
             "unit_ref": self.unit_ref, "unit_command": self.unit_command,
+            "produce_item": self.produce_item,
             "cmd_unit_target": self.cmd_unit_target, "patrol_editor": self.patrol_editor,
             "targ_editor": self.targ_editor,
             "unit_editor": self.unit_editor, "building_editor": self.building_editor,
@@ -975,6 +1006,7 @@ class ActionInlineForm(QWidget):
             "cmd_rect_w": tr("action_editor.lbl_cmd_rect"),
             "unit_ref": tr("action_editor.lbl_unit_ref"),
             "unit_command": tr("action_editor.lbl_unit_command"),
+            "produce_item": tr("action_editor.lbl_produce_item"),
             "cmd_unit_target": tr("action_editor.lbl_cmd_unit_target"),
             "patrol_editor": tr("action_editor.lbl_patrol_editor"),
             "unit_editor": tr("action_editor.lbl_unit_editor"),
@@ -1053,6 +1085,15 @@ class ActionInlineForm(QWidget):
         if i >= 0:
             self.unit_command.setCurrentIndex(i)
         self.unit_command.blockSignals(False)
+        cur_item = self.produce_item.currentData()
+        self.produce_item.blockSignals(True)
+        self.produce_item.clear()
+        for d, m in produce_items_for(mid):
+            self.produce_item.addItem(d, m)
+        j = self.produce_item.findData(cur_item)
+        if j >= 0:
+            self.produce_item.setCurrentIndex(j)
+        self.produce_item.blockSignals(False)
 
     def _update_unit_commands(self):
         self._fill_unit_commands()
@@ -1556,6 +1597,15 @@ class ActionInlineForm(QWidget):
                 fields = fields + ["player"]
             elif cmd == "repair":
                 fields = fields + ["cmd_unit_target"]
+            elif cmd == "produce":
+                # Waffe nur bei Kampffahrzeug-Fabriken sinnvoll.
+                # Weapon only meaningful for combat-vehicle factories.
+                mid = self._named_unit_types.get(self.unit_ref.currentData(), "")
+                fields = fields + ["produce_item"]
+                if mid in ("mapVehicleFactory", "mapArachnidFactory"):
+                    fields = fields + ["weapon"]
+            elif cmd == "launch":
+                fields = fields + ["x", "y"]
         if kind == "startMining":
             # Bei aktiver Referenz (Schleife/benannte Einheit) sind Position
             # und Positions-Picker fuer die jeweilige Seite ueberfluessig; der
@@ -1717,6 +1767,7 @@ class ActionInlineForm(QWidget):
             self._fill_unit_commands()
             self._set_combo(self.unit_command, getattr(a, "fg_command", "move") or "move")
             self._set_combo(self.cmd_unit_target, getattr(a, "target", "") or "")
+            self._set_combo(self.produce_item, getattr(a, "unit_type", "") or "")
         self._patrol_refresh(list(getattr(a, "patrol_points", None) or []))
         self._wave_list_load(getattr(a, "wave_units", None))
         vn = getattr(a, 'var_name', '') or ''
@@ -1866,6 +1917,8 @@ class ActionInlineForm(QWidget):
             a.unit_ref = self.unit_ref.currentData() or ""
             a.fg_command = self.unit_command.currentData() or "move"
             a.target = self.cmd_unit_target.currentData() or ""
+            if a.fg_command == "produce" and self.produce_item.currentData():
+                a.unit_type = self.produce_item.currentData()
         elif k == "setMorale":
             # fill_combo speichert das Label als itemData -> Wert nachschlagen
             # fill_combo stores the label as itemData -> look up the value
