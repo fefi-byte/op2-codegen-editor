@@ -881,11 +881,19 @@ class ActionInlineForm(QWidget):
         rth_lay.addWidget(self.repair_thresholds_tree)
         rth_lay.addLayout(rth_row)
 
+        # Immer sichtbares, optionales Kommentarfeld (nicht in _rows, damit
+        # _update es nie ausblendet).
+        # Always-visible optional comment field (not in _rows, so _update
+        # never hides it).
+        self.comment = QLineEdit()
+        self.comment.setPlaceholderText(tr("action_editor.comment_placeholder"))
+
         self.form = QFormLayout()
         # Label ueber dem Widget: macht die Formularspalte deutlich schmaler.
         # Label above the widget: makes the form column much narrower.
         self.form.setRowWrapPolicy(QFormLayout.WrapAllRows)
         self.form.addRow(tr("action_editor.lbl_action_type"), self.kind)
+        self.form.addRow(tr("action_editor.lbl_comment"), self.comment)
         self._rows = {
             "text": self.text, "unit": self.unit, "weapon": self.weapon,
             "x": self.x, "y": self.y, "x2": self.x2, "y2": self.y2,
@@ -1629,6 +1637,7 @@ class ActionInlineForm(QWidget):
         # still-empty widgets back into the action.
         self._loading = True
         self._set_kind(a.kind)
+        self.comment.setText(getattr(a, "comment", "") or "")
         self.text.setText(a.text)
         self._set_combo(self.unit, a.unit_type)
         self._set_combo(self.weapon, a.weapon_type)
@@ -1749,6 +1758,7 @@ class ActionInlineForm(QWidget):
 
     def _connect_save_signals(self):
         self.text.textChanged.connect(self._save)
+        self.comment.textChanged.connect(self._save)
         self.group_var_name.currentIndexChanged.connect(self._save)
         for w in (self.x, self.y, self.x2, self.y2, self.player, self.priority, self.spread_speed,
                   self.attack_x, self.attack_y, self.attack_x2, self.attack_y2,
@@ -1780,6 +1790,7 @@ class ActionInlineForm(QWidget):
         a = self._action
         k = self._current_kind()
         a.kind = k
+        a.comment = self.comment.text().strip()
         a.text = self.text.text()
         a.unit_type = self.unit.currentData() or ""
         a.weapon_type = self.weapon.currentData() or "mapNone"

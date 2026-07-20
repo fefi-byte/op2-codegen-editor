@@ -1295,8 +1295,17 @@ def _emit_action(action: TriggerAction, indent: str, ctx: dict, depth: int = 0) 
     Each forEach level gets its own variable name (_loop_var) so a nested
     loop doesn't shadow an outer one -- "unit" (depth 1), "unit2" (depth 2), ...
     """
+    # Autoren-Kommentar der Aktion vor deren Code stellen (auch verschachtelt).
+    # Endender Backslash wuerde die naechste Codezeile in den Kommentar ziehen
+    # (Zeilen-Splice) -> abschneiden.
+    # Put the action's author comment above its code (also when nested).
+    # A trailing backslash would splice the next code line into the comment
+    # -> strip it.
+    _comment_lines = [f"{indent}// {cl.strip().rstrip(chr(92)).strip()}"
+                      for cl in ((getattr(action, "comment", "") or "").strip()).splitlines()]
+
     if action.kind == "if":
-        out: list[str] = []
+        out: list[str] = list(_comment_lines)
         loop_mode = getattr(action, "loop_mode", "none") or "none"
         inner = indent
         inner_depth = depth
@@ -1354,9 +1363,9 @@ def _emit_action(action: TriggerAction, indent: str, ctx: dict, depth: int = 0) 
     # Non-`if`: wrap the body in an IF gate if the action has its own conditions.
     cond = _emit_action_conditions_combined(action, depth)
     if cond is None:
-        return _emit_action_body(action, indent, ctx, depth)
+        return _comment_lines + _emit_action_body(action, indent, ctx, depth)
     body = _emit_action_body(action, indent + "    ", ctx, depth)
-    return [f"{indent}if ({cond}) {{", *body, f"{indent}}}"]
+    return [*_comment_lines, f"{indent}if ({cond}) {{", *body, f"{indent}}}"]
 
 
 def _emit_action_list(actions: list[TriggerAction], indent: str, ctx: dict, depth: int = 0) -> list[str]:
@@ -1388,6 +1397,8 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
 
     lines: list[str] = []
     lines.append(f"// Trigger '{t.name}' (condition={t.condition})")
+    for cl in ((getattr(t, "comment", "") or "").strip()).splitlines():
+        lines.append(f"// {cl.strip().rstrip(chr(92)).strip()}")
 
     # --- Callback als exportierte Funktion / callback as an exported function ---
     if t.condition in ("time", "buildingCount", "vehicleCount", "research",

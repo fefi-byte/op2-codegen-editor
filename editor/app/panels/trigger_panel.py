@@ -44,6 +44,8 @@ class TriggerPanel(QWidget):
         self.name = QLineEdit()
         self.folder = QLineEdit()
         self.folder.setPlaceholderText(tr("triggers.folder_placeholder"))
+        self.comment = QLineEdit()
+        self.comment.setPlaceholderText(tr("triggers.comment_placeholder"))
         self.at_start = QCheckBox(tr("triggers.chk_at_start"))
         self.one_shot = QCheckBox(tr("triggers.chk_one_shot"))
         self.cond = QComboBox()
@@ -97,6 +99,7 @@ class TriggerPanel(QWidget):
         self.form = QFormLayout()
         self.form.addRow(tr("triggers.lbl_name"), self.name)
         self.form.addRow(tr("triggers.lbl_folder"), self.folder)
+        self.form.addRow(tr("triggers.lbl_comment"), self.comment)
         self.form.addRow(self.at_start)
         self.form.addRow(self.one_shot)
         self.form.addRow(tr("triggers.lbl_condition"), self.cond)
@@ -125,6 +128,7 @@ class TriggerPanel(QWidget):
 
         self.name.textChanged.connect(self._store_current)
         self.folder.textChanged.connect(self._store_current)
+        self.comment.textChanged.connect(self._store_current)
         self.folder.editingFinished.connect(self._refresh_list)
         for w in (self.cond, self.compare, self.resource, self.building,
                   self.trigger_group, self.damage_type, self.target_unit,
@@ -313,7 +317,8 @@ class TriggerPanel(QWidget):
 
     def _set_form_enabled(self, on):
         for w in list(self._cond_rows.values()) + [
-            self.name, self.folder, self.at_start, self.one_shot, self.cond
+            self.name, self.folder, self.comment, self.at_start, self.one_shot,
+            self.cond
         ]:
             w.setEnabled(on)
 
@@ -430,6 +435,7 @@ class TriggerPanel(QWidget):
             self.marks.set_diff_values(*dv)
         self.name.setText(t.name)
         self.folder.setText(getattr(t, 'folder', '') or '')
+        self.comment.setText(getattr(t, 'comment', '') or '')
         self.at_start.setChecked(t.enabled_at_start)
         self.one_shot.setChecked(t.one_shot)
         label = {v[0]: k for k, v in TRIGGER_CONDITIONS.items()}.get(t.condition, "Zeit (Marks)")
@@ -493,6 +499,7 @@ class TriggerPanel(QWidget):
         t = triggers[self._idx]
         t.name = self.name.text() or f"Trigger{self._idx + 1}"
         t.folder = self.folder.text().strip()
+        t.comment = self.comment.text().strip()
         t.enabled_at_start = self.at_start.isChecked()
         t.one_shot = self.one_shot.isChecked()
         t.condition = TRIGGER_CONDITIONS[self.cond.currentData()][0]

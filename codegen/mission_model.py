@@ -308,6 +308,9 @@ class TriggerAction:
     An action inside the callback function of a trigger.
     """
     kind: str                 # "message" | "createUnit" | "createTrigger" | "recordBuilding" | "recordTube" | "recordWall" | "setTargCount" | "assignToGroup" | "modVar" | "createDisaster" | "startMining" | "sendAttackWave" | "fightGroupCmd" | "unitCmd" | "defendArea" | "repairBuildings"
+    # Optionale Autoren-Notiz; landet als //-Kommentar im generierten Code.
+    # Optional author note; emitted as a // comment in the generated code.
+    comment: str = ""
     text: str = ""
     unit_type: str = "mapScout"
     weapon_type: str = "mapNone"
@@ -500,6 +503,9 @@ class TriggerDef:
     actions: list[TriggerAction] = field(default_factory=list)
     unit_checks: list[FindUnitCheck] = field(default_factory=list)
     folder: str = ""
+    # Optionale Autoren-Notiz; landet als //-Kommentar im generierten Code.
+    # Optional author note; emitted as a // comment in the generated code.
+    comment: str = ""
     # attacked/damaged: Name der ueberwachten Gruppe (Gruppen-Panel)
     # attacked/damaged: name of the watched group (Groups panel)
     group_name: str = ""
