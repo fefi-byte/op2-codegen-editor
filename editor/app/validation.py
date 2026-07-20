@@ -240,6 +240,19 @@ def _check_unit_names(w):
                         out.append(("error",
                                     tr("validation.roster_plan_unknown", name=g.name,
                                        ref=uid[5:].strip()), ("group", None)))
+    # Truck-Nachschub der MiningGroups: ohne ReinforceGroup werden verlorene
+    # Trucks nie ersetzt; gesetzte Quelle muss existieren.
+    # Mining truck resupply: without a ReinforceGroup, lost trucks are never
+    # replaced; a configured source must exist.
+    rg_names = {g.name for g in (getattr(w, "reinforce_groups", None) or [])}
+    for g in (getattr(w, "mining_groups", None) or []):
+        src_name = (getattr(g, "source_group_name", "") or "").strip()
+        if not src_name:
+            out.append(("warning", tr("validation.mining_no_source", name=g.name),
+                        ("group", None)))
+        elif src_name not in rg_names:
+            out.append(("error", tr("validation.mining_source_missing", name=g.name,
+                                    ref=src_name), ("group", None)))
     return out
 
 

@@ -240,6 +240,12 @@ class MiningGroupSpec:
     # the group once both are standing.
     mine_ref: str = ""
     smelter_ref: str = ""
+    # Versorgung: diese ReinforceGroup produziert verlorene Cargo Trucks
+    # nach (RecordVehReinforceGroup bei Aktivierung; leer = kein Nachschub).
+    # Supply: this ReinforceGroup reproduces lost cargo trucks
+    # (RecordVehReinforceGroup on activation; empty = no resupply).
+    source_group_name: str = ""
+    reinforce_priority: int = 1000
 
 
 @dataclass
@@ -392,6 +398,12 @@ class TriggerAction:
     # building is meant -- it's always whichever the loop is currently on.
     mine_ref: str = ""
     smelter_ref: str = ""
+    # Versorgung: diese ReinforceGroup produziert verlorene Cargo Trucks
+    # nach (RecordVehReinforceGroup bei Aktivierung; leer = kein Nachschub).
+    # Supply: this ReinforceGroup reproduces lost cargo trucks
+    # (RecordVehReinforceGroup on activation; empty = no resupply).
+    source_group_name: str = ""
+    reinforce_priority: int = 1000
     # Patrouille: bis zu 8 Wegpunkte [[x, y], ...]; leer -> x,y/x2,y2 (2 Punkte)
     # Patrol: up to 8 waypoints [[x, y], ...]; empty -> x,y/x2,y2 (2 points)
     patrol_points: list = field(default_factory=list)

@@ -103,6 +103,13 @@ class GroupsPanel(QWidget):
         self.smelter_ref.setToolTip(tr("groups.tooltip_smelter_ref"))
         self.form.addRow(tr("groups.row_mine_ref"), self.mine_ref)
         self.form.addRow(tr("groups.row_smelter_ref"), self.smelter_ref)
+        self.mining_source = QComboBox()
+        self.mining_source.setToolTip(tr("groups.tooltip_mining_source"))
+        self.mining_prio = QSpinBox()
+        self.mining_prio.setRange(1, 65535)
+        self.mining_prio.setValue(1000)
+        self.form.addRow(tr("groups.row_mining_source"), self.mining_source)
+        self.form.addRow(tr("groups.row_mining_prio"), self.mining_prio)
         self.unit_list.setToolTip(tr("groups.tooltip_roster"))
         self.form.addRow(tr("groups.row_targets"), self.target_text)
 
@@ -115,6 +122,8 @@ class GroupsPanel(QWidget):
         self.record_all.toggled.connect(self._store_current)
         self.mine_ref.currentIndexChanged.connect(self._store_current)
         self.smelter_ref.currentIndexChanged.connect(self._store_current)
+        self.mining_source.currentIndexChanged.connect(self._store_current)
+        self.mining_prio.valueChanged.connect(self._store_current)
         self.target_text.textChanged.connect(self._store_current)
 
         detail_inner = QWidget()
@@ -489,6 +498,8 @@ class GroupsPanel(QWidget):
             self.record_all.setChecked(bool(getattr(group, "record_all", True)))
         self.form.setRowVisible(self.mine_ref, is_mining)
         self.form.setRowVisible(self.smelter_ref, is_mining)
+        self.form.setRowVisible(self.mining_source, is_mining)
+        self.form.setRowVisible(self.mining_prio, is_mining)
         if is_mining:
             self._fill_ref_combo(self.mine_ref,
                                  ("mapCommonOreMine", "mapRareOreMine"), "Mine",
@@ -496,6 +507,15 @@ class GroupsPanel(QWidget):
             self._fill_ref_combo(self.smelter_ref,
                                  ("mapCommonOreSmelter", "mapRareOreSmelter"), "Smelter",
                                  getattr(group, "smelter_ref", "") or "")
+            self.mining_source.blockSignals(True)
+            self.mining_source.clear()
+            self.mining_source.addItem(tr("groups.ref_none"), "")
+            for rg in self._reinforce_groups():
+                self.mining_source.addItem(f"{rg.name} [ReinforceGroup]", rg.name)
+            si = self.mining_source.findData(getattr(group, "source_group_name", "") or "")
+            self.mining_source.setCurrentIndex(si if si >= 0 else 0)
+            self.mining_source.blockSignals(False)
+            self.mining_prio.setValue(int(getattr(group, "reinforce_priority", 1000) or 1000))
         rect_label = tr("groups.row_idle_rect") if (is_fight or is_mining) else tr("groups.row_build_rect")
         self.form.setRowVisible(self.rect_section_label, has_rect)
         self.rect_section_label.setText(rect_label)
@@ -585,6 +605,8 @@ class GroupsPanel(QWidget):
         if is_mining:
             group.mine_ref = self._resolve_ref_combo(self.mine_ref, "Mine")
             group.smelter_ref = self._resolve_ref_combo(self.smelter_ref, "Smelter")
+            group.source_group_name = self.mining_source.currentData() or ""
+            group.reinforce_priority = self.mining_prio.value()
         if is_reinforce:
             group.targets = self._targets_from_text(self.target_text.toPlainText())
         item = self.glist.currentItem()

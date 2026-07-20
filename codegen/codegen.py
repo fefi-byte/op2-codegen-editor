@@ -1910,6 +1910,15 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         body.append(f"        {var}.SetTargCount(mapCargoTruck, mapNone, {n});")
         body.append(f"        {ids_var}[0] = _mine.unitID;")
         body.append(f"        {ids_var}[1] = _smelter.unitID;")
+        # Truck-Nachschub: die in der Gruppe hinterlegte ReinforceGroup
+        # produziert fuer die Sollstaerke (Prioritaet nie 0!).
+        # Truck resupply: the group's configured ReinforceGroup produces
+        # for the target count (priority never 0!).
+        src_name = (getattr(spec, "source_group_name", "") or "").strip()
+        src_var = ctx["group_vars"].get(src_name) if src_name else None
+        if src_var:
+            prio = max(1, int(getattr(spec, "reinforce_priority", 1000) or 1000))
+            body.append(f"        {src_var}.RecordVehReinforceGroup({var}, {prio});")
         body.append(f'        op2::log::linef("MiningGroup [{action.group_name}] aktiviert '
                     f'(Mine %d, Smelter %d)", _mine.unitID, _smelter.unitID);')
         body.append(f"    }}")
