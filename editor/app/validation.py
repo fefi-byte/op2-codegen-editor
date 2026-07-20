@@ -509,7 +509,28 @@ def _check_loop_refs(w):
     Loop references (<loop>/<loop:outer>) outside a forEach loop emit no
     code -- report as an error."""
     out = []
-    LOOP_FIELDS = ("unit_ref", "target", "mine_ref", "smelter_ref")
+
+    def loop_fields(a):
+        """Nur die Felder pruefen, die die Aktion bei ihrem aktuellen Befehl
+        tatsaechlich benutzt -- das Formular speichert auch unbenutzte
+        Combo-Staende (z.B. das Reparatur-Ziel bei einem Transfer-Befehl).
+
+        Only check the fields the action actually uses with its current
+        command -- the form also persists unused combo states (e.g. the
+        repair target while a transfer command is selected)."""
+        k = getattr(a, "kind", "")
+        if k == "unitCmd":
+            fields = ["unit_ref"]
+            if (getattr(a, "fg_command", "") or "") == "repair":
+                fields.append("target")
+            return fields
+        if k == "fightGroupCmd":
+            if (getattr(a, "fg_command", "") or "") in ("addUnit", "removeUnit"):
+                return ["target"]
+            return []
+        if k == "startMining":
+            return ["mine_ref", "smelter_ref"]
+        return []
 
     def walk(actions, depth, ti, tname):
         for a in (actions or []):
@@ -517,7 +538,7 @@ def _check_loop_refs(w):
             if getattr(a, "kind", "") == "if" and                     (getattr(a, "loop_mode", "none") or "none") == "forEach":
                 d = depth + 1
             if getattr(a, "kind", "") != "if":
-                for f in LOOP_FIELDS:
+                for f in loop_fields(a):
                     v = getattr(a, f, "") or ""
                     if v in ("<loop>", "<loop:outer>") and depth == 0:
                         out.append(("error",
