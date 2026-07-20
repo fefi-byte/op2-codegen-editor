@@ -246,12 +246,12 @@ static void initProc() {
     AddGameMessage("Created with the OP2 Mission Editor.");
 
     // --- Victory conditions ---
-    Trigger _v_51757 = CreateCountTrigger(1, 1, 0, mapEvacuationModule, mapAny, 1, cmpGreaterEqual, "NoResponseToTrigger");
-    CreateVictoryCondition(1, 0, _v_51757, "Complete the mission.");
+    Trigger _v_16580 = CreateCountTrigger(1, 1, 0, mapEvacuationModule, mapAny, 1, cmpGreaterEqual, "NoResponseToTrigger");
+    CreateVictoryCondition(1, 0, _v_16580, "Complete the mission.");
 
     // --- Defeat conditions ---
-    Trigger _v_13414 = CreateResourceTrigger(1, 1, resCommonOre, 10000, 0, cmpGreaterEqual, "NoResponseToTrigger");
-    CreateFailureCondition(1, 0, _v_13414, "");
+    Trigger _v_22266 = CreateResourceTrigger(1, 1, resCommonOre, 10000, 0, cmpGreaterEqual, "NoResponseToTrigger");
+    CreateFailureCondition(1, 0, _v_22266, "");
 
     // --- Custom triggers (enabled at start) ---
     _trigger_0_Disaster();
@@ -411,7 +411,7 @@ Export void _trigger_0_Disaster_cb() {
     TethysGame::SetEruption(XYPos(166, 155), 15);
     TethysGame::SetLavaSpeed(15);
     AddGameMessage("Nachricht…");
-    FreezeFlowS(MkXY(166, 154));
+    FreezeFlowS(MkXY(166, 153));
 }
 static void _trigger_0_Disaster() {
     CreateTimeTrigger(1, 1, (2) * kTicksPerMark, "_trigger_0_Disaster_cb");
@@ -419,6 +419,7 @@ static void _trigger_0_Disaster() {
 
 // Trigger 'base rep' (condition=time)
 Export void _trigger_1_base_rep_cb() {
+    // Für Base im Norden
     _repair_armed_0 = true;
 }
 static void _trigger_1_base_rep() {
@@ -618,7 +619,7 @@ Export void _repairGroups_cb() {
         while (_e.GetNext(_b)) {
             if (!_b.IsBuilding() || !_b.IsLive() || _b.OwnerID() != 1) continue;
             map_id _bt = _b.GetType();
-            int _thr = 50;
+            int _thr = 1;
             if (_bt == mapTokamak) _thr = 200;
             if (_b.GetDamage() < _thr) continue;
             // freies Fahrzeug der Gruppe suchen (Praeferenz-Rangfolge)
@@ -634,8 +635,7 @@ Export void _repairGroups_cb() {
                 int _rank = 99;
                 map_id _vt = _v.GetType();
                 if (_vt == mapSpider) _rank = 0;
-                else if (_vt == mapRepairVehicle) _rank = 1;
-                else if (_vt == mapConVec) _rank = 2;
+                else if (_vt == mapConVec) _rank = 1;
                 if (_rank < _bestRank) { _bestRank = _rank; _best = _v; }
             }
             if (_bestRank < 99 && _nIssued < 8) {
@@ -652,7 +652,7 @@ Export void _repairGroups_cb() {
         while (_e.GetNext(_b)) {
             if (!_b.IsBuilding() || !_b.IsLive() || _b.OwnerID() != 1) continue;
             map_id _bt = _b.GetType();
-            int _thr = 50;
+            int _thr = 1;
             if (_bt == mapTokamak) _thr = 200;
             if (_b.GetDamage() < _thr) continue;
             // freies Fahrzeug der Gruppe suchen (Praeferenz-Rangfolge)
@@ -668,8 +668,7 @@ Export void _repairGroups_cb() {
                 int _rank = 99;
                 map_id _vt = _v.GetType();
                 if (_vt == mapSpider) _rank = 0;
-                else if (_vt == mapRepairVehicle) _rank = 1;
-                else if (_vt == mapConVec) _rank = 2;
+                else if (_vt == mapConVec) _rank = 1;
                 if (_rank < _bestRank) { _bestRank = _rank; _best = _v; }
             }
             if (_bestRank < 99 && _nIssued < 8) {

@@ -719,6 +719,7 @@
       "actions": [
         {
           "kind": "createDisaster",
+          "comment": "",
           "text": "",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
@@ -1361,11 +1362,11 @@
               "building_type": "mapTokamak",
               "damage": 200
             }
-          ],
-          "repair_default_damage": 50
+          ]
         },
         {
           "kind": "message",
+          "comment": "",
           "text": "Nachricht\u2026",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
@@ -1435,17 +1436,17 @@
               "building_type": "mapTokamak",
               "damage": 200
             }
-          ],
-          "repair_default_damage": 50
+          ]
         },
         {
           "kind": "lavaFlowAni",
+          "comment": "",
           "text": "",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
           "target_count": 1,
           "x": 165,
-          "y": 153,
+          "y": 152,
           "x2": 0,
           "y2": 0,
           "player": 0,
@@ -1459,7 +1460,7 @@
           "condition_logic": "and",
           "then_actions": [],
           "else_actions": [],
-          "var_name": "var2",
+          "var_name": "",
           "mod_mode": "inc",
           "var_expr": "",
           "disaster_type": "meteor",
@@ -1509,12 +1510,12 @@
               "building_type": "mapTokamak",
               "damage": 200
             }
-          ],
-          "repair_default_damage": 50
+          ]
         }
       ],
       "unit_checks": [],
       "folder": "Disaster",
+      "comment": "",
       "group_name": "",
       "damage_type": 3,
       "target_unit": "",
@@ -1540,6 +1541,7 @@
       "actions": [
         {
           "kind": "repairBuildings",
+          "comment": "F\u00fcr Base im Norden",
           "text": "",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
@@ -1622,12 +1624,12 @@
               "building_type": "mapTokamak",
               "damage": 200
             }
-          ],
-          "repair_default_damage": 50
+          ]
         }
       ],
       "unit_checks": [],
       "folder": "base",
+      "comment": "",
       "group_name": "def",
       "damage_type": 3,
       "target_unit": "struck",
@@ -1653,6 +1655,7 @@
       "actions": [
         {
           "kind": "recordBuilding",
+          "comment": "",
           "text": "",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
@@ -1730,11 +1733,11 @@
               "building_type": "mapTokamak",
               "damage": 200
             }
-          ],
-          "repair_default_damage": 50
+          ]
         },
         {
           "kind": "message",
+          "comment": "",
           "text": "bildings",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
@@ -1804,12 +1807,12 @@
               "building_type": "mapTokamak",
               "damage": 200
             }
-          ],
-          "repair_default_damage": 50
+          ]
         }
       ],
       "unit_checks": [],
       "folder": "base",
+      "comment": "",
       "group_name": "def",
       "damage_type": 3,
       "target_unit": "struck",
@@ -1835,6 +1838,7 @@
       "actions": [
         {
           "kind": "recordBuilding",
+          "comment": "",
           "text": "",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
@@ -1912,11 +1916,11 @@
               "building_type": "mapTokamak",
               "damage": 200
             }
-          ],
-          "repair_default_damage": 50
+          ]
         },
         {
           "kind": "startMining",
+          "comment": "",
           "text": "",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
@@ -1986,11 +1990,11 @@
               "building_type": "mapTokamak",
               "damage": 200
             }
-          ],
-          "repair_default_damage": 50
+          ]
         },
         {
           "kind": "setTargCount",
+          "comment": "",
           "text": "",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
@@ -2066,12 +2070,12 @@
               "building_type": "mapTokamak",
               "damage": 200
             }
-          ],
-          "repair_default_damage": 50
+          ]
         }
       ],
       "unit_checks": [],
       "folder": "",
+      "comment": "",
       "group_name": "def",
       "damage_type": 3,
       "target_unit": "struck",

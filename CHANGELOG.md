@@ -5,9 +5,59 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0-alpha] - 2026-07-20
+
+The editor now generates missions on top of the classic **Outpost 2 Mission
+SDK** instead of TitanAPI. In short: missions can do a lot more, and the AI
+behaves much more like in the original campaigns.
 
 ### Added
+- **Bases that rebuild themselves**: building groups now really reconstruct
+  destroyed structures — including mines — exactly where they stood. Buildings
+  that exist at game start can be included automatically.
+- **Named buildings**: give a building a name and the mission keeps track of
+  it across destruction and rebuild. Groups and mining setups refer to
+  buildings by name instead of coordinates.
+- **Smarter mining**: a mining group finds its mine and smelter on its own,
+  starts hauling ore once both are standing, and can be resupplied with new
+  cargo trucks when some are lost.
+- **Repair crews**: define areas to watch and let a group repair damaged
+  buildings automatically. Per-building damage thresholds are possible (e.g.
+  only repair the Tokamak once it is badly damaged); Eden uses the Repair
+  Vehicle, Plymouth the Spider, ConVecs fill in.
+- **New actions**: launch an EMP missile, change morale, set the music
+  playlist, animate lava flows, and tweak unit stats (speed, armor, …).
+- **New trigger conditions**: group attacked, group badly damaged, a scout
+  scanning a special target, and a specific unit dying.
+- **World maps**: 512-wide wraparound maps are handled correctly.
+- **Comments**: triggers and actions have an optional comment field; comments
+  also show up in the generated code.
+- **Map preview of planned buildings**: buildings that a trigger will
+  construct later are drawn dashed on the map, labelled with their trigger.
+- Many new validation checks that warn about common mission-scripting traps
+  before you even build.
+
+### Changed
+- Slimmer editing panels: field labels sit above their inputs, long
+  validation messages wrap, and action cards only take the height they need.
+- Mission summaries on the action cards now show what will actually happen
+  (e.g. the real vehicle list instead of a leftover default).
+
+### Removed
+- Building mission DLLs on Linux. The classic SDK requires Visual Studio
+  (MSVC) on Windows; the editor itself still runs anywhere Python does.
+
+## [0.3.1-alpha] - 2026-07-09
+
+### Fixed
+- Building a mission from the extracted release ZIP no longer fails with a
+  missing `op2.hpp` include.
+
+## [0.3.0-alpha] - 2026-07-09
+
+### Added
+- Fight groups and mining groups, self-healing unit groups, and a large
+  cleanup of legacy code paths.
 - **Linux support**: the editor GUI and the DLL build step now run on Linux
   (Debian, Ubuntu, Arch, Fedora, Steam Deck). The game is expected to run under
   Wine; compiled missions are still Win32 DLLs.
