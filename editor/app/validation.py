@@ -31,7 +31,6 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_unit_names(w)
     findings += _check_repair_actions(w)
     findings += _check_mine_beacons(w)
-    findings += _check_tubes(w)
     findings += _check_loop_refs(w)
     return findings
 
@@ -315,29 +314,6 @@ def _check_mine_beacons(w):
                                     tr("validation.mine_no_beacon",
                                        name=t.name, x=pos[0], y=pos[1]),
                                     ("trigger", ti)))
-    return out
-
-
-def _check_tubes(w):
-    """Gebaeude ohne Tube-Verbindung zum Command Center sind im Spiel
-    DEAKTIVIERT -- eine Basis mit mehreren Gebaeuden, aber ganz ohne
-    Tubes, kann nicht funktionieren (Fabriken produzieren nichts).
-
-    Buildings without a tube connection to the Command Center are DISABLED
-    in-game -- a base with several structures but no tubes at all cannot
-    work (factories produce nothing).
-    """
-    objects = getattr(w, "objects", None) or []
-    has_tube = any(getattr(o, "map_id", "") == "mapTube" for o in objects)
-    if has_tube:
-        return []
-    out = []
-    from collections import Counter
-    per_player = Counter(o.player for o in objects
-                         if getattr(o, "kind", "") == "structure")
-    for p, n in sorted(per_player.items()):
-        if n >= 2:
-            out.append(("warning", tr("validation.no_tubes", p=p, n=n), None))
     return out
 
 

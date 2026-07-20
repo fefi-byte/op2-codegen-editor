@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from PySide6.QtWidgets import QListView
+
 from ..common import *
 from ..validation import validate_mission
 
@@ -15,13 +17,19 @@ class ValidationPanel(QWidget):
         self._window = window
 
         lay = QVBoxLayout(self)
-        self.list = QTreeWidget()
-        self.list.setHeaderHidden(True)
-        # Lange Meldungen umbrechen statt abschneiden.
-        # Wrap long messages instead of eliding them.
+        # QListWidget statt QTreeWidget: dessen Word-Wrap bricht lange
+        # Meldungen zuverlaessig auf die Panelbreite um (QTreeView tut das
+        # trotz wordWrap-Property nicht sauber).
+        # QListWidget instead of QTreeWidget: its word wrap reliably wraps
+        # long messages to the panel width (QTreeView doesn't, despite its
+        # wordWrap property).
+        self.list = QListWidget()
         self.list.setWordWrap(True)
         self.list.setTextElideMode(Qt.ElideNone)
-        self.list.header().setStretchLastSection(True)
+        # Ohne uniforme Hoehen darf jede Zeile so hoch werden wie ihr Text.
+        # Without uniform sizes each row may grow as tall as its text.
+        self.list.setUniformItemSizes(False)
+        self.list.setResizeMode(QListView.Adjust)
         self.list.itemDoubleClicked.connect(self._on_activate)
         lay.addWidget(self.list, 1)
         self.status_lbl = QLabel("")
@@ -34,21 +42,21 @@ class ValidationPanel(QWidget):
         warnings = len(findings) - errors
         for severity, text, target in findings:
             icon = "🛑" if severity == "error" else "⚠️"
-            item = QTreeWidgetItem([f"{icon} {text}"])
-            item.setData(0, Qt.UserRole, target)
+            item = QListWidgetItem(f"{icon} {text}")
+            item.setData(Qt.UserRole, target)
             if severity == "error":
-                item.setForeground(0, QBrush(QColor(243, 139, 168)))
+                item.setForeground(QBrush(QColor(243, 139, 168)))
             else:
-                item.setForeground(0, QBrush(QColor(249, 226, 175)))
-            self.list.addTopLevelItem(item)
+                item.setForeground(QBrush(QColor(249, 226, 175)))
+            self.list.addItem(item)
         if not findings:
-            ok = QTreeWidgetItem([tr("validation.all_ok")])
-            ok.setForeground(0, QBrush(QColor(166, 227, 161)))
-            self.list.addTopLevelItem(ok)
+            ok = QListWidgetItem(tr("validation.all_ok"))
+            ok.setForeground(QBrush(QColor(166, 227, 161)))
+            self.list.addItem(ok)
         self.status_lbl.setText(tr("validation.status", e=errors, w=warnings))
 
-    def _on_activate(self, item, _col=0):
-        target = item.data(0, Qt.UserRole)
+    def _on_activate(self, item):
+        target = item.data(Qt.UserRole)
         if not target:
             return
         kind, index = target
