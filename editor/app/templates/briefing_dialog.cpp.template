@@ -40,6 +40,18 @@ static LRESULT CALLBACK BriefingDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPAR
                     buf[size] = 0;
                     SetDlgItemTextA(hWnd, IDC_TEXTAREA, buf);
                     LocalFree(buf);
+                    // Klartext hat die Standard-Textfarbe Schwarz -- auf dem
+                    // schwarzen Hintergrund unsichtbar. Alles auf Weiss setzen
+                    // (die Referenz-Mission loeste das ueber RTF-Farbcodes).
+                    // Plain text uses the default black text colour --
+                    // invisible on the black background. Force it to white
+                    // (the reference mission solved this via RTF colours).
+                    CHARFORMATA cf;
+                    ZeroMemory(&cf, sizeof(cf));
+                    cf.cbSize = sizeof(cf);
+                    cf.dwMask = CFM_COLOR;
+                    cf.crTextColor = RGB(255, 255, 255);
+                    SendMessage(richEdit, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
                     return TRUE;
                 }
                 if (buf) LocalFree(buf);
