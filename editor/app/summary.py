@@ -140,8 +140,16 @@ def _action_summary_core(a) -> str:
             for e in entries)
         return f"{a.group_name}.RecordWall({len(entries)}x: {comp})"
     if a.kind == "setTargCount":
-        weapon = "" if a.weapon_type == "mapNone" else f", {a.weapon_type}"
         source = f" via {a.source_group_name} P{a.reinforce_priority}" if a.source_group_name else ""
+        entries = list(getattr(a, "targ_counts", None) or [])
+        if entries:
+            comp = ", ".join(
+                f"{e.get('count', 1)}x {e.get('unit_type', '?')}"
+                + ("" if (e.get('weapon_type') or 'mapNone') == 'mapNone'
+                   else f"/{e.get('weapon_type')}")
+                for e in entries)
+            return f"{a.group_name}.SetTargCount({comp}){source}"
+        weapon = "" if a.weapon_type == "mapNone" else f", {a.weapon_type}"
         return f"{a.group_name}.SetTargCount({a.unit_type}{weapon}) = {a.target_count}{source}"
     if a.kind == "assignToGroup":
         return tr("sum.act_assign", b=a.building_type, x=a.x, y=a.y, g=a.group_name, p=a.player)
@@ -155,8 +163,12 @@ def _action_summary_core(a) -> str:
         expr = getattr(a, 'var_expr', '') or '…'
         return f"{var} = {expr}"
     if a.kind == "startMining":
+        # v2: Mine/Smelter kommen als benannte Anker von der MiningGroup --
+        # die Legacy-Koordinaten der Aktion sind hier bedeutungslos.
+        # v2: mine/smelter come from the MiningGroup's named anchors -- the
+        # action's legacy coordinates are meaningless here.
         gname = getattr(a, "group_name", "") or "?"
-        return f"{gname}.StartMining(Mine ({a.x},{a.y}) -> Smelter ({a.x2},{a.y2}), {a.target_count} Trucks)"
+        return f"{gname}.StartMining({a.target_count} Trucks)"
     if a.kind == "sendAttackWave":
         waves = getattr(a, "wave_units", None) or []
         comp = ", ".join(f"{w.get('count', 1)}x {w.get('unit_type', '?')}" for w in waves) \
@@ -294,7 +306,16 @@ def action_params_summary(a) -> str:
                     f"({e.get('x', 0)},{e.get('y', 0)}) → ({e.get('x2', 0)},{e.get('y2', 0)})")
         return f"{getattr(a, 'group_name', '?')}  ·  {len(entries)} Abschnitte"
     if a.kind == "setTargCount":
-        return f"{getattr(a, 'group_name', '?')}  ·  {getattr(a, 'unit_type', '?')}  = {getattr(a, 'target_count', 0)}  P{getattr(a, 'reinforce_priority', 0)}"
+        gname = getattr(a, "group_name", "") or "?"
+        src = getattr(a, "source_group_name", "") or ""
+        via = f"  via {src} P{getattr(a, 'reinforce_priority', 0)}" if src else ""
+        entries = list(getattr(a, "targ_counts", None) or [])
+        if entries:
+            comp = ", ".join(
+                f"{e.get('count', 1)}× {(e.get('unit_type') or '?').replace('map', '')}"
+                for e in entries)
+            return f"{gname}  ·  {comp}{via}"
+        return f"{gname}  ·  {getattr(a, 'unit_type', '?')}  = {getattr(a, 'target_count', 0)}{via}"
     if a.kind == "assignToGroup":
         return f"→ {getattr(a, 'group_name', '?')}  ·  {getattr(a, 'building_type', '?')}  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})  P{getattr(a, 'player', 0)}"
     if a.kind == "modVar":
@@ -306,9 +327,12 @@ def action_params_summary(a) -> str:
             return f"{var} −1"
         return f"{var} = {getattr(a, 'var_expr', '…') or '…'}"
     if a.kind == "startMining":
+        # Mine/Smelter kommen als benannte Anker von der MiningGroup, nicht
+        # aus den Legacy-Koordinaten der Aktion.
+        # Mine/smelter come from the MiningGroup's named anchors, not from
+        # the action's legacy coordinates.
         gname = getattr(a, "group_name", "") or "?"
-        return (f"'{gname}'  Mine ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → "
-                f"Smelter ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})  Trucks: {getattr(a, 'target_count', 1)}")
+        return f"'{gname}'  Trucks: {getattr(a, 'target_count', 1)}"
     if a.kind == "sendAttackWave":
         waves = getattr(a, "wave_units", None) or []
         comp = ", ".join(f"{w.get('count', 1)}× {w.get('unit_type', '?').replace('map', '')}"

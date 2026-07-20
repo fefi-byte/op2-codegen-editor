@@ -1996,6 +1996,11 @@ class ActionListWidget(QWidget):
         if self._button_color:
             add.setStyleSheet(tint_button_stylesheet(self._button_color))
         self.box.addWidget(add)
+        # Restplatz unten aufsaugen: Karten behalten ihre natuerliche Hoehe,
+        # statt auf die volle Panelhoehe auseinandergezogen zu werden.
+        # Soak up leftover space below: cards keep their natural height
+        # instead of being stretched across the full panel height.
+        self.box.addStretch(1)
         if expand_last:
             self._expand_last()
 
@@ -2080,6 +2085,15 @@ class ActionCard(QFrame):
         apply_role(rm, "danger")
         header.addWidget(rm)
         lay.addLayout(header)
+
+        # Autoren-Kommentar der Aktion auch auf der zugeklappten Karte zeigen.
+        # Show the action's author comment on the collapsed card as well.
+        self._comment_lbl = QLabel("")
+        self._comment_lbl.setWordWrap(True)
+        self._comment_lbl.setStyleSheet(
+            "color: #a6adc8; font-style: italic; font-size: 10pt; padding: 0 2px 0 6px;")
+        lay.addWidget(self._comment_lbl)
+        self._refresh_comment()
 
         if action.kind not in ("if", "noop"):
             params = action_params_summary(action)
@@ -2282,9 +2296,15 @@ class ActionCard(QFrame):
         if callable(cb):
             cb(action_or_none)
 
+    def _refresh_comment(self):
+        c = (getattr(self.a, "comment", "") or "").strip()
+        self._comment_lbl.setText(f"💬 {c}" if c else "")
+        self._comment_lbl.setVisible(bool(c))
+
     def _on_form_changed(self):
         if self._det is not None:
             self._det.setText(action_params_summary(self.a))
+        self._refresh_comment()
         self._title_lbl.setText(f"<b>{action_kind_label(self.a.kind)}</b>")
         self._apply_card_style(self.a)
         # Live-Update der Bereichs-Vorschau waehrend die Karte offen ist
