@@ -1283,32 +1283,62 @@ def _wave_staging_lines(fg: str, geo: dict) -> list[str]:
 # forEach enumerators: source -> (prologue lines before the while loop,
 # enumerator variable name, extra filter templates, number of open braces
 # the prologue contributes).
+# Fahrzeug-map_ids: entscheidet, ob eine "type"-Quelle den Fahrzeug- oder den
+# Gebaeude-Enumerator braucht (PlayerUnitEnum liefert KEINE Gebaeude!).
+# Vehicle map_ids: decides whether a "type" source needs the vehicle or the
+# building enumerator (PlayerUnitEnum does NOT yield buildings!).
+_VEHICLE_MAPIDS = {
+    "mapCargoTruck", "mapConVec", "mapEarthworker", "mapEvacuationTransport",
+    "mapGeoCon", "mapLynx", "mapPanther", "mapRepairVehicle", "mapRoboDozer",
+    "mapRoboMiner", "mapRoboSurveyor", "mapScorpion", "mapSpider", "mapTiger",
+    "mapScout",
+}
+
+
 def _for_each_prologue(action, depth: int) -> tuple[list[str], str, list[str], int]:
+    """Liefert (Prolog, while-Bedingung mit @U@-Platzhalter, Filter, Klammern).
+
+    WICHTIG: PlayerUnitEnum enumeriert nur Fahrzeuge -- Gebaeude kommen
+    ausschliesslich ueber PlayerBuildingEnum (mapAny = alle Typen).
+    IMPORTANT: PlayerUnitEnum only enumerates vehicles -- buildings only
+    come via PlayerBuildingEnum (mapAny = all types).
+    """
     src = getattr(action, "enum_source", "rect") or "rect"
     p = int(getattr(action, "player", 0))
     ev = f"_e{depth}"
     if src == "player":
-        return [f"PlayerUnitEnum {ev}({p});"], ev, [], 0
+        # Fahrzeuge UND Gebaeude: erst der eine Enumerator, dann der andere.
+        # Vehicles AND buildings: one enumerator first, then the other.
+        return ([f"PlayerVehicleEnum {ev}v({p});",
+                 f"PlayerBuildingEnum {ev}b({p}, mapAny);"],
+                f"({ev}v.GetNext(@U@) || {ev}b.GetNext(@U@))", [], 0)
     if src == "playerVehicles":
-        return [f"PlayerVehicleEnum {ev}({p});"], ev, [], 0
+        return [f"PlayerVehicleEnum {ev}({p});"], f"{ev}.GetNext(@U@)", [], 0
     if src == "playerBuildings":
-        return [f"PlayerUnitEnum {ev}({p});"], ev, ["unit.IsBuilding()"], 0
+        return ([f"PlayerBuildingEnum {ev}({p}, mapAny);"],
+                f"{ev}.GetNext(@U@)", [], 0)
     if src in ("all", "type"):
         # Alle Spieler durchlaufen (die Engine hat keinen globalen Enumerator).
         # Iterate all players (the engine has no global enumerator).
         pv = f"_pi{depth}"
-        pro = [f"for (int {pv} = 0; {pv} < TethysGame::NoPlayers(); ++{pv}) {{",
-               f"    PlayerUnitEnum {ev}({pv});"]
-        filters = []
-        if src == "type":
-            ut = getattr(action, "unit_type", "") or "mapAny"
-            if ut not in ("mapAny", "mapNone"):
-                filters.append(f"unit.GetType() == {mapid(ut)}")
-        return pro, ev, filters, 1
+        ut = getattr(action, "unit_type", "") or "mapAny"
+        head = f"for (int {pv} = 0; {pv} < TethysGame::NoPlayers(); ++{pv}) {{"
+        if src == "type" and ut not in ("mapAny", "mapNone"):
+            if ut in _VEHICLE_MAPIDS:
+                pro = [head, f"    PlayerVehicleEnum {ev}({pv});"]
+                return pro, f"{ev}.GetNext(@U@)", \
+                    [f"unit.GetType() == {mapid(ut)}"], 1
+            pro = [head, f"    PlayerBuildingEnum {ev}({pv}, {mapid(ut)});"]
+            return pro, f"{ev}.GetNext(@U@)", [], 1
+        pro = [head,
+               f"    PlayerVehicleEnum {ev}v({pv});",
+               f"    PlayerBuildingEnum {ev}b({pv}, mapAny);"]
+        return pro, f"({ev}v.GetNext(@U@) || {ev}b.GetNext(@U@))", [], 1
     # default: rect
     rect = _rect(action.x, action.y, action.x2, action.y2)
-    return [f"MAP_RECT _rr{depth} = {rect};",
-            f"InRectEnumerator {ev}(_rr{depth});"], ev, [], 0
+    return ([f"MAP_RECT _rr{depth} = {rect};",
+             f"InRectEnumerator {ev}(_rr{depth});"],
+            f"{ev}.GetNext(@U@)", [], 0)
 
 
 def _emit_action(action: TriggerAction, indent: str, ctx: dict, depth: int = 0) -> list[str]:
@@ -1347,13 +1377,13 @@ def _emit_action(action: TriggerAction, indent: str, ctx: dict, depth: int = 0) 
             inner_depth = depth + 1
             var = _loop_var(inner_depth)
             src = getattr(action, "enum_source", "rect") or "rect"
-            pro, ev, filters, pro_braces = _for_each_prologue(action, inner_depth)
+            pro, cond, filters, pro_braces = _for_each_prologue(action, inner_depth)
             out.append(f"{indent}{{")
             for l in pro:
                 out.append(f"{indent}    {l}")
             pro_pad = "    " * pro_braces
             out.append(f"{indent}    {pro_pad}UnitEx {var};")
-            out.append(f"{indent}    {pro_pad}while ({ev}.GetNext({var})) {{")
+            out.append(f"{indent}    {pro_pad}while ({cond.replace('@U@', var)}) {{")
             inner = indent + "        " + pro_pad
             extra_close = 1 + pro_braces
             filters = [f.replace("unit.", f"{var}.") for f in filters]
