@@ -11,10 +11,6 @@ class _OverviewMixin:
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         panel = QWidget()
         lay = QVBoxLayout(panel)
-        bar = QHBoxLayout()
-        add_btn = QPushButton(tr("window.add_trigger_btn")); add_btn.clicked.connect(self._add_trigger)
-        bar.addWidget(add_btn); bar.addStretch(1)
-        lay.addLayout(bar)
         self.overview = QTreeWidget()
         self.overview.setHeaderHidden(True)
         self.overview.itemDoubleClicked.connect(self._overview_activated)
@@ -43,13 +39,6 @@ class _OverviewMixin:
         else:
             parent.addTopLevelItem(item)
         return item
-
-    def _add_trigger(self):
-        name = f"Trigger{len(self.triggers) + 1}"
-        self.triggers.append(TriggerDef(name=name))
-        self._refresh_overview()
-        self.trigger_panel.refresh()
-        self.statusBar().showMessage(tr("window.status_trigger_added", name=name))
 
     def _trigger_cond_text(self, t):
         return tr(f"trigger_conditions.{t.condition}")

@@ -163,6 +163,9 @@ class ConditionEditDialog(QDialog):
         self.loop_level.addItem(tr("action_editor.loop_level_current"), "current")
         self.loop_level.addItem(tr("action_editor.loop_level_outer"), "outer")
         self.form = QFormLayout()
+        # Label ueber dem Widget: macht die Formularspalte deutlich schmaler.
+        # Label above the widget: makes the form column much narrower.
+        self.form.setRowWrapPolicy(QFormLayout.WrapAllRows)
         self.form.addRow(tr("action_editor.lbl_type"), self.kind)
         self._rows = {"player": self.player, "building": self.building, "x": self.x, "y": self.y,
                       "compare": self.compare, "value": self.value, "resource": self.resource,
@@ -263,7 +266,7 @@ class ActionInlineForm(QWidget):
         "unitCmd": ["unit_ref", "unit_command"],
         "defendArea": ["player", "x", "y", "x2", "y2"],
         "repairBuildings": ["group", "repair_zones_editor", "repair_thresholds_editor",
-                            "repair_default"],
+                            ],
         "empMissile": ["player", "x", "y", "x2", "y2"],
         "setMorale": ["morale_mode", "morale_player"],
         "setMusic": ["songs_editor", "repeat_start"],
@@ -878,12 +881,10 @@ class ActionInlineForm(QWidget):
         rth_lay.addWidget(self.repair_thresholds_tree)
         rth_lay.addLayout(rth_row)
 
-        self.repair_default = QSpinBox()
-        self.repair_default.setRange(1, 100000)
-        self.repair_default.setValue(50)
-        self.repair_default.setToolTip(tr("action_editor.tooltip_repair_default"))
-
         self.form = QFormLayout()
+        # Label ueber dem Widget: macht die Formularspalte deutlich schmaler.
+        # Label above the widget: makes the form column much narrower.
+        self.form.setRowWrapPolicy(QFormLayout.WrapAllRows)
         self.form.addRow(tr("action_editor.lbl_action_type"), self.kind)
         self._rows = {
             "text": self.text, "unit": self.unit, "weapon": self.weapon,
@@ -919,7 +920,6 @@ class ActionInlineForm(QWidget):
             "tube_editor": self.tube_editor, "wall_editor": self.wall_editor,
             "repair_zones_editor": self.repair_zones_editor,
             "repair_thresholds_editor": self.repair_thresholds_editor,
-            "repair_default": self.repair_default,
             "morale_mode": self.morale_mode, "morale_player": self.morale_player,
             "songs_editor": self.songs_editor, "repeat_start": self.repeat_start,
             "flow_dir": self.flow_dir, "flow_freeze": self.flow_freeze,
@@ -975,7 +975,6 @@ class ActionInlineForm(QWidget):
             "wall_editor": tr("action_editor.lbl_wall_editor"),
             "repair_zones_editor": tr("action_editor.lbl_repair_zones"),
             "repair_thresholds_editor": tr("action_editor.lbl_repair_thresholds"),
-            "repair_default": tr("action_editor.lbl_repair_default"),
             "morale_mode": tr("action_editor.lbl_morale_mode"),
             "morale_player": tr("action_editor.lbl_player"),
             "songs_editor": tr("action_editor.lbl_songs"),
@@ -1745,7 +1744,6 @@ class ActionInlineForm(QWidget):
         self._stats_list_load(getattr(a, "stat_mods", None))
         self._rz_load(getattr(a, "repair_zones", None))
         self._rth_load(getattr(a, "repair_thresholds", None))
-        self.repair_default.setValue(int(getattr(a, "repair_default_damage", 50) or 50))
         self._loading = False
         self._update()
 
@@ -1773,7 +1771,6 @@ class ActionInlineForm(QWidget):
                   self.rw_wall):
             w.currentIndexChanged.connect(self._save)
         self.repeat_start.valueChanged.connect(self._save)
-        self.repair_default.valueChanged.connect(self._save)
         self.now.toggled.connect(self._save)
         self.flow_freeze.toggled.connect(self._save)
 
@@ -1876,7 +1873,6 @@ class ActionInlineForm(QWidget):
         elif k == "repairBuildings":
             a.repair_zones = self._rz_from_tree()
             a.repair_thresholds = self._rth_from_tree()
-            a.repair_default_damage = self.repair_default.value()
         if k in ("unitCmd", "fightGroupCmd"):
             a.patrol_points = self._patrol_points()
         a.var_name = self.var_name.currentData() or ""

@@ -1,7 +1,7 @@
 #pragma once
-// op2_log.hpp - tiny append-only debug logger for the TitanAPI mission.
+// op2_log.hpp - tiny append-only debug logger for the mission DLL (editor scaffolding, no SDK dependency).
 //
-// Writes to  <Outpost2.exe dir>\OPU\logs\cTitanAPI.log  (or <dir>\logs if the exe already sits in an OPU
+// Writes to  <Outpost2.exe dir>\OPU\logs\<OP2LOG_NAME>.log  (or <dir>\logs if the exe already sits in an OPU
 // folder). Each line is opened+written+closed via raw Win32 (KERNEL32 only - no <windows.h>, so it does
 // not clash with memory.hpp's GetModuleHandleA declaration; keeps the DLL importing only KERNEL32). The
 // open/close-per-line cost buys a crucial property for crash debugging: the last line is flushed to disk
@@ -12,10 +12,10 @@
 #include <cstdarg>
 #include <cstring>
 
-// Log file base name (no extension). Override per-mission via the build (e.g. -DOP2LOG_NAME="cColdFrontTitan").
+// Log file base name (no extension). The generated CMakeLists.txt sets it to the mission DLL name.
 // The main log is <name>.log; the AI-action channel (op2::log::ai) is <name>-AI.log.
 #ifndef OP2LOG_NAME
-#define OP2LOG_NAME "cTitanAPI"
+#define OP2LOG_NAME "cOP2Mission"
 #endif
 
 namespace op2::log {

@@ -17,6 +17,11 @@ class ValidationPanel(QWidget):
         lay = QVBoxLayout(self)
         self.list = QTreeWidget()
         self.list.setHeaderHidden(True)
+        # Lange Meldungen umbrechen statt abschneiden.
+        # Wrap long messages instead of eliding them.
+        self.list.setWordWrap(True)
+        self.list.setTextElideMode(Qt.ElideNone)
+        self.list.header().setStretchLastSection(True)
         self.list.itemDoubleClicked.connect(self._on_activate)
         lay.addWidget(self.list, 1)
         self.status_lbl = QLabel("")

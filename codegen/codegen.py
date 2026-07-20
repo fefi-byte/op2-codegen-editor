@@ -1951,22 +1951,26 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         players = mission.players or []
         if 0 <= gplayer < len(players):
             colony_eden = (players[gplayer].colony == Colony.Eden)
-        # Kolonie-Praeferenz: Spezialist zuerst, dann der andere, ConVec zuletzt
-        # Colony preference: specialist first, then the other, ConVec last
-        first, second = (("mapRepairVehicle", "mapSpider") if colony_eden
-                         else ("mapSpider", "mapRepairVehicle"))
+        # Kolonie-Spezialist zuerst, ConVec als Rueckfall. Repair Vehicle ist
+        # Eden-exklusiv, Spider Plymouth-exklusiv -- kein Kreuz-Fallback.
+        # Colony specialist first, ConVec as fallback. Repair Vehicle is
+        # Eden-only, Spider Plymouth-only -- no cross-colony fallback.
+        specialist = "mapRepairVehicle" if colony_eden else "mapSpider"
         zones = list(getattr(action, "repair_zones", None) or [])
         if not zones:
             zones = [{"x": action.x, "y": action.y, "x2": action.x2, "y2": action.y2}]
         thresholds = list(getattr(action, "repair_thresholds", None) or [])
-        default_dmg = int(getattr(action, "repair_default_damage", 50) or 50)
-        thr_lines = [f"        int _thr = {default_dmg};"]
+        # Ohne Listeneintrag wird ab jedem Schaden repariert (Schwelle 1);
+        # die Liste hebt die Schwelle nur fuer einzelne Gebaeude an.
+        # Without a list entry, any damage triggers repair (threshold 1);
+        # the list only raises the threshold for individual buildings.
+        thr_lines = ["        int _thr = 1;"]
         first_kw = "if"
         for t in thresholds:
             bt = mapid(t.get("building_type", ""))
             if not bt or bt == "mapNone":
                 continue
-            thr_lines.append(f"        {first_kw} (_bt == {bt}) _thr = {int(t.get('damage', default_dmg))};")
+            thr_lines.append(f"        {first_kw} (_bt == {bt}) _thr = {int(t.get('damage', 1))};")
             first_kw = "else if"
         body.append(f"if ({armed_var}) {{")
         body.append(f"    int _issued[8]; int _nIssued = 0;")
@@ -1994,9 +1998,8 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
             body.append(f"            if (_busy) continue;")
             body.append(f"            int _rank = 99;")
             body.append(f"            map_id _vt = _v.GetType();")
-            body.append(f"            if (_vt == {first}) _rank = 0;")
-            body.append(f"            else if (_vt == {second}) _rank = 1;")
-            body.append(f"            else if (_vt == mapConVec) _rank = 2;")
+            body.append(f"            if (_vt == {specialist}) _rank = 0;")
+            body.append(f"            else if (_vt == mapConVec) _rank = 1;")
             body.append(f"            if (_rank < _bestRank) {{ _bestRank = _rank; _best = _v; }}")
             body.append(f"        }}")
             body.append(f"        if (_bestRank < 99 && _nIssued < 8) {{")

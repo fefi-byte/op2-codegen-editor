@@ -1,421 +1,710 @@
 // mission.cpp -- generated from the editor model for: Editor Mission
-// Built against TitanAPI (https://github.com/leviathan400/TitanAPI).
+// Built against OP2MissionSDK (Outpost2DLL + OP2Helper + HFL).
+// https://github.com/OutpostUniverse/OP2MissionSDK
 
-#include "op2.hpp"
-#include "op2/trigger.hpp"
-#include "op2/base.hpp"
-#include "op2/groups.hpp"
-#include "op2_mission.hpp"
+#include <Outpost2DLL/Outpost2DLL.h>
+#include <OP2Helper/OP2Helper.h>
+#include <HFL/Source/HFL.h>
 #include "op2_log.hpp"
 #include "op2_crash.hpp"
-#include <algorithm>
-#include <ranges>
-#include <functional>
-#include <type_traits>
 
-using namespace op2;
+static const int kTicksPerMark = 100;
 
 static const int kDiff[] = {5, 10, 13};
-static const int diff = kDiff[(int)Player(0).difficulty()];
+static int diff = 10;
 
 static int randBetween(int minValue, int maxValue) {
-    if (maxValue < minValue) std::swap(minValue, maxValue);
-    return minValue + Game::getRand(maxValue - minValue + 1);
+    if (maxValue < minValue) { int _t = minValue; minValue = maxValue; maxValue = _t; }
+    return minValue + TethysGame::GetRand(maxValue - minValue + 1);
+}
+
+// Erste Einheit auf einer Kachel (LOCATION in Engine-Koordinaten, MkXY).
+// First unit on a tile (LOCATION in engine coordinates, MkXY).
+static UnitEx unitOnTile(LOCATION where) {
+    LocationEnumerator _e(where);
+    UnitEx _u;
+    if (_e.GetNext(_u)) return _u;
+    return UnitEx();
+}
+
+// Einheit eines Typs/Spielers auf einer Kachel (fuer Fahrzeug-Capture).
+// Unit of a type/player on a tile (for vehicle capture).
+static UnitEx findUnitAt(LOCATION where, map_id type, int owner) {
+    LocationEnumerator _e(where);
+    UnitEx _u;
+    while (_e.GetNext(_u)) {
+        if (_u.GetType() == type && _u.OwnerID() == owner) return _u;
+    }
+    return UnitEx();
+}
+
+static int countUnitsOfType(int playerNum, map_id type) {
+    int _n = 0;
+    PlayerUnitEnum _e(playerNum);
+    UnitEx _u;
+    while (_e.GetNext(_u)) if (_u.GetType() == type) ++_n;
+    return _n;
+}
+
+// Fertig UND ruhig? WHITELIST auf moDone: alles andere (moDevelop =
+// im Bau, moOperationalWait = wartet auf Inbetriebnahme, HFL-Sentinels
+// bei nicht initialisiertem HFL) zaehlt als NICHT bereit -- ein
+// TakeUnit in diesen Zustaenden macht das Gebaeude kaputt.
+// Finished AND quiet? WHITELIST on moDone: anything else (moDevelop =
+// under construction, moOperationalWait = waiting to go operational,
+// HFL sentinels when HFL is not initialized) counts as NOT ready --
+// a TakeUnit in those states corrupts the building.
+static bool isCompleted(UnitEx u) {
+    if (u.unitID == 0 || !u.IsLive()) return false;
+    return u.GetCurAction() == moDone;
 }
 
 struct MissionSave {
-    int cbCount = 0;                 // belegte Callback-Slots / used callback slots
-    unsigned char cbSlot[64] = {};   // Slot -> Index in g_cbTable (0xFF = nicht wiederherstellbar)
-    bool var2 = false;
-    Group _grp_0_BuildingGroup1{};
-    Group _grp_1_ReinforceGroup1{};
-    Group _grp_2_def{};
-    Unit _unit_struck{};
-    Unit _unit_veh{};
-    Unit _unit_spider{};
+    bool _mining_armed_0 = false;
+    int _mining_ids_0[2] = { 0, 0 };
+    bool _repair_armed_0 = false;
+    BuildingGroup _grp_0_BuildingGroup1;
+    BuildingGroup _grp_1_RebuildMines;
+    BuildingGroup _grp_2_ReinforceGroup1;
+    FightGroup _grp_3_def;
+    MiningGroup _grp_4_MiningGroup1;
+    UnitEx _unit_struck;
+    UnitEx _unit_veh;
+    UnitEx _unit_Smelter1;
+    UnitEx _unit_spider;
+    UnitEx _unit_Mine1;
 };
-static_assert(std::is_trivially_copyable_v<MissionSave>, "SaveRegion braucht POD-Daten");
 static MissionSave g_save;
 
-static bool& var2 = g_save.var2;
-static Group& _grp_0_BuildingGroup1 = g_save._grp_0_BuildingGroup1;
-static Group& _grp_1_ReinforceGroup1 = g_save._grp_1_ReinforceGroup1;
-static Group& _grp_2_def = g_save._grp_2_def;
-static Unit& _unit_struck = g_save._unit_struck;
-static Unit& _unit_veh = g_save._unit_veh;
-static Unit& _unit_spider = g_save._unit_spider;
+static bool& _mining_armed_0 = g_save._mining_armed_0;
+static int (&_mining_ids_0)[2] = g_save._mining_ids_0;
+static bool& _repair_armed_0 = g_save._repair_armed_0;
+static BuildingGroup& _grp_0_BuildingGroup1 = g_save._grp_0_BuildingGroup1;
+static BuildingGroup& _grp_1_RebuildMines = g_save._grp_1_RebuildMines;
+static BuildingGroup& _grp_2_ReinforceGroup1 = g_save._grp_2_ReinforceGroup1;
+static FightGroup& _grp_3_def = g_save._grp_3_def;
+static MiningGroup& _grp_4_MiningGroup1 = g_save._grp_4_MiningGroup1;
+static UnitEx& _unit_struck = g_save._unit_struck;
+static UnitEx& _unit_veh = g_save._unit_veh;
+static UnitEx& _unit_Smelter1 = g_save._unit_Smelter1;
+static UnitEx& _unit_spider = g_save._unit_spider;
+static UnitEx& _unit_Mine1 = g_save._unit_Mine1;
 
-static std::function<void()> trackCb(void (*fn)(), int tableIdx) {
-    if (g_save.cbCount < 64) g_save.cbSlot[g_save.cbCount++] = (unsigned char)tableIdx;
-    return fn;
-}
-static std::function<void()> trackLost(std::function<void()> cb) {
-    if (g_save.cbCount < 64) g_save.cbSlot[g_save.cbCount++] = 0xFF;
-    return cb;
-}
+static UnitEx _boot_0;
+static UnitEx _boot_1;
+static UnitEx _boot_2;
+
+Export void NoResponseToTrigger() {}
 
 static void _trigger_0_Disaster();
 static void _trigger_1_base_rep();
-static void _trigger_2_reinforce();
-static void _trigger_3_Trigger4();
+static void _trigger_2_buildings();
+static void _trigger_3_Trigger5();
 
-extern "C" __declspec(dllexport) char LevelDesc[]    = "Editor Mission";
-extern "C" __declspec(dllexport) char MapName[]      = "cm02.map";
-extern "C" __declspec(dllexport) char TechtreeName[] = "MULTITEK.TXT";
-extern "C" __declspec(dllexport) mission::ModDesc   DescBlock   = { mission::MissionType::Colony, 2, 12, 0 };
-extern "C" __declspec(dllexport) mission::ModDescEx DescBlockEx = { 0, 0, 0, 0, 0, 0, 0, 0 };
+ExportLevelDetailsFull("Editor Mission", "cm02.map", "MULTITEK.TXT", Colony, 2, 12, 0)
+Export const AIModDescEx DescBlockEx = { 0 };
 
 static void initProc() {
-    log::line("InitProc: starting");
+    op2::log::line("InitProc: starting");
+    if (HFLInit() != HFLLOADED) {
+        op2::log::line("InitProc: HFLInit FAILED");
+    }
+    diff = kDiff[Player[0].Difficulty()];
 
     // --- Player 0 ---
-    Game::player(0).goEden().goHuman();
-    Game::player(0).setTechLevel(12);
+    Player[0].GoEden();
+    Player[0].GoHuman();
+    Player[0].SetTechLevel(12);
 
     // --- Player 1 ---
-    Game::player(1).goPlymouth().goAI();
-    Game::player(1).setTechLevel(12);
-    Game::player(1).setCommonOre(8000);
-    Game::player(1).setRareOre(8000);
-    Game::player(1).setFood(99999);
+    Player[1].GoPlymouth();
+    Player[1].GoAI();
+    Player[1].SetTechLevel(12);
+    Player[1].SetOre(8000);
+    Player[1].SetRareOre(8000);
+    Player[1].SetFoodStored(99999);
 
 
     // --- Base layout for player 0 ---
     {
-        BaseLayout base;
-        base.beacons = {
-            { { 49, 16 }, abi::MineType::CommonOre, abi::OreYield::Bar2 },
-            { { 49, 21 }, abi::MineType::CommonOre, abi::OreYield::Bar3 },
-        };
-        createBase(Game::player(0), base);
+        Unit _u;
+        TethysGame::CreateBeacon(mapMiningBeacon, XYPos(49, 16), OreTypeCommon, BarRandom, VariantRandom);
+        TethysGame::CreateBeacon(mapMiningBeacon, XYPos(49, 21), OreTypeCommon, Bar3, VariantRandom);
+        TethysGame::CreateUnit(_u, mapLynx, MkXY(20, 2), 0, mapStarflare, East);
+        TethysGame::CreateUnit(_u, mapLynx, MkXY(19, 2), 0, mapStarflare, East);
+        TethysGame::CreateUnit(_u, mapLynx, MkXY(17, 2), 0, mapStarflare, East);
+        TethysGame::CreateUnit(_u, mapLynx, MkXY(18, 2), 0, mapStarflare, East);
+        TethysGame::CreateUnit(_u, mapLynx, MkXY(16, 2), 0, mapStarflare, East);
+        TethysGame::CreateUnit(_u, mapLynx, MkXY(15, 2), 0, mapStarflare, East);
+        TethysGame::CreateUnit(_u, mapLynx, MkXY(14, 2), 0, mapStarflare, East);
     }
 
     // --- Base layout for player 1 ---
     {
-        BaseLayout base;
-        base.buildings = {
-            { { 38, 12 }, MapID::CommandCenter },
-            { { 44, 6 }, MapID::Tokamak },
-            { { 38, 15 }, MapID::StructureFactory },
-            { { 34, 11 }, MapID::VehicleFactory },
-            { { 39, 8 }, MapID::CommonOreSmelter },
-            { { 49, 16 }, MapID::CommonOreMine },
-            { { 29, 12 }, MapID::GORF },
-            { { 47, 13 }, MapID::LightTower },
-            { { 30, 9 }, MapID::MedicalCenter },
-            { { 44, 20 }, MapID::GuardPost, MapID::RPG },
-            { { 54, 19 }, MapID::GuardPost, MapID::RPG },
-            { { 54, 13 }, MapID::GuardPost, MapID::RPG },
-            { { 54, 8 }, MapID::GuardPost, MapID::RPG },
-            { { 42, 20 }, MapID::GuardPost, MapID::RPG },
-            { { 46, 20 }, MapID::GuardPost, MapID::EMP },
-            { { 52, 19 }, MapID::GuardPost, MapID::EMP },
-            { { 54, 16 }, MapID::GuardPost, MapID::EMP },
-            { { 54, 10 }, MapID::GuardPost, MapID::EMP },
-            { { 33, 16 }, MapID::Tokamak },
-            { { 29, 15 }, MapID::RareOreSmelter },
-            { { 39, 5 }, MapID::ArachnidFactory },
-            { { 47, 6 }, MapID::MHDGenerator },
-        };
-        base.vehicles = {
-            { { 46, 9 }, MapID::CargoTruck, MapID::None, UnitDirection::East },
-            { { 47, 9 }, MapID::CargoTruck, MapID::None, UnitDirection::East },
-            { { 42, 10 }, MapID::ConVec, MapID::None, UnitDirection::East },
-            { { 43, 13 }, MapID::Spider, MapID::None, UnitDirection::East },
-        };
-        createBase(Game::player(1), base);
+        Unit _u;
+        TethysGame::CreateUnit(_u, mapCommandCenter, MkXY(38, 12), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapTokamak, MkXY(44, 6), 1, mapNone, 0);
+        TethysGame::CreateUnit(_unit_struck, mapStructureFactory, MkXY(38, 15), 1, mapNone, 0);
+        TethysGame::CreateUnit(_unit_veh, mapVehicleFactory, MkXY(34, 11), 1, mapNone, 0);
+        TethysGame::CreateUnit(_unit_Smelter1, mapCommonOreSmelter, MkXY(39, 8), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapGORF, MkXY(29, 12), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapLightTower, MkXY(47, 13), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapMedicalCenter, MkXY(30, 9), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapGuardPost, MkXY(44, 20), 1, mapRPG, 0);
+        TethysGame::CreateUnit(_u, mapGuardPost, MkXY(54, 19), 1, mapRPG, 0);
+        TethysGame::CreateUnit(_u, mapGuardPost, MkXY(54, 13), 1, mapRPG, 0);
+        TethysGame::CreateUnit(_u, mapGuardPost, MkXY(54, 8), 1, mapRPG, 0);
+        TethysGame::CreateUnit(_u, mapGuardPost, MkXY(42, 20), 1, mapRPG, 0);
+        TethysGame::CreateUnit(_u, mapGuardPost, MkXY(46, 20), 1, mapEMP, 0);
+        TethysGame::CreateUnit(_u, mapGuardPost, MkXY(52, 19), 1, mapEMP, 0);
+        TethysGame::CreateUnit(_u, mapGuardPost, MkXY(54, 16), 1, mapEMP, 0);
+        TethysGame::CreateUnit(_u, mapGuardPost, MkXY(54, 10), 1, mapEMP, 0);
+        TethysGame::CreateUnit(_u, mapTokamak, MkXY(33, 16), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapRareOreSmelter, MkXY(29, 15), 1, mapNone, 0);
+        TethysGame::CreateUnit(_boot_2, mapArachnidFactory, MkXY(39, 5), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapMHDGenerator, MkXY(47, 6), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapCargoTruck, MkXY(46, 9), 1, mapNone, East);
+        TethysGame::CreateUnit(_u, mapCargoTruck, MkXY(47, 9), 1, mapNone, East);
+        TethysGame::CreateUnit(_boot_0, mapConVec, MkXY(42, 10), 1, mapNone, East);
+        TethysGame::CreateUnit(_unit_spider, mapSpider, MkXY(43, 13), 1, mapNone, East);
+        TethysGame::CreateUnit(_boot_1, mapEarthworker, MkXY(43, 10), 1, mapNone, East);
+        TethysGame::CreateUnit(_u, mapSpider3Pack, MkXY(44, 16), 1, mapNone, East);
     }
 
-    // --- Named units ---
-    _unit_struck = GameMap::unitOnTile({ 38, 15 });
-    _unit_veh = GameMap::unitOnTile({ 34, 11 });
-    for (Unit _u : Game::unitsInRect({ 43, 13 }, { 43, 13 })) {
-        if (_u.type() == MapID::Spider && _u.ownerId() == 1) { _unit_spider = _u; break; }
-    }
-
-    // --- Groups (building / reinforce / fight) ---
-    _grp_0_BuildingGroup1 = createBuildingGroup(Game::player(1));
-    _grp_0_BuildingGroup1.setBuildRect({ 46, 5 }, { 49, 7 });
+    // --- Groups (building / reinforce / fight / mining) ---
+    _grp_0_BuildingGroup1 = CreateBuildingGroup(Player[1]);
+    { MAP_RECT _r = MkRect(46, 5, 49, 7); _grp_0_BuildingGroup1.SetRect(_r); }
+    // Einheiten der BuildingGroup 'BuildingGroup1' zuweisen
+    if (_unit_struck.unitID != 0) _grp_0_BuildingGroup1.TakeUnit(_unit_struck);
+    if (_boot_0.unitID != 0) _grp_0_BuildingGroup1.TakeUnit(_boot_0);
+    if (_boot_1.unitID != 0) _grp_0_BuildingGroup1.TakeUnit(_boot_1);
+    _grp_0_BuildingGroup1.SetTargCount(mapConVec, mapNone, 1);
+    _grp_0_BuildingGroup1.SetTargCount(mapEarthworker, mapNone, 1);
     {
-        // Einheiten der BuildingGroup 'BuildingGroup1' zuweisen
-        for (Unit _u : Game::unitsOf(1)) {
-            Location _loc = _u.location();
-            if ((_loc.x == 38 && _loc.y == 15) || (_loc.x == 42 && _loc.y == 10)) _grp_0_BuildingGroup1.takeUnit(_u);
-        }
+        LOCATION _l;
+        _l = MkXY(38, 15);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapStructureFactory, mapNone);
+        _l = MkXY(38, 12);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapCommandCenter, mapNone);
+        _l = MkXY(44, 6);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapTokamak, mapNone);
+        _l = MkXY(34, 11);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapVehicleFactory, mapNone);
+        _l = MkXY(39, 8);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapCommonOreSmelter, mapNone);
+        _l = MkXY(29, 12);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGORF, mapNone);
+        _l = MkXY(47, 13);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapLightTower, mapNone);
+        _l = MkXY(30, 9);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapMedicalCenter, mapNone);
+        _l = MkXY(44, 20);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGuardPost, mapRPG);
+        _l = MkXY(54, 19);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGuardPost, mapRPG);
+        _l = MkXY(54, 13);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGuardPost, mapRPG);
+        _l = MkXY(54, 8);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGuardPost, mapRPG);
+        _l = MkXY(42, 20);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGuardPost, mapRPG);
+        _l = MkXY(46, 20);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGuardPost, mapEMP);
+        _l = MkXY(52, 19);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGuardPost, mapEMP);
+        _l = MkXY(54, 16);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGuardPost, mapEMP);
+        _l = MkXY(54, 10);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapGuardPost, mapEMP);
+        _l = MkXY(33, 16);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapTokamak, mapNone);
+        _l = MkXY(29, 15);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapRareOreSmelter, mapNone);
+        _l = MkXY(39, 5);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapArachnidFactory, mapNone);
+        _l = MkXY(47, 6);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapMHDGenerator, mapNone);
     }
-    _grp_1_ReinforceGroup1 = createBuildingGroup(Game::player(1));
-    {
-        // Einheiten der ReinforceGroup 'ReinforceGroup1' zuweisen
-        for (Unit _u : Game::unitsOf(1)) {
-            Location _loc = _u.location();
-            if ((_loc.x == 34 && _loc.y == 11) || (_loc.x == 39 && _loc.y == 5)) _grp_1_ReinforceGroup1.takeUnit(_u);
-        }
-    }
-    _grp_1_ReinforceGroup1.recordVehReinforceGroup(_grp_0_BuildingGroup1, 1500);
-    _grp_2_def = createFightGroup(Game::player(1));
-    _grp_2_def.setIdleRect({ 23, 2 }, { 59, 27 });
+    op2::log::linef("InitProc: BuildingGroup 'BuildingGroup1' -> %d Einheiten", _grp_0_BuildingGroup1.TotalUnitCount());
+    _grp_1_RebuildMines = CreateBuildingGroup(Player[1]);
+    { MAP_RECT _r = MkRect(50, 5, 52, 7); _grp_1_RebuildMines.SetRect(_r); }
+    op2::log::linef("InitProc: BuildingGroup 'RebuildMines' -> %d Einheiten", _grp_1_RebuildMines.TotalUnitCount());
+    _grp_2_ReinforceGroup1 = CreateBuildingGroup(Player[1]);
+    // Einheiten der ReinforceGroup 'ReinforceGroup1' zuweisen
+    if (_unit_veh.unitID != 0) _grp_2_ReinforceGroup1.TakeUnit(_unit_veh);
+    if (_boot_2.unitID != 0) _grp_2_ReinforceGroup1.TakeUnit(_boot_2);
+    _grp_2_ReinforceGroup1.RecordVehReinforceGroup(_grp_0_BuildingGroup1, 1500);
+    _grp_3_def = CreateFightGroup(Player[1]);
+    { MAP_RECT _r = MkRect(23, 2, 59, 27); _grp_3_def.SetRect(_r); }
+    _grp_4_MiningGroup1 = CreateMiningGroup(Player[1]);
 
-    Game::addMessage("Mit dem OP2 Mission Editor erstellt.");
+    // --- Gruppen-Reparatur: zerstoerte, von der Engine an derselben
+    // Stelle wieder errichtete Gebaeude automatisch neu zuweisen/
+    // verknuepfen (ein einziger wiederkehrender Timer). ---
+    CreateTimeTrigger(1, 0, kTicksPerMark, "_repairGroups_cb");
+
+    AddGameMessage("Created with the OP2 Mission Editor.");
+
+    // --- Victory conditions ---
+    Trigger _v_51757 = CreateCountTrigger(1, 1, 0, mapEvacuationModule, mapAny, 1, cmpGreaterEqual, "NoResponseToTrigger");
+    CreateVictoryCondition(1, 0, _v_51757, "Complete the mission.");
+
+    // --- Defeat conditions ---
+    Trigger _v_13414 = CreateResourceTrigger(1, 1, resCommonOre, 10000, 0, cmpGreaterEqual, "NoResponseToTrigger");
+    CreateFailureCondition(1, 0, _v_13414, "");
 
     // --- Custom triggers (enabled at start) ---
     _trigger_0_Disaster();
     _trigger_1_base_rep();
-    _trigger_2_reinforce();
-    _trigger_3_Trigger4();
+    _trigger_2_buildings();
+    _trigger_3_Trigger5();
 
-    op2::ignore(Game::forceMoraleGood());
-    log::line("InitProc: done");
+    TethysGame::ForceMoraleGood(PlayerNum::PlayerAll);
+    op2::log::line("InitProc: done");
 }
 
 // Trigger 'Disaster' (condition=time)
-static void _trigger_0_Disaster_cb() {
-    GameMap::setLavaPossible(Location{ 158, 160 }, true);
-    GameMap::setLavaPossible(Location{ 158, 161 }, true);
-    GameMap::setLavaPossible(Location{ 158, 162 }, true);
-    GameMap::setLavaPossible(Location{ 158, 163 }, true);
-    GameMap::setLavaPossible(Location{ 158, 164 }, true);
-    GameMap::setLavaPossible(Location{ 159, 159 }, true);
-    GameMap::setLavaPossible(Location{ 159, 160 }, true);
-    GameMap::setLavaPossible(Location{ 159, 161 }, true);
-    GameMap::setLavaPossible(Location{ 159, 162 }, true);
-    GameMap::setLavaPossible(Location{ 159, 163 }, true);
-    GameMap::setLavaPossible(Location{ 159, 164 }, true);
-    GameMap::setLavaPossible(Location{ 160, 159 }, true);
-    GameMap::setLavaPossible(Location{ 160, 160 }, true);
-    GameMap::setLavaPossible(Location{ 160, 161 }, true);
-    GameMap::setLavaPossible(Location{ 160, 162 }, true);
-    GameMap::setLavaPossible(Location{ 160, 163 }, true);
-    GameMap::setLavaPossible(Location{ 160, 164 }, true);
-    GameMap::setLavaPossible(Location{ 160, 165 }, true);
-    GameMap::setLavaPossible(Location{ 161, 158 }, true);
-    GameMap::setLavaPossible(Location{ 161, 159 }, true);
-    GameMap::setLavaPossible(Location{ 161, 160 }, true);
-    GameMap::setLavaPossible(Location{ 161, 161 }, true);
-    GameMap::setLavaPossible(Location{ 161, 162 }, true);
-    GameMap::setLavaPossible(Location{ 161, 163 }, true);
-    GameMap::setLavaPossible(Location{ 161, 164 }, true);
-    GameMap::setLavaPossible(Location{ 161, 165 }, true);
-    GameMap::setLavaPossible(Location{ 162, 158 }, true);
-    GameMap::setLavaPossible(Location{ 162, 159 }, true);
-    GameMap::setLavaPossible(Location{ 162, 160 }, true);
-    GameMap::setLavaPossible(Location{ 162, 161 }, true);
-    GameMap::setLavaPossible(Location{ 162, 162 }, true);
-    GameMap::setLavaPossible(Location{ 162, 163 }, true);
-    GameMap::setLavaPossible(Location{ 162, 164 }, true);
-    GameMap::setLavaPossible(Location{ 162, 165 }, true);
-    GameMap::setLavaPossible(Location{ 163, 157 }, true);
-    GameMap::setLavaPossible(Location{ 163, 158 }, true);
-    GameMap::setLavaPossible(Location{ 163, 159 }, true);
-    GameMap::setLavaPossible(Location{ 163, 160 }, true);
-    GameMap::setLavaPossible(Location{ 163, 161 }, true);
-    GameMap::setLavaPossible(Location{ 163, 162 }, true);
-    GameMap::setLavaPossible(Location{ 163, 163 }, true);
-    GameMap::setLavaPossible(Location{ 163, 164 }, true);
-    GameMap::setLavaPossible(Location{ 163, 165 }, true);
-    GameMap::setLavaPossible(Location{ 164, 156 }, true);
-    GameMap::setLavaPossible(Location{ 164, 157 }, true);
-    GameMap::setLavaPossible(Location{ 164, 158 }, true);
-    GameMap::setLavaPossible(Location{ 164, 159 }, true);
-    GameMap::setLavaPossible(Location{ 164, 160 }, true);
-    GameMap::setLavaPossible(Location{ 164, 161 }, true);
-    GameMap::setLavaPossible(Location{ 164, 162 }, true);
-    GameMap::setLavaPossible(Location{ 164, 163 }, true);
-    GameMap::setLavaPossible(Location{ 164, 164 }, true);
-    GameMap::setLavaPossible(Location{ 164, 165 }, true);
-    GameMap::setLavaPossible(Location{ 165, 155 }, true);
-    GameMap::setLavaPossible(Location{ 165, 156 }, true);
-    GameMap::setLavaPossible(Location{ 165, 157 }, true);
-    GameMap::setLavaPossible(Location{ 165, 158 }, true);
-    GameMap::setLavaPossible(Location{ 165, 159 }, true);
-    GameMap::setLavaPossible(Location{ 165, 160 }, true);
-    GameMap::setLavaPossible(Location{ 165, 161 }, true);
-    GameMap::setLavaPossible(Location{ 165, 162 }, true);
-    GameMap::setLavaPossible(Location{ 165, 163 }, true);
-    GameMap::setLavaPossible(Location{ 165, 164 }, true);
-    GameMap::setLavaPossible(Location{ 165, 165 }, true);
-    GameMap::setLavaPossible(Location{ 166, 155 }, true);
-    GameMap::setLavaPossible(Location{ 166, 156 }, true);
-    GameMap::setLavaPossible(Location{ 166, 157 }, true);
-    GameMap::setLavaPossible(Location{ 166, 158 }, true);
-    GameMap::setLavaPossible(Location{ 166, 159 }, true);
-    GameMap::setLavaPossible(Location{ 166, 160 }, true);
-    GameMap::setLavaPossible(Location{ 166, 161 }, true);
-    GameMap::setLavaPossible(Location{ 166, 162 }, true);
-    GameMap::setLavaPossible(Location{ 166, 163 }, true);
-    GameMap::setLavaPossible(Location{ 166, 164 }, true);
-    GameMap::setLavaPossible(Location{ 166, 165 }, true);
-    GameMap::setLavaPossible(Location{ 167, 156 }, true);
-    GameMap::setLavaPossible(Location{ 167, 157 }, true);
-    GameMap::setLavaPossible(Location{ 167, 158 }, true);
-    GameMap::setLavaPossible(Location{ 167, 159 }, true);
-    GameMap::setLavaPossible(Location{ 167, 160 }, true);
-    GameMap::setLavaPossible(Location{ 167, 161 }, true);
-    GameMap::setLavaPossible(Location{ 167, 162 }, true);
-    GameMap::setLavaPossible(Location{ 167, 163 }, true);
-    GameMap::setLavaPossible(Location{ 167, 164 }, true);
-    GameMap::setLavaPossible(Location{ 168, 157 }, true);
-    GameMap::setLavaPossible(Location{ 168, 158 }, true);
-    GameMap::setLavaPossible(Location{ 168, 159 }, true);
-    GameMap::setLavaPossible(Location{ 168, 160 }, true);
-    GameMap::setLavaPossible(Location{ 168, 161 }, true);
-    GameMap::setLavaPossible(Location{ 168, 162 }, true);
-    GameMap::setLavaPossible(Location{ 168, 163 }, true);
-    GameMap::setLavaPossible(Location{ 168, 164 }, true);
-    GameMap::setLavaPossible(Location{ 169, 157 }, true);
-    GameMap::setLavaPossible(Location{ 169, 158 }, true);
-    GameMap::setLavaPossible(Location{ 169, 159 }, true);
-    GameMap::setLavaPossible(Location{ 169, 160 }, true);
-    GameMap::setLavaPossible(Location{ 169, 161 }, true);
-    GameMap::setLavaPossible(Location{ 169, 162 }, true);
-    GameMap::setLavaPossible(Location{ 169, 163 }, true);
-    GameMap::setLavaPossible(Location{ 169, 164 }, true);
-    GameMap::setLavaPossible(Location{ 170, 156 }, true);
-    GameMap::setLavaPossible(Location{ 170, 157 }, true);
-    GameMap::setLavaPossible(Location{ 170, 158 }, true);
-    GameMap::setLavaPossible(Location{ 170, 159 }, true);
-    GameMap::setLavaPossible(Location{ 170, 160 }, true);
-    GameMap::setLavaPossible(Location{ 170, 161 }, true);
-    GameMap::setLavaPossible(Location{ 170, 162 }, true);
-    GameMap::setLavaPossible(Location{ 170, 163 }, true);
-    GameMap::setLavaPossible(Location{ 171, 156 }, true);
-    GameMap::setLavaPossible(Location{ 171, 157 }, true);
-    GameMap::setLavaPossible(Location{ 171, 158 }, true);
-    GameMap::setLavaPossible(Location{ 171, 159 }, true);
-    GameMap::setLavaPossible(Location{ 171, 160 }, true);
-    GameMap::setLavaPossible(Location{ 171, 161 }, true);
-    GameMap::setLavaPossible(Location{ 171, 162 }, true);
-    GameMap::setLavaPossible(Location{ 172, 155 }, true);
-    GameMap::setLavaPossible(Location{ 172, 156 }, true);
-    GameMap::setLavaPossible(Location{ 172, 157 }, true);
-    GameMap::setLavaPossible(Location{ 172, 158 }, true);
-    GameMap::setLavaPossible(Location{ 173, 155 }, true);
-    GameMap::setLavaPossible(Location{ 173, 156 }, true);
-    GameMap::setLavaPossible(Location{ 173, 157 }, true);
-    GameMap::setLavaPossible(Location{ 174, 154 }, true);
-    GameMap::setLavaPossible(Location{ 174, 155 }, true);
-    GameMap::setLavaPossible(Location{ 174, 156 }, true);
-    GameMap::setLavaPossible(Location{ 174, 157 }, true);
-    GameMap::setLavaPossible(Location{ 175, 153 }, true);
-    GameMap::setLavaPossible(Location{ 175, 154 }, true);
-    GameMap::setLavaPossible(Location{ 175, 155 }, true);
-    GameMap::setLavaPossible(Location{ 175, 156 }, true);
-    GameMap::setLavaPossible(Location{ 175, 157 }, true);
-    GameMap::setLavaPossible(Location{ 176, 153 }, true);
-    GameMap::setLavaPossible(Location{ 176, 154 }, true);
-    GameMap::setLavaPossible(Location{ 176, 155 }, true);
-    GameMap::setLavaPossible(Location{ 176, 156 }, true);
-    GameMap::setLavaPossible(Location{ 176, 157 }, true);
-    GameMap::setLavaPossible(Location{ 177, 153 }, true);
-    GameMap::setLavaPossible(Location{ 177, 154 }, true);
-    GameMap::setLavaPossible(Location{ 177, 155 }, true);
-    GameMap::setLavaPossible(Location{ 177, 156 }, true);
-    GameMap::setLavaPossible(Location{ 178, 153 }, true);
-    GameMap::setLavaPossible(Location{ 178, 154 }, true);
-    GameMap::setLavaPossible(Location{ 178, 155 }, true);
-    op2::ignore(Game::createEruption(Location{ 166, 155 }, 15, true));
-    Game::addMessage("Nachricht…");
+Export void _trigger_0_Disaster_cb() {
+    GameMap::SetLavaPossible(MkXY(158, 160), 1);
+    GameMap::SetLavaPossible(MkXY(158, 161), 1);
+    GameMap::SetLavaPossible(MkXY(158, 162), 1);
+    GameMap::SetLavaPossible(MkXY(158, 163), 1);
+    GameMap::SetLavaPossible(MkXY(158, 164), 1);
+    GameMap::SetLavaPossible(MkXY(159, 159), 1);
+    GameMap::SetLavaPossible(MkXY(159, 160), 1);
+    GameMap::SetLavaPossible(MkXY(159, 161), 1);
+    GameMap::SetLavaPossible(MkXY(159, 162), 1);
+    GameMap::SetLavaPossible(MkXY(159, 163), 1);
+    GameMap::SetLavaPossible(MkXY(159, 164), 1);
+    GameMap::SetLavaPossible(MkXY(160, 159), 1);
+    GameMap::SetLavaPossible(MkXY(160, 160), 1);
+    GameMap::SetLavaPossible(MkXY(160, 161), 1);
+    GameMap::SetLavaPossible(MkXY(160, 162), 1);
+    GameMap::SetLavaPossible(MkXY(160, 163), 1);
+    GameMap::SetLavaPossible(MkXY(160, 164), 1);
+    GameMap::SetLavaPossible(MkXY(160, 165), 1);
+    GameMap::SetLavaPossible(MkXY(161, 158), 1);
+    GameMap::SetLavaPossible(MkXY(161, 159), 1);
+    GameMap::SetLavaPossible(MkXY(161, 160), 1);
+    GameMap::SetLavaPossible(MkXY(161, 161), 1);
+    GameMap::SetLavaPossible(MkXY(161, 162), 1);
+    GameMap::SetLavaPossible(MkXY(161, 163), 1);
+    GameMap::SetLavaPossible(MkXY(161, 164), 1);
+    GameMap::SetLavaPossible(MkXY(161, 165), 1);
+    GameMap::SetLavaPossible(MkXY(162, 158), 1);
+    GameMap::SetLavaPossible(MkXY(162, 159), 1);
+    GameMap::SetLavaPossible(MkXY(162, 160), 1);
+    GameMap::SetLavaPossible(MkXY(162, 161), 1);
+    GameMap::SetLavaPossible(MkXY(162, 162), 1);
+    GameMap::SetLavaPossible(MkXY(162, 163), 1);
+    GameMap::SetLavaPossible(MkXY(162, 164), 1);
+    GameMap::SetLavaPossible(MkXY(162, 165), 1);
+    GameMap::SetLavaPossible(MkXY(163, 157), 1);
+    GameMap::SetLavaPossible(MkXY(163, 158), 1);
+    GameMap::SetLavaPossible(MkXY(163, 159), 1);
+    GameMap::SetLavaPossible(MkXY(163, 160), 1);
+    GameMap::SetLavaPossible(MkXY(163, 161), 1);
+    GameMap::SetLavaPossible(MkXY(163, 162), 1);
+    GameMap::SetLavaPossible(MkXY(163, 163), 1);
+    GameMap::SetLavaPossible(MkXY(163, 164), 1);
+    GameMap::SetLavaPossible(MkXY(163, 165), 1);
+    GameMap::SetLavaPossible(MkXY(164, 156), 1);
+    GameMap::SetLavaPossible(MkXY(164, 157), 1);
+    GameMap::SetLavaPossible(MkXY(164, 158), 1);
+    GameMap::SetLavaPossible(MkXY(164, 159), 1);
+    GameMap::SetLavaPossible(MkXY(164, 160), 1);
+    GameMap::SetLavaPossible(MkXY(164, 161), 1);
+    GameMap::SetLavaPossible(MkXY(164, 162), 1);
+    GameMap::SetLavaPossible(MkXY(164, 163), 1);
+    GameMap::SetLavaPossible(MkXY(164, 164), 1);
+    GameMap::SetLavaPossible(MkXY(164, 165), 1);
+    GameMap::SetLavaPossible(MkXY(165, 155), 1);
+    GameMap::SetLavaPossible(MkXY(165, 156), 1);
+    GameMap::SetLavaPossible(MkXY(165, 157), 1);
+    GameMap::SetLavaPossible(MkXY(165, 158), 1);
+    GameMap::SetLavaPossible(MkXY(165, 159), 1);
+    GameMap::SetLavaPossible(MkXY(165, 160), 1);
+    GameMap::SetLavaPossible(MkXY(165, 161), 1);
+    GameMap::SetLavaPossible(MkXY(165, 162), 1);
+    GameMap::SetLavaPossible(MkXY(165, 163), 1);
+    GameMap::SetLavaPossible(MkXY(165, 164), 1);
+    GameMap::SetLavaPossible(MkXY(165, 165), 1);
+    GameMap::SetLavaPossible(MkXY(166, 155), 1);
+    GameMap::SetLavaPossible(MkXY(166, 156), 1);
+    GameMap::SetLavaPossible(MkXY(166, 157), 1);
+    GameMap::SetLavaPossible(MkXY(166, 158), 1);
+    GameMap::SetLavaPossible(MkXY(166, 159), 1);
+    GameMap::SetLavaPossible(MkXY(166, 160), 1);
+    GameMap::SetLavaPossible(MkXY(166, 161), 1);
+    GameMap::SetLavaPossible(MkXY(166, 162), 1);
+    GameMap::SetLavaPossible(MkXY(166, 163), 1);
+    GameMap::SetLavaPossible(MkXY(166, 164), 1);
+    GameMap::SetLavaPossible(MkXY(166, 165), 1);
+    GameMap::SetLavaPossible(MkXY(167, 156), 1);
+    GameMap::SetLavaPossible(MkXY(167, 157), 1);
+    GameMap::SetLavaPossible(MkXY(167, 158), 1);
+    GameMap::SetLavaPossible(MkXY(167, 159), 1);
+    GameMap::SetLavaPossible(MkXY(167, 160), 1);
+    GameMap::SetLavaPossible(MkXY(167, 161), 1);
+    GameMap::SetLavaPossible(MkXY(167, 162), 1);
+    GameMap::SetLavaPossible(MkXY(167, 163), 1);
+    GameMap::SetLavaPossible(MkXY(167, 164), 1);
+    GameMap::SetLavaPossible(MkXY(168, 157), 1);
+    GameMap::SetLavaPossible(MkXY(168, 158), 1);
+    GameMap::SetLavaPossible(MkXY(168, 159), 1);
+    GameMap::SetLavaPossible(MkXY(168, 160), 1);
+    GameMap::SetLavaPossible(MkXY(168, 161), 1);
+    GameMap::SetLavaPossible(MkXY(168, 162), 1);
+    GameMap::SetLavaPossible(MkXY(168, 163), 1);
+    GameMap::SetLavaPossible(MkXY(168, 164), 1);
+    GameMap::SetLavaPossible(MkXY(169, 157), 1);
+    GameMap::SetLavaPossible(MkXY(169, 158), 1);
+    GameMap::SetLavaPossible(MkXY(169, 159), 1);
+    GameMap::SetLavaPossible(MkXY(169, 160), 1);
+    GameMap::SetLavaPossible(MkXY(169, 161), 1);
+    GameMap::SetLavaPossible(MkXY(169, 162), 1);
+    GameMap::SetLavaPossible(MkXY(169, 163), 1);
+    GameMap::SetLavaPossible(MkXY(169, 164), 1);
+    GameMap::SetLavaPossible(MkXY(170, 156), 1);
+    GameMap::SetLavaPossible(MkXY(170, 157), 1);
+    GameMap::SetLavaPossible(MkXY(170, 158), 1);
+    GameMap::SetLavaPossible(MkXY(170, 159), 1);
+    GameMap::SetLavaPossible(MkXY(170, 160), 1);
+    GameMap::SetLavaPossible(MkXY(170, 161), 1);
+    GameMap::SetLavaPossible(MkXY(170, 162), 1);
+    GameMap::SetLavaPossible(MkXY(170, 163), 1);
+    GameMap::SetLavaPossible(MkXY(171, 156), 1);
+    GameMap::SetLavaPossible(MkXY(171, 157), 1);
+    GameMap::SetLavaPossible(MkXY(171, 158), 1);
+    GameMap::SetLavaPossible(MkXY(171, 159), 1);
+    GameMap::SetLavaPossible(MkXY(171, 160), 1);
+    GameMap::SetLavaPossible(MkXY(171, 161), 1);
+    GameMap::SetLavaPossible(MkXY(171, 162), 1);
+    GameMap::SetLavaPossible(MkXY(172, 155), 1);
+    GameMap::SetLavaPossible(MkXY(172, 156), 1);
+    GameMap::SetLavaPossible(MkXY(172, 157), 1);
+    GameMap::SetLavaPossible(MkXY(172, 158), 1);
+    GameMap::SetLavaPossible(MkXY(173, 155), 1);
+    GameMap::SetLavaPossible(MkXY(173, 156), 1);
+    GameMap::SetLavaPossible(MkXY(173, 157), 1);
+    GameMap::SetLavaPossible(MkXY(174, 154), 1);
+    GameMap::SetLavaPossible(MkXY(174, 155), 1);
+    GameMap::SetLavaPossible(MkXY(174, 156), 1);
+    GameMap::SetLavaPossible(MkXY(174, 157), 1);
+    GameMap::SetLavaPossible(MkXY(175, 153), 1);
+    GameMap::SetLavaPossible(MkXY(175, 154), 1);
+    GameMap::SetLavaPossible(MkXY(175, 155), 1);
+    GameMap::SetLavaPossible(MkXY(175, 156), 1);
+    GameMap::SetLavaPossible(MkXY(175, 157), 1);
+    GameMap::SetLavaPossible(MkXY(176, 153), 1);
+    GameMap::SetLavaPossible(MkXY(176, 154), 1);
+    GameMap::SetLavaPossible(MkXY(176, 155), 1);
+    GameMap::SetLavaPossible(MkXY(176, 156), 1);
+    GameMap::SetLavaPossible(MkXY(176, 157), 1);
+    GameMap::SetLavaPossible(MkXY(177, 153), 1);
+    GameMap::SetLavaPossible(MkXY(177, 154), 1);
+    GameMap::SetLavaPossible(MkXY(177, 155), 1);
+    GameMap::SetLavaPossible(MkXY(177, 156), 1);
+    GameMap::SetLavaPossible(MkXY(178, 153), 1);
+    GameMap::SetLavaPossible(MkXY(178, 154), 1);
+    GameMap::SetLavaPossible(MkXY(178, 155), 1);
+    TethysGame::SetEruption(XYPos(166, 155), 15);
+    TethysGame::SetLavaSpeed(15);
+    AddGameMessage("Nachricht…");
+    FreezeFlowS(MkXY(166, 154));
 }
 static void _trigger_0_Disaster() {
-    onMark(500, trackCb(&_trigger_0_Disaster_cb, 0), /*oneShot=*/false);
+    CreateTimeTrigger(1, 1, (2) * kTicksPerMark, "_trigger_0_Disaster_cb");
 }
 
 // Trigger 'base rep' (condition=time)
-static void _trigger_1_base_rep_cb() {
-    for (Unit unit : Game::unitsOf(1)) {
-        const Location _l1 = unit.location();
-        if (!(unit.isBuilding() && _l1.x >= 25 && _l1.x <= 57 && _l1.y >= 2 && _l1.y <= 24)) continue;
-        if ((unit.damage() >= 10)) {
-            for (Unit unit2 : Game::unitsOf(1)) {
-                const Location _l2 = unit2.location();
-                if (!(unit2.isVehicle() && unit2.type() == MapID::Spider && _l2.x >= 28 && _l2.x <= 58 && _l2.y >= 3 && _l2.y <= 25)) continue;
-                if ((unit2.command() == int(abi::CommandType::Nop))) {
-                }
+Export void _trigger_1_base_rep_cb() {
+    _repair_armed_0 = true;
+}
+static void _trigger_1_base_rep() {
+    CreateTimeTrigger(1, 1, (1) * kTicksPerMark, "_trigger_1_base_rep_cb");
+}
+
+// Trigger 'buildings' (condition=time)
+Export void _trigger_2_buildings_cb() {
+    {
+        LOCATION _l;
+        _l = MkXY(25, 12);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapAgridome, mapNone);
+        op2::log::linef("RecordBuilding: mapAgridome @ (24,11) -> Gruppe mit %d Einheiten", _grp_0_BuildingGroup1.TotalUnitCount());
+    }
+    AddGameMessage("bildings");
+}
+static void _trigger_2_buildings() {
+    CreateTimeTrigger(1, 1, (1) * kTicksPerMark, "_trigger_2_buildings_cb");
+}
+
+// Trigger 'Trigger5' (condition=time)
+Export void _trigger_3_Trigger5_cb() {
+    {
+        LOCATION _l;
+        _l = MkXY(49, 16);
+        _grp_1_RebuildMines.RecordBuilding(_l, mapCommonOreMine, mapNone);
+        op2::log::linef("RecordBuilding: mapCommonOreMine @ (48,15) -> Gruppe mit %d Einheiten", _grp_1_RebuildMines.TotalUnitCount());
+    }
+    _mining_armed_0 = true;
+    _grp_1_RebuildMines.SetTargCount(mapRoboMiner, mapNone, 1);
+    _grp_2_ReinforceGroup1.RecordVehReinforceGroup(_grp_1_RebuildMines, 1000);
+}
+static void _trigger_3_Trigger5() {
+    CreateTimeTrigger(1, 1, (5) * kTicksPerMark, "_trigger_3_Trigger5_cb");
+}
+
+Export void _repairGroups_cb() {
+    {
+        PlayerBuildingEnum _e(1, mapStructureFactory);
+        UnitEx _u;
+        LOCATION _a = MkXY(38, 15);
+        static int _seen_anchor_0 = 0;
+        while (_e.GetNext(_u)) {
+            if (!(_u.Location() == _a)) continue;
+            if (!isCompleted(_u)) { _seen_anchor_0 = 0; break; }
+            if (_seen_anchor_0 != _u.unitID) { _seen_anchor_0 = _u.unitID; break; }
+            if (_unit_struck.unitID != _u.unitID) {
+                _unit_struck = _u;
+                op2::log::linef("Anker [struck] -> Einheit %d gebunden", _u.unitID);
+            }
+            break;
+        }
+    }
+    {
+        PlayerBuildingEnum _e(1, mapVehicleFactory);
+        UnitEx _u;
+        LOCATION _a = MkXY(34, 11);
+        static int _seen_anchor_1 = 0;
+        while (_e.GetNext(_u)) {
+            if (!(_u.Location() == _a)) continue;
+            if (!isCompleted(_u)) { _seen_anchor_1 = 0; break; }
+            if (_seen_anchor_1 != _u.unitID) { _seen_anchor_1 = _u.unitID; break; }
+            if (_unit_veh.unitID != _u.unitID) {
+                _unit_veh = _u;
+                op2::log::linef("Anker [veh] -> Einheit %d gebunden", _u.unitID);
+            }
+            break;
+        }
+    }
+    {
+        PlayerBuildingEnum _e(1, mapCommonOreSmelter);
+        UnitEx _u;
+        LOCATION _a = MkXY(39, 8);
+        static int _seen_anchor_2 = 0;
+        while (_e.GetNext(_u)) {
+            if (!(_u.Location() == _a)) continue;
+            if (!isCompleted(_u)) { _seen_anchor_2 = 0; break; }
+            if (_seen_anchor_2 != _u.unitID) { _seen_anchor_2 = _u.unitID; break; }
+            if (_unit_Smelter1.unitID != _u.unitID) {
+                _unit_Smelter1 = _u;
+                op2::log::linef("Anker [Smelter1] -> Einheit %d gebunden", _u.unitID);
+            }
+            break;
+        }
+    }
+    {
+        PlayerBuildingEnum _e(1, mapCommonOreMine);
+        UnitEx _u;
+        LOCATION _a = MkXY(49, 16);
+        static int _seen_anchor_3 = 0;
+        while (_e.GetNext(_u)) {
+            if (!(_u.Location() == _a)) continue;
+            if (!isCompleted(_u)) { _seen_anchor_3 = 0; break; }
+            if (_seen_anchor_3 != _u.unitID) { _seen_anchor_3 = _u.unitID; break; }
+            if (_unit_Mine1.unitID != _u.unitID) {
+                _unit_Mine1 = _u;
+                op2::log::linef("Anker [Mine1] -> Einheit %d gebunden", _u.unitID);
+            }
+            break;
+        }
+    }
+    {
+        PlayerBuildingEnum _e(1, mapStructureFactory);
+        UnitEx _u;
+        LOCATION _a = MkXY(38, 15);
+        while (_e.GetNext(_u)) {
+            LOCATION _loc = _u.Location();
+            if (!(_loc == _a)) continue;
+            static int _seen_BuildingGroup1_0 = 0;
+            if (!isCompleted(_u)) { _seen_BuildingGroup1_0 = 0; continue; }
+            if (_seen_BuildingGroup1_0 != _u.unitID) {
+                _seen_BuildingGroup1_0 = _u.unitID;
+                continue;  // erst 1 Mark stabil fertig, dann uebernehmen
+            }
+            bool _member = false;
+            GroupEnumerator _ge(_grp_0_BuildingGroup1);
+            UnitEx _m;
+            while (_ge.GetNext(_m)) {
+                if (_m.unitID == _u.unitID) { _member = true; break; }
+            }
+            if (!_member) {
+                _grp_0_BuildingGroup1.TakeUnit(_u);
+                op2::log::linef("Repair: mapStructureFactory (Einheit %d) -> Gruppe wieder aufgenommen", _u.unitID);
             }
         }
     }
-}
-static void _trigger_1_base_rep() {
-    onMark(1, trackCb(&_trigger_1_base_rep_cb, 1), /*oneShot=*/false);
-}
-
-// Trigger 'reinforce' (condition=time)
-static void _trigger_2_reinforce_cb() {
-    Game::addMessage("FAHRZEUGE");
-}
-static void _trigger_2_reinforce() {
-    onMark(1, trackCb(&_trigger_2_reinforce_cb, 2), /*oneShot=*/true);
-}
-
-// Trigger 'Trigger4' (condition=time)
-static void _trigger_3_Trigger4_cb() {
-    _grp_2_def.setTargCount(MapID::Lynx, MapID::Microwave, 5);
-    _grp_2_def.setTargCount(MapID::Lynx, MapID::EMP, 2);
-    _grp_1_ReinforceGroup1.recordVehReinforceGroup(_grp_2_def, 1200);
-}
-static void _trigger_3_Trigger4() {
-    onMark(1, trackCb(&_trigger_3_Trigger4_cb, 3), /*oneShot=*/true);
-}
-
-// Alle statisch bekannten Trigger-Callbacks (Index = cbSlot-Wert in g_save).
-// All statically known trigger callbacks (index = cbSlot value in g_save).
-static void (* const g_cbTable[])() = {
-    &_trigger_0_Disaster_cb,
-    &_trigger_1_base_rep_cb,
-    &_trigger_2_reinforce_cb,
-    &_trigger_3_Trigger4_cb,
-};
-static constexpr int kNumKnownCbs = int(sizeof(g_cbTable) / sizeof(g_cbTable[0]));
-
-// Beim Laden eines Spielstands ruft OP2 InitProc NICHT erneut auf. Die
-// Engine stellt ihre Trigger (inkl. TitanTriggerN-Stubnamen) aus dem
-// Spielstand wieder her -- aber die Callback-Registry der DLL ist leer.
-// g_save (SaveRegion) enthaelt die Slot->Callback-Zuordnung; hier wird
-// die Registry daraus wiederaufgebaut. Slots mit 0xFF (Laufzeit-Lambdas
-// mit Captures) sind nicht wiederherstellbar und bleiben leer.
-//
-// On savegame load OP2 does NOT call InitProc again. The engine restores
-// its triggers (incl. TitanTriggerN stub names) from the save -- but the
-// DLL's callback registry is empty. g_save (SaveRegion) holds the
-// slot->callback mapping; rebuild the registry from it here.
-static void restoreCallbacksAfterLoad() {
-    using namespace op2::trigger_detail;
-    if (g_count != 0 || g_save.cbCount <= 0) return;  // frische Session / nichts zu tun
-    int lost = 0;
-    for (int i = 0; i < g_save.cbCount && i < kMaxCallbacks; ++i) {
-        const int idx = g_save.cbSlot[i];
-        if (idx >= 0 && idx < kNumKnownCbs) g_callbacks[i] = g_cbTable[idx];
-        else ++lost;
+    {
+        PlayerBuildingEnum _e(1, mapVehicleFactory);
+        UnitEx _u;
+        LOCATION _a = MkXY(34, 11);
+        while (_e.GetNext(_u)) {
+            LOCATION _loc = _u.Location();
+            if (!(_loc == _a)) continue;
+            static int _seen_ReinforceGroup1_0 = 0;
+            if (!isCompleted(_u)) { _seen_ReinforceGroup1_0 = 0; continue; }
+            if (_seen_ReinforceGroup1_0 != _u.unitID) {
+                _seen_ReinforceGroup1_0 = _u.unitID;
+                continue;  // erst 1 Mark stabil fertig, dann uebernehmen
+            }
+            bool _member = false;
+            GroupEnumerator _ge(_grp_2_ReinforceGroup1);
+            UnitEx _m;
+            while (_ge.GetNext(_m)) {
+                if (_m.unitID == _u.unitID) { _member = true; break; }
+            }
+            if (!_member) {
+                _grp_2_ReinforceGroup1.TakeUnit(_u);
+                op2::log::linef("Repair: mapVehicleFactory (Einheit %d) -> Gruppe wieder aufgenommen", _u.unitID);
+            }
+        }
     }
-    g_count = g_save.cbCount;
-    log::linef("Savegame-Load: %d Trigger-Callbacks wiederhergestellt, %d nicht wiederherstellbar",
-               g_save.cbCount - lost, lost);
+    {
+        PlayerBuildingEnum _e(1, mapArachnidFactory);
+        UnitEx _u;
+        LOCATION _a = MkXY(39, 5);
+        while (_e.GetNext(_u)) {
+            LOCATION _loc = _u.Location();
+            if (!(_loc == _a)) continue;
+            static int _seen_ReinforceGroup1_1 = 0;
+            if (!isCompleted(_u)) { _seen_ReinforceGroup1_1 = 0; continue; }
+            if (_seen_ReinforceGroup1_1 != _u.unitID) {
+                _seen_ReinforceGroup1_1 = _u.unitID;
+                continue;  // erst 1 Mark stabil fertig, dann uebernehmen
+            }
+            bool _member = false;
+            GroupEnumerator _ge(_grp_2_ReinforceGroup1);
+            UnitEx _m;
+            while (_ge.GetNext(_m)) {
+                if (_m.unitID == _u.unitID) { _member = true; break; }
+            }
+            if (!_member) {
+                _grp_2_ReinforceGroup1.TakeUnit(_u);
+                op2::log::linef("Repair: mapArachnidFactory (Einheit %d) -> Gruppe wieder aufgenommen", _u.unitID);
+            }
+        }
+    }
+    if (_mining_armed_0) {
+        UnitEx _mine = _unit_Mine1;
+        UnitEx _smelter = _unit_Smelter1;
+        if (isCompleted(_mine) && isCompleted(_smelter) &&
+            (_mine.unitID != _mining_ids_0[0] || _smelter.unitID != _mining_ids_0[1])) {
+            MAP_RECT _area = MkRect(35, 5, 44, 12);
+            _grp_4_MiningGroup1.Setup(_mine, _smelter, _area);
+            _grp_4_MiningGroup1.SetTargCount(mapCargoTruck, mapNone, 2);
+            _mining_ids_0[0] = _mine.unitID;
+            _mining_ids_0[1] = _smelter.unitID;
+            _grp_2_ReinforceGroup1.RecordVehReinforceGroup(_grp_4_MiningGroup1, 1000);
+            op2::log::linef("MiningGroup [MiningGroup1] aktiviert (Mine %d, Smelter %d)", _mine.unitID, _smelter.unitID);
+        }
+    }
+    if (_repair_armed_0) {
+        int _issued[8]; int _nIssued = 0;
+        {
+        MAP_RECT _z = MkRect(24, 3, 45, 22);
+        InRectEnumerator _e(_z);
+        UnitEx _b;
+        while (_e.GetNext(_b)) {
+            if (!_b.IsBuilding() || !_b.IsLive() || _b.OwnerID() != 1) continue;
+            map_id _bt = _b.GetType();
+            int _thr = 50;
+            if (_bt == mapTokamak) _thr = 200;
+            if (_b.GetDamage() < _thr) continue;
+            // freies Fahrzeug der Gruppe suchen (Praeferenz-Rangfolge)
+            UnitEx _best; int _bestRank = 99;
+            GroupEnumerator _ge(_grp_0_BuildingGroup1);
+            UnitEx _v;
+            while (_ge.GetNext(_v)) {
+                if (!_v.IsVehicle() || !_v.IsLive()) continue;
+                if (_v.GetLastCommand() != ctNop) continue;
+                bool _busy = false;
+                for (int _i = 0; _i < _nIssued; ++_i) if (_issued[_i] == _v.unitID) _busy = true;
+                if (_busy) continue;
+                int _rank = 99;
+                map_id _vt = _v.GetType();
+                if (_vt == mapSpider) _rank = 0;
+                else if (_vt == mapRepairVehicle) _rank = 1;
+                else if (_vt == mapConVec) _rank = 2;
+                if (_rank < _bestRank) { _bestRank = _rank; _best = _v; }
+            }
+            if (_bestRank < 99 && _nIssued < 8) {
+                _best.DoRepair(_b);
+                _issued[_nIssued++] = _best.unitID;
+                op2::log::linef("Repair-Auftrag: Fahrzeug %d -> Gebaeude %d (Schaden %d)", _best.unitID, _b.unitID, _b.GetDamage());
+            }
+        }
+        }
+        {
+        MAP_RECT _z = MkRect(46, 3, 57, 22);
+        InRectEnumerator _e(_z);
+        UnitEx _b;
+        while (_e.GetNext(_b)) {
+            if (!_b.IsBuilding() || !_b.IsLive() || _b.OwnerID() != 1) continue;
+            map_id _bt = _b.GetType();
+            int _thr = 50;
+            if (_bt == mapTokamak) _thr = 200;
+            if (_b.GetDamage() < _thr) continue;
+            // freies Fahrzeug der Gruppe suchen (Praeferenz-Rangfolge)
+            UnitEx _best; int _bestRank = 99;
+            GroupEnumerator _ge(_grp_0_BuildingGroup1);
+            UnitEx _v;
+            while (_ge.GetNext(_v)) {
+                if (!_v.IsVehicle() || !_v.IsLive()) continue;
+                if (_v.GetLastCommand() != ctNop) continue;
+                bool _busy = false;
+                for (int _i = 0; _i < _nIssued; ++_i) if (_issued[_i] == _v.unitID) _busy = true;
+                if (_busy) continue;
+                int _rank = 99;
+                map_id _vt = _v.GetType();
+                if (_vt == mapSpider) _rank = 0;
+                else if (_vt == mapRepairVehicle) _rank = 1;
+                else if (_vt == mapConVec) _rank = 2;
+                if (_rank < _bestRank) { _bestRank = _rank; _best = _v; }
+            }
+            if (_bestRank < 99 && _nIssued < 8) {
+                _best.DoRepair(_b);
+                _issued[_nIssued++] = _best.unitID;
+                op2::log::linef("Repair-Auftrag: Fahrzeug %d -> Gebaeude %d (Schaden %d)", _best.unitID, _b.unitID, _b.GetDamage());
+            }
+        }
+        }
+    }
 }
 
 static void aiProc() {
-    // Fallback: falls OnLoadSavedGame von dieser OPU-Version nicht gerufen
-    // wird, stellt der erste AIProc-Tick nach einem Load die Registry her.
-    restoreCallbacksAfterLoad();
+    // Nach einem Spielstand-Load laeuft InitProc NICHT erneut -- HFL
+    // muss hier nachinitialisiert werden (intern idempotent), sonst
+    // liefern UnitEx-Abfragen wie GetCurAction nur Sentinel-Werte.
+    // After a savegame load InitProc does NOT run again -- HFL must
+    // be (re)initialized here (internally idempotent), otherwise
+    // UnitEx queries like GetCurAction only return sentinel values.
+    HFLInit();
+    diff = kDiff[Player[0].Difficulty()];
 }
 
-extern "C" __declspec(dllexport) int  InitProc() { crash::guard("InitProc", &initProc); return 1; }
-extern "C" __declspec(dllexport) void AIProc()   { crash::guard("AIProc",   &aiProc); }
+Export int InitProc() { op2::crash::guard("InitProc", &initProc); return 1; }
+Export void AIProc()  { op2::crash::guard("AIProc",   &aiProc); }
 
 // SaveRegion: g_save wird von der Engine mit dem Spielstand gespeichert
-// und beim Laden byte-genau restauriert (Variablen, Gruppen, Einheiten,
-// Callback-Slots).
-extern "C" __declspec(dllexport) void GetSaveRegions(mission::SaveRegion* p) {
-    if (p) { p->pData = &g_save; p->size = sizeof(g_save); }
-}
-
-extern "C" __declspec(dllexport) int OnLoadSavedGame(mission::OnLoadSavedGameArgs*) {
-    crash::guard("OnLoadSavedGame", &restoreCallbacksAfterLoad);
-    return 1;
-}
+// und beim Laden byte-genau restauriert (Variablen, Gruppen-/Unit-/
+// Trigger-Stubs, armed-Flags).
+ExportSaveLoadData(g_save)
 
 extern "C" int __stdcall DllMain(void*, unsigned long reason, void*) {
     if (reason == 1 /* DLL_PROCESS_ATTACH */) {
-        crash::installHandler();
-        log::setTickSource([] { return Game::tick(); });
+        op2::crash::installHandler();
+        op2::log::setTickSource([] { return TethysGame::Tick(); });
     }
     return 1;
 }

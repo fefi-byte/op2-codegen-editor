@@ -442,7 +442,6 @@ class TriggerAction:
     repair_zones: list = field(default_factory=list)   # [{"x","y","x2","y2"}]
     repair_thresholds: list = field(
         default_factory=lambda: [{"building_type": "mapTokamak", "damage": 200}])
-    repair_default_damage: int = 50
 
 
 @dataclass

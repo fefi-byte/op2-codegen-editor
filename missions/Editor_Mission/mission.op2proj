@@ -7,13 +7,7 @@
     "normal": 10,
     "easy": 5
   },
-  "variables": [
-    {
-      "name": "var2",
-      "var_type": "bool",
-      "initial_value": 0
-    }
-  ],
+  "variables": [],
   "map": "cm02.map",
   "players": [
     {
@@ -135,22 +129,7 @@
       "player": 1,
       "params": {},
       "uid": "obj7",
-      "unit_name": ""
-    },
-    {
-      "kind": "structure",
-      "tile_x": 48,
-      "tile_y": 15,
-      "map_id": "mapCommonOreMine",
-      "footprint": [
-        2,
-        1
-      ],
-      "display": "Common Ore Mine",
-      "player": 1,
-      "params": {},
-      "uid": "obj2",
-      "unit_name": ""
+      "unit_name": "Smelter1"
     },
     {
       "kind": "vehicle",
@@ -495,6 +474,155 @@
       "params": {},
       "uid": "obj28",
       "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 42,
+      "tile_y": 9,
+      "map_id": "mapEarthworker",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Earthworker",
+      "player": 1,
+      "params": {},
+      "uid": "obj29",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 43,
+      "tile_y": 15,
+      "map_id": "mapSpider3Pack",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Spider 3-Pack",
+      "player": 1,
+      "params": {},
+      "uid": "obj30",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 19,
+      "tile_y": 1,
+      "map_id": "mapLynx",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Lynx",
+      "player": 0,
+      "params": {
+        "weapon": "mapStarflare"
+      },
+      "uid": "obj31",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 18,
+      "tile_y": 1,
+      "map_id": "mapLynx",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Lynx",
+      "player": 0,
+      "params": {
+        "weapon": "mapStarflare"
+      },
+      "uid": "obj32",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 16,
+      "tile_y": 1,
+      "map_id": "mapLynx",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Lynx",
+      "player": 0,
+      "params": {
+        "weapon": "mapStarflare"
+      },
+      "uid": "obj33",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 17,
+      "tile_y": 1,
+      "map_id": "mapLynx",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Lynx",
+      "player": 0,
+      "params": {
+        "weapon": "mapStarflare"
+      },
+      "uid": "obj34",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 15,
+      "tile_y": 1,
+      "map_id": "mapLynx",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Lynx",
+      "player": 0,
+      "params": {
+        "weapon": "mapStarflare"
+      },
+      "uid": "obj35",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 14,
+      "tile_y": 1,
+      "map_id": "mapLynx",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Lynx",
+      "player": 0,
+      "params": {
+        "weapon": "mapStarflare"
+      },
+      "uid": "obj36",
+      "unit_name": ""
+    },
+    {
+      "kind": "vehicle",
+      "tile_x": 13,
+      "tile_y": 1,
+      "map_id": "mapLynx",
+      "footprint": [
+        1,
+        1
+      ],
+      "display": "Lynx",
+      "player": 0,
+      "params": {
+        "weapon": "mapStarflare"
+      },
+      "uid": "obj37",
+      "unit_name": ""
     }
   ],
   "building_groups": [
@@ -507,9 +635,22 @@
       "rect_height": 2,
       "unit_ids": [
         "obj4",
-        "obj11"
+        "obj11",
+        "obj29"
       ],
-      "folder": "base 1"
+      "folder": "base 1",
+      "record_all": true
+    },
+    {
+      "name": "RebuildMines",
+      "player": 1,
+      "rect_x": 49,
+      "rect_y": 4,
+      "rect_width": 2,
+      "rect_height": 2,
+      "unit_ids": [],
+      "folder": "",
+      "record_all": false
     }
   ],
   "reinforce_groups": [
@@ -541,13 +682,29 @@
       "folder": ""
     }
   ],
+  "mining_groups": [
+    {
+      "name": "MiningGroup1",
+      "player": 1,
+      "idle_x": 34,
+      "idle_y": 4,
+      "idle_width": 9,
+      "idle_height": 7,
+      "unit_ids": [],
+      "folder": "",
+      "mine_ref": "Mine1",
+      "smelter_ref": "Smelter1",
+      "source_group_name": "ReinforceGroup1",
+      "reinforce_priority": 1000
+    }
+  ],
   "triggers": [
     {
       "name": "Disaster",
       "enabled_at_start": true,
-      "one_shot": false,
+      "one_shot": true,
       "condition": "time",
-      "marks": 500,
+      "marks": 2,
       "player": 0,
       "count": 1,
       "compare": "cmpGreaterEqual",
@@ -571,7 +728,7 @@
           "x2": 0,
           "y2": 0,
           "player": 0,
-          "target": "Trigger1",
+          "target": "Disaster",
           "group_name": "BuildingGroup1",
           "source_group_name": "",
           "reinforce_priority": 1000,
@@ -581,7 +738,7 @@
           "condition_logic": "and",
           "then_actions": [],
           "else_actions": [],
-          "var_name": "var1",
+          "var_name": "var2",
           "mod_mode": "inc",
           "var_expr": "",
           "disaster_type": "eruption",
@@ -1167,9 +1324,13 @@
               154
             ]
           ],
-          "now": true,
+          "now": false,
           "wave_units": [],
           "targ_counts": [],
+          "unit_list": [],
+          "building_list": [],
+          "tube_list": [],
+          "wall_list": [],
           "spawn_mode": "spawn",
           "attack_x": 0,
           "attack_y": 0,
@@ -1182,10 +1343,26 @@
           "idle_y2": 0,
           "fg_command": "attackArea",
           "unit_ref": "",
+          "mine_ref": "",
+          "smelter_ref": "",
           "patrol_points": [],
           "loop_mode": "none",
           "loop_count": 1,
-          "enum_source": "rect"
+          "enum_source": "rect",
+          "morale_mode": "good",
+          "songs": [],
+          "repeat_start": 0,
+          "flow_dir": "S",
+          "flow_freeze": false,
+          "stat_mods": [],
+          "repair_zones": [],
+          "repair_thresholds": [
+            {
+              "building_type": "mapTokamak",
+              "damage": 200
+            }
+          ],
+          "repair_default_damage": 50
         },
         {
           "kind": "message",
@@ -1224,6 +1401,10 @@
           "now": false,
           "wave_units": [],
           "targ_counts": [],
+          "unit_list": [],
+          "building_list": [],
+          "tube_list": [],
+          "wall_list": [],
           "spawn_mode": "spawn",
           "attack_x": 0,
           "attack_y": 0,
@@ -1236,142 +1417,49 @@
           "idle_y2": 0,
           "fg_command": "attackArea",
           "unit_ref": "",
+          "mine_ref": "",
+          "smelter_ref": "",
           "patrol_points": [],
           "loop_mode": "none",
           "loop_count": 1,
-          "enum_source": "rect"
-        }
-      ],
-      "unit_checks": [],
-      "folder": "Disaster"
-    },
-    {
-      "name": "base rep",
-      "enabled_at_start": true,
-      "one_shot": false,
-      "condition": "time",
-      "marks": 1,
-      "player": 0,
-      "count": 1,
-      "compare": "cmpGreaterEqual",
-      "tech_id": 0,
-      "resource": "resCommonOre",
-      "amount": 1000,
-      "building": "mapCommandCenter",
-      "x": 0,
-      "y": 0,
-      "width": 1,
-      "height": 1,
-      "actions": [
+          "enum_source": "rect",
+          "morale_mode": "good",
+          "songs": [],
+          "repeat_start": 0,
+          "flow_dir": "S",
+          "flow_freeze": false,
+          "stat_mods": [],
+          "repair_zones": [],
+          "repair_thresholds": [
+            {
+              "building_type": "mapTokamak",
+              "damage": 200
+            }
+          ],
+          "repair_default_damage": 50
+        },
         {
-          "kind": "if",
+          "kind": "lavaFlowAni",
           "text": "",
-          "unit_type": "mapAny",
+          "unit_type": "mapScout",
           "weapon_type": "mapNone",
           "target_count": 1,
-          "x": 24,
-          "y": 1,
-          "x2": 56,
-          "y2": 23,
-          "player": 1,
-          "target": "",
-          "group_name": "",
+          "x": 165,
+          "y": 153,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "Disaster",
+          "group_name": "BuildingGroup1",
           "source_group_name": "",
           "reinforce_priority": 1000,
           "building_type": "mapCommandCenter",
           "wall_type": "mapWall",
-          "conditions": [
-            {
-              "kind": "loopUnitDamage",
-              "negate": false,
-              "player": 0,
-              "building_type": "mapCommandCenter",
-              "x": 0,
-              "y": 0,
-              "compare": "cmpGreaterEqual",
-              "value": 10,
-              "resource": "resCommonOre",
-              "tech_id": 0,
-              "var_name": "var2",
-              "command_type": "Nop",
-              "loop_level": "current"
-            }
-          ],
+          "conditions": [],
           "condition_logic": "and",
-          "then_actions": [
-            {
-              "kind": "if",
-              "text": "",
-              "unit_type": "mapSpider",
-              "weapon_type": "mapNone",
-              "target_count": 1,
-              "x": 27,
-              "y": 2,
-              "x2": 57,
-              "y2": 24,
-              "player": 1,
-              "target": "",
-              "group_name": "",
-              "source_group_name": "",
-              "reinforce_priority": 1000,
-              "building_type": "mapCommandCenter",
-              "wall_type": "mapWall",
-              "conditions": [
-                {
-                  "kind": "loopUnitCommand",
-                  "negate": false,
-                  "player": 0,
-                  "building_type": "mapCommandCenter",
-                  "x": 0,
-                  "y": 0,
-                  "compare": "cmpGreaterEqual",
-                  "value": 0,
-                  "resource": "resCommonOre",
-                  "tech_id": 0,
-                  "var_name": "var2",
-                  "command_type": "Nop",
-                  "loop_level": "current"
-                }
-              ],
-              "condition_logic": "and",
-              "then_actions": [],
-              "else_actions": [],
-              "var_name": "",
-              "mod_mode": "inc",
-              "var_expr": "",
-              "disaster_type": "meteor",
-              "x_expr": 0,
-              "y_expr": 0,
-              "x2_expr": 0,
-              "y2_expr": 0,
-              "size": -1,
-              "magnitude": 1,
-              "duration": 100,
-              "spread_speed": 15,
-              "lava_zone": [],
-              "now": false,
-              "wave_units": [],
-              "targ_counts": [],
-              "spawn_mode": "spawn",
-              "attack_x": 0,
-              "attack_y": 0,
-              "attack_x2": 0,
-              "attack_y2": 0,
-              "group_var_name": "",
-              "idle_x": 0,
-              "idle_y": 0,
-              "idle_x2": 0,
-              "idle_y2": 0,
-              "fg_command": "attackArea",
-              "unit_ref": "",
-              "patrol_points": [],
-              "loop_mode": "forEach",
-              "loop_count": 1,
-              "enum_source": "playerVehicles"
-            }
-          ],
+          "then_actions": [],
           "else_actions": [],
-          "var_name": "",
+          "var_name": "var2",
           "mod_mode": "inc",
           "var_expr": "",
           "disaster_type": "meteor",
@@ -1387,6 +1475,10 @@
           "now": false,
           "wave_units": [],
           "targ_counts": [],
+          "unit_list": [],
+          "building_list": [],
+          "tube_list": [],
+          "wall_list": [],
           "spawn_mode": "spawn",
           "attack_x": 0,
           "attack_y": 0,
@@ -1399,17 +1491,37 @@
           "idle_y2": 0,
           "fg_command": "attackArea",
           "unit_ref": "",
+          "mine_ref": "",
+          "smelter_ref": "",
           "patrol_points": [],
-          "loop_mode": "forEach",
+          "loop_mode": "none",
           "loop_count": 1,
-          "enum_source": "playerBuildings"
+          "enum_source": "rect",
+          "morale_mode": "good",
+          "songs": [],
+          "repeat_start": 0,
+          "flow_dir": "S",
+          "flow_freeze": true,
+          "stat_mods": [],
+          "repair_zones": [],
+          "repair_thresholds": [
+            {
+              "building_type": "mapTokamak",
+              "damage": 200
+            }
+          ],
+          "repair_default_damage": 50
         }
       ],
       "unit_checks": [],
-      "folder": "base"
+      "folder": "Disaster",
+      "group_name": "",
+      "damage_type": 3,
+      "target_unit": "",
+      "source_unit_type": "mapScout"
     },
     {
-      "name": "reinforce",
+      "name": "base rep",
       "enabled_at_start": true,
       "one_shot": true,
       "condition": "time",
@@ -1427,8 +1539,203 @@
       "height": 1,
       "actions": [
         {
+          "kind": "repairBuildings",
+          "text": "",
+          "unit_type": "mapScout",
+          "weapon_type": "mapNone",
+          "target_count": 1,
+          "x": 0,
+          "y": 0,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "Disaster",
+          "group_name": "BuildingGroup1",
+          "source_group_name": "",
+          "reinforce_priority": 1000,
+          "building_type": "mapCommandCenter",
+          "wall_type": "mapWall",
+          "conditions": [],
+          "condition_logic": "and",
+          "then_actions": [],
+          "else_actions": [],
+          "var_name": "",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "meteor",
+          "x_expr": 0,
+          "y_expr": 0,
+          "x2_expr": 0,
+          "y2_expr": 0,
+          "size": -1,
+          "magnitude": 1,
+          "duration": 100,
+          "spread_speed": 15,
+          "lava_zone": [],
+          "now": false,
+          "wave_units": [],
+          "targ_counts": [],
+          "unit_list": [],
+          "building_list": [],
+          "tube_list": [],
+          "wall_list": [],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "mine_ref": "",
+          "smelter_ref": "",
+          "patrol_points": [],
+          "loop_mode": "none",
+          "loop_count": 1,
+          "enum_source": "rect",
+          "morale_mode": "good",
+          "songs": [],
+          "repeat_start": 0,
+          "flow_dir": "S",
+          "flow_freeze": false,
+          "stat_mods": [],
+          "repair_zones": [
+            {
+              "x": 23,
+              "y": 2,
+              "x2": 44,
+              "y2": 21
+            },
+            {
+              "x": 45,
+              "y": 2,
+              "x2": 56,
+              "y2": 21
+            }
+          ],
+          "repair_thresholds": [
+            {
+              "building_type": "mapTokamak",
+              "damage": 200
+            }
+          ],
+          "repair_default_damage": 50
+        }
+      ],
+      "unit_checks": [],
+      "folder": "base",
+      "group_name": "def",
+      "damage_type": 3,
+      "target_unit": "struck",
+      "source_unit_type": "mapScout"
+    },
+    {
+      "name": "buildings",
+      "enabled_at_start": true,
+      "one_shot": true,
+      "condition": "time",
+      "marks": 1,
+      "player": 0,
+      "count": 1,
+      "compare": "cmpGreaterEqual",
+      "tech_id": 0,
+      "resource": "resCommonOre",
+      "amount": 1000,
+      "building": "mapCommandCenter",
+      "x": 0,
+      "y": 0,
+      "width": 1,
+      "height": 1,
+      "actions": [
+        {
+          "kind": "recordBuilding",
+          "text": "",
+          "unit_type": "mapScout",
+          "weapon_type": "mapNone",
+          "target_count": 1,
+          "x": 48,
+          "y": 15,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "Disaster",
+          "group_name": "BuildingGroup1",
+          "source_group_name": "",
+          "reinforce_priority": 1000,
+          "building_type": "mapCommonOreMine",
+          "wall_type": "mapWall",
+          "conditions": [],
+          "condition_logic": "and",
+          "then_actions": [],
+          "else_actions": [],
+          "var_name": "var2",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "meteor",
+          "x_expr": 0,
+          "y_expr": 0,
+          "x2_expr": 0,
+          "y2_expr": 0,
+          "size": -1,
+          "magnitude": 1,
+          "duration": 100,
+          "spread_speed": 15,
+          "lava_zone": [],
+          "now": false,
+          "wave_units": [],
+          "targ_counts": [],
+          "unit_list": [],
+          "building_list": [
+            {
+              "building_type": "mapAgridome",
+              "weapon_type": "mapNone",
+              "x": 24,
+              "y": 11,
+              "unit_name": ""
+            }
+          ],
+          "tube_list": [],
+          "wall_list": [],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "mine_ref": "",
+          "smelter_ref": "",
+          "patrol_points": [],
+          "loop_mode": "none",
+          "loop_count": 1,
+          "enum_source": "rect",
+          "morale_mode": "good",
+          "songs": [],
+          "repeat_start": 0,
+          "flow_dir": "S",
+          "flow_freeze": false,
+          "stat_mods": [],
+          "repair_zones": [],
+          "repair_thresholds": [
+            {
+              "building_type": "mapTokamak",
+              "damage": 200
+            }
+          ],
+          "repair_default_damage": 50
+        },
+        {
           "kind": "message",
-          "text": "FAHRZEUGE",
+          "text": "bildings",
           "unit_type": "mapScout",
           "weapon_type": "mapNone",
           "target_count": 1,
@@ -1463,6 +1770,10 @@
           "now": false,
           "wave_units": [],
           "targ_counts": [],
+          "unit_list": [],
+          "building_list": [],
+          "tube_list": [],
+          "wall_list": [],
           "spawn_mode": "spawn",
           "attack_x": 0,
           "attack_y": 0,
@@ -1475,21 +1786,41 @@
           "idle_y2": 0,
           "fg_command": "attackArea",
           "unit_ref": "",
+          "mine_ref": "",
+          "smelter_ref": "",
           "patrol_points": [],
           "loop_mode": "none",
           "loop_count": 1,
-          "enum_source": "rect"
+          "enum_source": "rect",
+          "morale_mode": "good",
+          "songs": [],
+          "repeat_start": 0,
+          "flow_dir": "S",
+          "flow_freeze": false,
+          "stat_mods": [],
+          "repair_zones": [],
+          "repair_thresholds": [
+            {
+              "building_type": "mapTokamak",
+              "damage": 200
+            }
+          ],
+          "repair_default_damage": 50
         }
       ],
       "unit_checks": [],
-      "folder": "base"
+      "folder": "base",
+      "group_name": "def",
+      "damage_type": 3,
+      "target_unit": "struck",
+      "source_unit_type": "mapScout"
     },
     {
-      "name": "Trigger4",
+      "name": "Trigger5",
       "enabled_at_start": true,
       "one_shot": true,
       "condition": "time",
-      "marks": 1,
+      "marks": 5,
       "player": 0,
       "count": 1,
       "compare": "cmpGreaterEqual",
@@ -1503,6 +1834,162 @@
       "height": 1,
       "actions": [
         {
+          "kind": "recordBuilding",
+          "text": "",
+          "unit_type": "mapScout",
+          "weapon_type": "mapNone",
+          "target_count": 1,
+          "x": 48,
+          "y": 15,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "Disaster",
+          "group_name": "RebuildMines",
+          "source_group_name": "",
+          "reinforce_priority": 1000,
+          "building_type": "mapCommonOreMine",
+          "wall_type": "mapWall",
+          "conditions": [],
+          "condition_logic": "and",
+          "then_actions": [],
+          "else_actions": [],
+          "var_name": "",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "meteor",
+          "x_expr": 0,
+          "y_expr": 0,
+          "x2_expr": 0,
+          "y2_expr": 0,
+          "size": -1,
+          "magnitude": 1,
+          "duration": 100,
+          "spread_speed": 15,
+          "lava_zone": [],
+          "now": false,
+          "wave_units": [],
+          "targ_counts": [],
+          "unit_list": [],
+          "building_list": [
+            {
+              "building_type": "mapCommonOreMine",
+              "weapon_type": "mapNone",
+              "x": 48,
+              "y": 15,
+              "unit_name": "Mine1"
+            }
+          ],
+          "tube_list": [],
+          "wall_list": [],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "mine_ref": "",
+          "smelter_ref": "",
+          "patrol_points": [],
+          "loop_mode": "none",
+          "loop_count": 1,
+          "enum_source": "rect",
+          "morale_mode": "good",
+          "songs": [],
+          "repeat_start": 0,
+          "flow_dir": "S",
+          "flow_freeze": false,
+          "stat_mods": [],
+          "repair_zones": [],
+          "repair_thresholds": [
+            {
+              "building_type": "mapTokamak",
+              "damage": 200
+            }
+          ],
+          "repair_default_damage": 50
+        },
+        {
+          "kind": "startMining",
+          "text": "",
+          "unit_type": "mapScout",
+          "weapon_type": "mapNone",
+          "target_count": 2,
+          "x": 0,
+          "y": 0,
+          "x2": 0,
+          "y2": 0,
+          "player": 0,
+          "target": "Disaster",
+          "group_name": "MiningGroup1",
+          "source_group_name": "",
+          "reinforce_priority": 1000,
+          "building_type": "mapCommandCenter",
+          "wall_type": "mapWall",
+          "conditions": [],
+          "condition_logic": "and",
+          "then_actions": [],
+          "else_actions": [],
+          "var_name": "",
+          "mod_mode": "inc",
+          "var_expr": "",
+          "disaster_type": "meteor",
+          "x_expr": 0,
+          "y_expr": 0,
+          "x2_expr": 0,
+          "y2_expr": 0,
+          "size": -1,
+          "magnitude": 1,
+          "duration": 100,
+          "spread_speed": 15,
+          "lava_zone": [],
+          "now": false,
+          "wave_units": [],
+          "targ_counts": [],
+          "unit_list": [],
+          "building_list": [],
+          "tube_list": [],
+          "wall_list": [],
+          "spawn_mode": "spawn",
+          "attack_x": 0,
+          "attack_y": 0,
+          "attack_x2": 0,
+          "attack_y2": 0,
+          "group_var_name": "",
+          "idle_x": 0,
+          "idle_y": 0,
+          "idle_x2": 0,
+          "idle_y2": 0,
+          "fg_command": "attackArea",
+          "unit_ref": "",
+          "mine_ref": "",
+          "smelter_ref": "",
+          "patrol_points": [],
+          "loop_mode": "none",
+          "loop_count": 1,
+          "enum_source": "rect",
+          "morale_mode": "good",
+          "songs": [],
+          "repeat_start": 0,
+          "flow_dir": "S",
+          "flow_freeze": false,
+          "stat_mods": [],
+          "repair_zones": [],
+          "repair_thresholds": [
+            {
+              "building_type": "mapTokamak",
+              "damage": 200
+            }
+          ],
+          "repair_default_damage": 50
+        },
+        {
           "kind": "setTargCount",
           "text": "",
           "unit_type": "mapScout",
@@ -1514,16 +2001,16 @@
           "y2": 0,
           "player": 0,
           "target": "Disaster",
-          "group_name": "def",
+          "group_name": "RebuildMines",
           "source_group_name": "ReinforceGroup1",
-          "reinforce_priority": 1200,
+          "reinforce_priority": 1000,
           "building_type": "mapCommandCenter",
           "wall_type": "mapWall",
           "conditions": [],
           "condition_logic": "and",
           "then_actions": [],
           "else_actions": [],
-          "var_name": "var2",
+          "var_name": "",
           "mod_mode": "inc",
           "var_expr": "",
           "disaster_type": "meteor",
@@ -1540,16 +2027,15 @@
           "wave_units": [],
           "targ_counts": [
             {
-              "unit_type": "mapLynx",
-              "weapon_type": "mapMicrowave",
-              "count": 5
-            },
-            {
-              "unit_type": "mapLynx",
-              "weapon_type": "mapEMP",
-              "count": 2
+              "unit_type": "mapRoboMiner",
+              "weapon_type": "mapNone",
+              "count": 1
             }
           ],
+          "unit_list": [],
+          "building_list": [],
+          "tube_list": [],
+          "wall_list": [],
           "spawn_mode": "spawn",
           "attack_x": 0,
           "attack_y": 0,
@@ -1562,17 +2048,63 @@
           "idle_y2": 0,
           "fg_command": "attackArea",
           "unit_ref": "",
+          "mine_ref": "",
+          "smelter_ref": "",
           "patrol_points": [],
           "loop_mode": "none",
           "loop_count": 1,
-          "enum_source": "rect"
+          "enum_source": "rect",
+          "morale_mode": "good",
+          "songs": [],
+          "repeat_start": 0,
+          "flow_dir": "S",
+          "flow_freeze": false,
+          "stat_mods": [],
+          "repair_zones": [],
+          "repair_thresholds": [
+            {
+              "building_type": "mapTokamak",
+              "damage": 200
+            }
+          ],
+          "repair_default_damage": 50
         }
       ],
       "unit_checks": [],
-      "folder": ""
+      "folder": "",
+      "group_name": "def",
+      "damage_type": 3,
+      "target_unit": "struck",
+      "source_unit_type": "mapScout"
     }
   ],
-  "victories": [],
-  "defeats": [],
+  "victories": [
+    {
+      "kind": "starship",
+      "objective": "Complete the mission.",
+      "player": 0,
+      "marks": 600,
+      "count": 1,
+      "compare": "cmpGreaterEqual",
+      "tech_id": 0,
+      "resource": "resCommonOre",
+      "amount": 1000,
+      "building": "mapAdvancedLab"
+    }
+  ],
+  "defeats": [
+    {
+      "kind": "resource",
+      "objective": "Complete the mission.",
+      "player": 0,
+      "marks": 600,
+      "count": 1,
+      "compare": "cmpGreaterEqual",
+      "tech_id": 0,
+      "resource": "resCommonOre",
+      "amount": 10000,
+      "building": "mapAdvancedLab"
+    }
+  ],
   "node_positions": {}
 }
