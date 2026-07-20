@@ -1806,6 +1806,64 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
     # IMPORTANT: everything here runs every mark and MUST be idempotent --
     # repeated TakeUnit/Setup resets the group AI's work state (the group
     # then never finishes building/hauling).
+
+    # --- Benannte Gebaeude-Anker neu binden: steht an der Anker-Kachel ein
+    # fertiges Gebaeude des Typs mit anderer unitID (Neubau nach
+    # Zerstoerung ODER erstmals gebautes geplantes Gebaeude), wird das
+    # Handle umgebogen -- der Name bleibt damit dauerhaft ansprechbar. ---
+    # --- Rebind named building anchors: if a completed building of the
+    # right type with a different unitID stands on the anchor tile (rebuilt
+    # after destruction OR a planned building built for the first time),
+    # the handle is redirected -- the name stays addressable forever. ---
+    for ai, (aname, avar, aplayer, atype, ax, ay) in enumerate(ctx.get("anchors", [])):
+        seen = f"_seen_anchor_{ai}"
+        body += [
+            f"{{",
+            f"    PlayerBuildingEnum _e({aplayer}, {atype});",
+            f"    UnitEx _u;",
+            f"    LOCATION _a = {_xy(ax, ay)};",
+            f"    static int {seen} = 0;",
+            f"    while (_e.GetNext(_u)) {{",
+            f"        if (!(_u.Location() == _a)) continue;",
+            f"        if (!isCompleted(_u)) {{ {seen} = 0; break; }}",
+            f"        if ({seen} != _u.unitID) {{ {seen} = _u.unitID; break; }}",
+            f"        if ({avar}.unitID != _u.unitID) {{",
+            f"            {avar} = _u;",
+            f'            op2::log::linef("Anker [{aname}] -> Einheit %d gebunden", _u.unitID);',
+            f"        }}",
+            f"        break;",
+            f"    }}",
+            f"}}",
+        ]
+
+    # --- Geplante benannte Gebaeude (plan:<Name> im Roster) in ihre Gruppe
+    # aufnehmen, sobald der Anker gebunden ist. ---
+    # --- Take planned named buildings (plan:<name> in the roster) into
+    # their group once the anchor is bound. ---
+    for attr in ("building_groups", "reinforce_groups", "mining_groups"):
+        for g in (getattr(mission, attr, None) or []):
+            var = ctx["group_vars"][g.name]
+            for uid in (getattr(g, "unit_ids", None) or []):
+                if not (isinstance(uid, str) and uid.startswith("plan:")):
+                    continue
+                hvar = ctx.get("unit_vars", {}).get(uid[5:].strip())
+                if not hvar:
+                    continue
+                body += [
+                    f"if (isCompleted({hvar})) {{",
+                    f"    bool _member = false;",
+                    f"    GroupEnumerator _ge({var});",
+                    f"    UnitEx _m;",
+                    f"    while (_ge.GetNext(_m)) {{",
+                    f"        if (_m.unitID == {hvar}.unitID) {{ _member = true; break; }}",
+                    f"    }}",
+                    f"    if (!_member) {{",
+                    f"        {var}.TakeUnit({hvar});",
+                    f'        op2::log::linef("Roster: [{uid[5:].strip()}] (Einheit %d) -> Gruppe {g.name}", {hvar}.unitID);',
+                    f"    }}",
+                    f"}}",
+                ]
+
     for attr in ("building_groups", "reinforce_groups", "mining_groups"):
         for g in (getattr(mission, attr, None) or []):
             var = ctx["group_vars"][g.name]
@@ -1819,8 +1877,16 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         if not var or spec is None:
             continue
         ids_var = ctx.get("mining_ids_vars", {}).get(id(action))
-        mine_ref = getattr(action, "mine_ref", "") or ""
-        smelter_ref = getattr(action, "smelter_ref", "") or ""
+        # Referenz-Aufloesung: Gruppen-Definition (mine_ref/smelter_ref der
+        # MiningGroup) hat Vorrang; dann Aktions-Referenzen; zuletzt
+        # Positions-Lookup.
+        # Reference resolution: the group definition (mine_ref/smelter_ref
+        # of the MiningGroup) wins; then action-level refs; finally the
+        # position lookup.
+        mine_ref = ((getattr(spec, "mine_ref", "") or "").strip()
+                    or getattr(action, "mine_ref", "") or "")
+        smelter_ref = ((getattr(spec, "smelter_ref", "") or "").strip()
+                       or getattr(action, "smelter_ref", "") or "")
         mine_expr = ((ctx.get("unit_vars", {}).get(mine_ref) if mine_ref else None)
                      or f"unitOnTile({_xy(action.x, action.y)})")
         smelter_expr = ((ctx.get("unit_vars", {}).get(smelter_ref) if smelter_ref else None)
@@ -1844,6 +1910,8 @@ def _emit_group_repair_body(mission: Mission, ctx: dict) -> list[str]:
         body.append(f"        {var}.SetTargCount(mapCargoTruck, mapNone, {n});")
         body.append(f"        {ids_var}[0] = _mine.unitID;")
         body.append(f"        {ids_var}[1] = _smelter.unitID;")
+        body.append(f'        op2::log::linef("MiningGroup [{action.group_name}] aktiviert '
+                    f'(Mine %d, Smelter %d)", _mine.unitID, _smelter.unitID);')
         body.append(f"    }}")
         body.append(f"}}")
 
@@ -1995,6 +2063,12 @@ def _build_codegen_context(mission: Mission) -> dict:
     # Named placed units: UnitEx handles in g_save for unitCmd actions.
     ctx["unit_vars"] = {}
     ctx["unit_vars_by_uid"] = {}
+    # Benannte Gebaeude-Anker: Name -> (var, player, konvertierter Typ, x, y).
+    # Der Reparatur-Timer bindet das Handle nach Bau/Wiederaufbau neu.
+    # Named building anchors: name -> (var, player, converted type, x, y).
+    # The repair timer rebinds the handle after build/rebuild.
+    ctx["anchors"] = []
+    _conv = lambda t: "mapCommonOreMine" if mapid(t) == "mapRareOreMine" else mapid(t)
     for u in (mission.units or []):
         name = (getattr(u, "unit_name", "") or "").strip()
         if name and name not in ctx["unit_vars"]:
@@ -2002,6 +2076,35 @@ def _build_codegen_context(mission: Mission) -> dict:
             ctx["unit_vars"][name] = var
             if getattr(u, "uid", ""):
                 ctx["unit_vars_by_uid"][u.uid] = var
+            if _strip_map(u.unit_type) in _BUILDING_TYPES:
+                ctx["anchors"].append((name, var, int(u.player),
+                                       _conv(u.unit_type), int(u.x), int(u.y)))
+    # GEPLANTE Gebaeude (recordBuilding-Eintraege mit unit_name) werden
+    # ebenfalls benannte Anker -- Besitzer ist der Spieler der Zielgruppe.
+    # PLANNED buildings (recordBuilding entries with unit_name) become named
+    # anchors too -- owner is the target group's player.
+    group_players = {g.name: int(g.player)
+                     for g in (getattr(mission, "building_groups", None) or [])}
+    for t in (mission.triggers or []):
+        for a in _walk_actions(t.actions):
+            if a.kind != "recordBuilding":
+                continue
+            gp = group_players.get(getattr(a, "group_name", "") or "")
+            if gp is None:
+                continue
+            entries = list(getattr(a, "building_list", None) or [])
+            if not entries:
+                entries = [{"building_type": a.building_type, "x": a.x, "y": a.y,
+                            "unit_name": ""}]
+            for e in entries:
+                name = (e.get("unit_name", "") or "").strip()
+                if not name or name in ctx["unit_vars"]:
+                    continue
+                var = f"_unit_{_ident(name)}"
+                ctx["unit_vars"][name] = var
+                ctx["anchors"].append((name, var, gp,
+                                       _conv(e.get("building_type", "mapCommandCenter")),
+                                       int(e.get("x", 0)), int(e.get("y", 0))))
     # uid -> Handle-Variable fuer ALLE spaeter referenzierten Einheiten:
     # benannte Einheiten (g_save-Var) + Gruppen-Roster (_boot_N, file-scope).
     # Sie werden in _emit_base_layout DIREKT per CreateUnit befuellt --

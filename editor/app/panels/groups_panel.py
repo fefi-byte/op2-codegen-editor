@@ -89,7 +89,21 @@ class GroupsPanel(QWidget):
         self.form.addRow("", self.pick_rect)
         self.form.addRow(tr("groups.row_units"), self.unit_list)
         self.record_all = QCheckBox(tr("groups.chk_record_all"))
+        self.record_all.setToolTip(tr("groups.tooltip_record_all"))
         self.form.addRow(self.record_all)
+        # MiningGroup: Mine/Smelter als benannte Gebaeude-Anker referenzieren
+        # (platziert ODER per recordBuilding geplant). Handle wird nach
+        # Zerstoerung + Wiederaufbau automatisch neu gebunden.
+        # MiningGroup: reference mine/smelter as named building anchors
+        # (placed OR planned via recordBuilding). Handle rebinds after
+        # destruction + rebuild automatically.
+        self.mine_ref = QComboBox()
+        self.mine_ref.setToolTip(tr("groups.tooltip_mine_ref"))
+        self.smelter_ref = QComboBox()
+        self.smelter_ref.setToolTip(tr("groups.tooltip_smelter_ref"))
+        self.form.addRow(tr("groups.row_mine_ref"), self.mine_ref)
+        self.form.addRow(tr("groups.row_smelter_ref"), self.smelter_ref)
+        self.unit_list.setToolTip(tr("groups.tooltip_roster"))
         self.form.addRow(tr("groups.row_targets"), self.target_text)
 
         self.name.textChanged.connect(self._store_current)
@@ -99,6 +113,8 @@ class GroupsPanel(QWidget):
             w.valueChanged.connect(self._store_current)
         self.unit_list.itemChanged.connect(self._store_current)
         self.record_all.toggled.connect(self._store_current)
+        self.mine_ref.currentIndexChanged.connect(self._store_current)
+        self.smelter_ref.currentIndexChanged.connect(self._store_current)
         self.target_text.textChanged.connect(self._store_current)
 
         detail_inner = QWidget()
@@ -146,6 +162,92 @@ class GroupsPanel(QWidget):
                 return
 
     # --- Interne Hilfsmethoden ---
+
+    def _planned_named_buildings(self, types=None):
+        """Per recordBuilding GEPLANTE Gebaeude mit unit_name: [(name, type, x, y)].
+
+        PLANNED buildings (recordBuilding entries) with a unit_name."""
+        out = []
+        seen = set()
+        for t in self._window.triggers:
+            stack = list(t.actions)
+            while stack:
+                a = stack.pop()
+                stack.extend(getattr(a, "then_actions", None) or [])
+                stack.extend(getattr(a, "else_actions", None) or [])
+                if getattr(a, "kind", "") != "recordBuilding":
+                    continue
+                for e in (getattr(a, "building_list", None) or []):
+                    name = (e.get("unit_name", "") or "").strip()
+                    bt = e.get("building_type", "")
+                    if not name or name in seen:
+                        continue
+                    if types is not None and bt not in types:
+                        continue
+                    seen.add(name)
+                    out.append((name, bt, int(e.get("x", 0)), int(e.get("y", 0))))
+        return out
+
+    def _all_unit_names(self):
+        names = {getattr(o, "unit_name", "") for o in self._window.objects
+                 if getattr(o, "unit_name", "")}
+        names |= {n for (n, _t, _x, _y) in self._planned_named_buildings()}
+        return names
+
+    def _auto_name(self, base):
+        """Eindeutigen Namen wie Mine1/Smelter2 erzeugen. / Generate a unique name."""
+        names = self._all_unit_names()
+        i = 1
+        while f"{base}{i}" in names:
+            i += 1
+        return f"{base}{i}"
+
+    def _fill_ref_combo(self, combo, placed_types, base, current):
+        """Ref-Combo befuellen: leer + platzierte (benannt/unbenannt) +
+        geplante benannte Gebaeude der passenden Typen.
+
+        Fill a ref combo: empty + placed (named/unnamed) + planned named
+        buildings of the matching types."""
+        # String-Daten statt Tupel: QComboBox.findData matcht Python-Tupel
+        # nicht zuverlaessig. / String data instead of tuples: findData does
+        # not reliably match Python tuples.
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(tr("groups.ref_none"), "")
+        for o in self._window.objects:
+            if getattr(o, "map_id", "") not in placed_types:
+                continue
+            uname = getattr(o, "unit_name", "") or ""
+            if uname:
+                combo.addItem(f"{uname}  ({o.display} @ {o.tile_x},{o.tile_y})",
+                              f"name:{uname}")
+            else:
+                combo.addItem(tr("groups.ref_unnamed", d=o.display, x=o.tile_x, y=o.tile_y),
+                              f"uid:{o.uid}")
+        for (name, bt, x, y) in self._planned_named_buildings(placed_types):
+            combo.addItem(tr("groups.ref_planned", name=name, x=x, y=y), f"name:{name}")
+        idx = combo.findData(f"name:{current}") if current else 0
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _resolve_ref_combo(self, combo, base):
+        """Auswahl der Ref-Combo -> Unit-Name; unbenannte platzierte
+        Gebaeude bekommen dabei automatisch einen eindeutigen Namen.
+
+        Resolve a ref combo selection to a unit name; unnamed placed
+        buildings automatically receive a unique name."""
+        data = combo.currentData()
+        if not data or not isinstance(data, str):
+            return ""
+        if data.startswith("name:"):
+            return data[5:]
+        if data.startswith("uid:"):
+            for o in self._window.objects:
+                if getattr(o, "uid", "") == data[4:]:
+                    name = self._auto_name(base)
+                    o.unit_name = name
+                    return name
+        return ""
 
     def _builders(self):
         return [
@@ -385,6 +487,15 @@ class GroupsPanel(QWidget):
         self.form.setRowVisible(self.record_all, is_building)
         if is_building:
             self.record_all.setChecked(bool(getattr(group, "record_all", True)))
+        self.form.setRowVisible(self.mine_ref, is_mining)
+        self.form.setRowVisible(self.smelter_ref, is_mining)
+        if is_mining:
+            self._fill_ref_combo(self.mine_ref,
+                                 ("mapCommonOreMine", "mapRareOreMine"), "Mine",
+                                 getattr(group, "mine_ref", "") or "")
+            self._fill_ref_combo(self.smelter_ref,
+                                 ("mapCommonOreSmelter", "mapRareOreSmelter"), "Smelter",
+                                 getattr(group, "smelter_ref", "") or "")
         rect_label = tr("groups.row_idle_rect") if (is_fight or is_mining) else tr("groups.row_build_rect")
         self.form.setRowVisible(self.rect_section_label, has_rect)
         self.rect_section_label.setText(rect_label)
@@ -421,6 +532,23 @@ class GroupsPanel(QWidget):
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Checked if o.uid in selected else Qt.Unchecked)
             self.unit_list.addItem(item)
+        # Geplante benannte Gebaeude (recordBuilding + unit_name): werden nach
+        # dem Bau automatisch ins Roster uebernommen (plan:<Name>).
+        # Planned named buildings (recordBuilding + unit_name): taken into
+        # the roster automatically once built (plan:<name>).
+        plan_types = None
+        if isinstance(group, ReinforceGroupSpec):
+            plan_types = ("mapVehicleFactory", "mapArachnidFactory")
+        elif not isinstance(group, (FightGroupSpec, MiningGroupSpec)):
+            plan_types = ("mapStructureFactory",)
+        if plan_types is not None:
+            for (name, bt, x, y) in self._planned_named_buildings(plan_types):
+                pid = f"plan:{name}"
+                item = QListWidgetItem(tr("groups.roster_planned", name=name, x=x, y=y))
+                item.setData(Qt.UserRole, pid)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked if pid in selected else Qt.Unchecked)
+                self.unit_list.addItem(item)
         self.unit_list.blockSignals(False)
 
     def _store_current(self):
@@ -454,6 +582,9 @@ class GroupsPanel(QWidget):
         group.unit_ids = selected
         if not (is_reinforce or is_fight or is_mining):
             group.record_all = self.record_all.isChecked()
+        if is_mining:
+            group.mine_ref = self._resolve_ref_combo(self.mine_ref, "Mine")
+            group.smelter_ref = self._resolve_ref_combo(self.smelter_ref, "Smelter")
         if is_reinforce:
             group.targets = self._targets_from_text(self.target_text.toPlainText())
         item = self.glist.currentItem()

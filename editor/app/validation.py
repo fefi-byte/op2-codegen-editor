@@ -28,6 +28,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_conditions(w)
     findings += _check_sdk_gotchas(w)
     findings += _check_building_group_builders(w)
+    findings += _check_unit_names(w)
     findings += _check_mine_beacons(w)
     findings += _check_tubes(w)
     return findings
@@ -178,6 +179,67 @@ def _check_building_group_builders(w):
         if n > 1:
             out.append(("warning", tr("validation.record_all_conflict", p=p, n=n),
                         ("group", None)))
+    return out
+
+
+def _check_unit_names(w):
+    """Benannte Gebaeude-Anker: Namen muessen eindeutig sein; Referenzen
+    (MiningGroup mine_ref/smelter_ref, plan:-Roster) muessen existieren und
+    zum Gebaeudetyp passen.
+
+    Named building anchors: names must be unique; references (MiningGroup
+    mine_ref/smelter_ref, plan: roster entries) must exist and match the
+    building type.
+    """
+    out = []
+    # Namensregister: platzierte Einheiten + geplante recordBuilding-Eintraege
+    name_types: dict[str, str] = {}
+    dups = set()
+    for o in (getattr(w, "objects", None) or []):
+        n = (getattr(o, "unit_name", "") or "").strip()
+        if not n:
+            continue
+        if n in name_types:
+            dups.add(n)
+        name_types[n] = getattr(o, "map_id", "")
+    for t in (getattr(w, "triggers", None) or []):
+        for a in _walk_actions(t.actions):
+            if getattr(a, "kind", "") != "recordBuilding":
+                continue
+            for e in (getattr(a, "building_list", None) or []):
+                n = (e.get("unit_name", "") or "").strip()
+                if not n:
+                    continue
+                if n in name_types:
+                    dups.add(n)
+                name_types[n] = e.get("building_type", "")
+    for n in sorted(dups):
+        out.append(("error", tr("validation.dup_unit_name", name=n), None))
+    mine_types = {"mapCommonOreMine", "mapRareOreMine"}
+    smelter_types = {"mapCommonOreSmelter", "mapRareOreSmelter"}
+    for g in (getattr(w, "mining_groups", None) or []):
+        for (field_name, ref, ok_types, key_missing) in (
+            ("mine_ref", (getattr(g, "mine_ref", "") or "").strip(), mine_types,
+             "validation.mining_no_mine_ref"),
+            ("smelter_ref", (getattr(g, "smelter_ref", "") or "").strip(), smelter_types,
+             "validation.mining_no_smelter_ref"),
+        ):
+            if not ref:
+                out.append(("warning", tr(key_missing, name=g.name), ("group", None)))
+            elif ref not in name_types:
+                out.append(("error", tr("validation.ref_unknown", name=g.name, ref=ref),
+                            ("group", None)))
+            elif name_types[ref] not in ok_types:
+                out.append(("error", tr("validation.ref_wrong_type", name=g.name, ref=ref,
+                                        t=name_types[ref]), ("group", None)))
+    for attr in ("building_groups", "reinforce_groups", "fight_groups", "mining_groups"):
+        for g in (getattr(w, attr, None) or []):
+            for uid in (getattr(g, "unit_ids", None) or []):
+                if isinstance(uid, str) and uid.startswith("plan:"):
+                    if uid[5:].strip() not in name_types:
+                        out.append(("error",
+                                    tr("validation.roster_plan_unknown", name=g.name,
+                                       ref=uid[5:].strip()), ("group", None)))
     return out
 
 

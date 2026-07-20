@@ -229,6 +229,17 @@ class MiningGroupSpec:
     idle_height: int = 7
     unit_ids: list[str] = field(default_factory=list)  # vorab platzierte CargoTrucks (uid)
     folder: str = ""
+    # Benannte Gebaeude-Anker der Gruppe: Mine/Smelter werden ueber ihren
+    # Unit-Namen referenziert (platziertes ODER per recordBuilding geplantes
+    # Gebaeude). Die Hintergrund-Funktion bindet das Handle nach Zerstoerung
+    # + Wiederaufbau automatisch neu und aktiviert die Gruppe, sobald beide
+    # fertig stehen.
+    # Named building anchors of the group: mine/smelter are referenced by
+    # their unit name (placed OR planned via recordBuilding). The background
+    # function rebinds the handle after destruction + rebuild and activates
+    # the group once both are standing.
+    mine_ref: str = ""
+    smelter_ref: str = ""
 
 
 @dataclass
@@ -338,7 +349,11 @@ class TriggerAction:
     # [{"unit_type": "mapScout", "weapon_type": "mapNone", "x": 0, "y": 0}, ...]
     unit_list: list = field(default_factory=list)
     # recordBuilding (Liste): mehrere Gebaeude fuer dieselbe Gruppe in einer Aktion.
-    # [{"building_type": "mapCommandCenter", "weapon_type": "mapNone", "x": 0, "y": 0}, ...]
+    # Optionales "unit_name" macht das GEPLANTE Gebaeude zum benannten Anker
+    # (ueberall referenzierbar, Handle wird nach Bau/Wiederaufbau gebunden).
+    # Optional "unit_name" turns the PLANNED building into a named anchor
+    # (referencable everywhere, handle bound after build/rebuild).
+    # [{"building_type": "mapCommandCenter", "weapon_type": "mapNone", "x": 0, "y": 0, "unit_name": ""}, ...]
     building_list: list = field(default_factory=list)
     # recordTube (Liste): mehrere Rohrleitungen (Liniensegmente) in einer Aktion.
     # [{"x": 0, "y": 0, "x2": 0, "y2": 0}, ...]

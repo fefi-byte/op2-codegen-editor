@@ -256,9 +256,7 @@ class ActionInlineForm(QWidget):
         "setTargCount": ["target_group", "source_group", "priority", "targ_editor"],
         "assignToGroup": ["assign_group", "building", "x", "y", "player"],
         "modVar": ["var_name", "mod_mode", "var_expr"],
-        "startMining": ["player", "mining_group", "mine_ref", "mine_pick", "x", "y",
-                        "smelter_ref", "smelter_pick", "x2", "y2",
-                        "target_count", "mining_wait_hint"],
+        "startMining": ["mining_group", "target_count", "mining_wait_hint"],
         "sendAttackWave": ["player", "spawn_mode", "group_var_name", "wave_editor",
                            "idle_rect_w", "staging_rect_w", "attack_rect_w", "now"],
         "fightGroupCmd": ["wave_group", "fg_command"],
@@ -667,7 +665,7 @@ class ActionInlineForm(QWidget):
             self.rb_weapon.addItem(d, m)
         self.rb_x, self.rb_y = _mk_spin(), _mk_spin()
         self.building_list_tree = QTreeWidget()
-        self.building_list_tree.setHeaderLabels([tr("action_editor.col_building"), tr("action_editor.col_cargo"), "X", "Y"])
+        self.building_list_tree.setHeaderLabels([tr("action_editor.col_building"), tr("action_editor.col_cargo"), "X", "Y", tr("action_editor.col_name")])
         self.building_list_tree.setRootIsDecorated(False)
         self.building_list_tree.setMaximumHeight(110)
         rb_add_btn = QPushButton("+"); rb_add_btn.setFixedWidth(28)
@@ -677,11 +675,15 @@ class ActionInlineForm(QWidget):
         rb_pick_btn = QPushButton("📍"); rb_pick_btn.setFixedWidth(28)
         rb_pick_btn.setToolTip(tr("action_editor.tooltip_pick_mine"))
         rb_pick_btn.clicked.connect(lambda: self._request_pick("primary"))
+        self.rb_name = QLineEdit()
+        self.rb_name.setPlaceholderText(tr("action_editor.ph_rb_name"))
+        self.rb_name.setToolTip(tr("action_editor.tooltip_rb_name"))
         rb_row = QHBoxLayout()
         rb_row.addWidget(self.rb_building, 3)
         rb_row.addWidget(self.rb_weapon, 2)
         rb_row.addWidget(self.rb_x, 1)
         rb_row.addWidget(self.rb_y, 1)
+        rb_row.addWidget(self.rb_name, 2)
         rb_row.addWidget(rb_pick_btn)
         rb_row.addWidget(rb_add_btn)
         rb_row.addWidget(rb_rm_btn)
@@ -1197,12 +1199,14 @@ class ActionInlineForm(QWidget):
     # --- recordBuilding-Liste / recordBuilding list ---
 
     def _rb_add(self):
+        name = self.rb_name.text().strip()
         item = QTreeWidgetItem([
             self.rb_building.currentText(), self.rb_weapon.currentText(),
-            str(self.rb_x.value()), str(self.rb_y.value())])
+            str(self.rb_x.value()), str(self.rb_y.value()), name])
         item.setData(0, Qt.UserRole, (self.rb_building.currentData(), self.rb_weapon.currentData(),
-                                      self.rb_x.value(), self.rb_y.value()))
+                                      self.rb_x.value(), self.rb_y.value(), name))
         self.building_list_tree.addTopLevelItem(item)
+        self.rb_name.clear()
         self._save()
 
     def _rb_remove(self):
@@ -1214,8 +1218,11 @@ class ActionInlineForm(QWidget):
     def _building_list_from_tree(self) -> list:
         out = []
         for i in range(self.building_list_tree.topLevelItemCount()):
-            building, weapon, x, y = self.building_list_tree.topLevelItem(i).data(0, Qt.UserRole)
-            out.append({"building_type": building, "weapon_type": weapon, "x": x, "y": y})
+            data = self.building_list_tree.topLevelItem(i).data(0, Qt.UserRole)
+            building, weapon, x, y = data[0], data[1], data[2], data[3]
+            name = data[4] if len(data) > 4 else ""
+            out.append({"building_type": building, "weapon_type": weapon,
+                        "x": x, "y": y, "unit_name": name})
         return out
 
     def _building_list_load(self, entries):
@@ -1227,9 +1234,11 @@ class ActionInlineForm(QWidget):
             weapon = e.get("weapon_type", "mapNone")
             x = int(e.get("x", 0) or 0)
             y = int(e.get("y", 0) or 0)
+            name = (e.get("unit_name", "") or "").strip()
             item = QTreeWidgetItem([
-                by_id_building.get(building, building), by_id_weapon.get(weapon, weapon), str(x), str(y)])
-            item.setData(0, Qt.UserRole, (building, weapon, x, y))
+                by_id_building.get(building, building), by_id_weapon.get(weapon, weapon),
+                str(x), str(y), name])
+            item.setData(0, Qt.UserRole, (building, weapon, x, y, name))
             self.building_list_tree.addTopLevelItem(item)
 
     # --- recordTube-Liste / recordTube list ---
@@ -1322,11 +1331,11 @@ class ActionInlineForm(QWidget):
         self._update_mining_wait_hint()
 
     def _update_mining_wait_hint(self):
-        self.mining_wait_hint.setText(tr(
-            "action_editor.mining_wait_hint",
-            mx=self.x.value(), my=self.y.value(),
-            sx=self.x2.value(), sy=self.y2.value(),
-        ))
+        # Mine/Smelter kommen jetzt aus der Gruppen-Definition (benannte
+        # Anker); der Hinweis erklaert den neuen Ablauf statisch.
+        # Mine/smelter now come from the group definition (named anchors);
+        # the hint explains the new flow statically.
+        self.mining_wait_hint.setText(tr("action_editor.mining_wait_hint"))
 
     def _current_disaster_type(self):
         return self.disaster_type.currentData() or "meteor"
