@@ -72,9 +72,8 @@ class CustomActionsDialog(QDialog):
         pbtns = QHBoxLayout(); pbtns.addWidget(p_add); pbtns.addWidget(p_rm)
         pbtns.addStretch(1)
 
-        self.code_edit = QPlainTextEdit()
-        f = self.code_edit.font(); f.setFamily("Consolas"); f.setStyleHint(QFont.Monospace)
-        self.code_edit.setFont(f)
+        from ..code_editor import CodeEditor
+        self.code_edit = CodeEditor()
         self.code_edit.setPlaceholderText(tr("custom_actions.code_placeholder"))
         self.code_edit.textChanged.connect(self._store_row)
 
@@ -163,6 +162,8 @@ class CustomActionsDialog(QDialog):
         for p in (d.get("params") or []):
             self._append_param_row(p.get("name", ""), p.get("type", "int"),
                                    p.get("default"))
+        self.code_edit.set_context_words(
+            [f"${p.get('name')}" for p in (d.get("params") or []) if p.get("name")])
         self._loading = False
 
     def _append_param_row(self, name="", ptype="int", default=None):
@@ -213,6 +214,9 @@ class CustomActionsDialog(QDialog):
             "params": params,
             "code": self.code_edit.toPlainText(),
         }
+        # $parameter der aktuellen Definition in die Vervollstaendigung
+        # The current definition's $params feed the completion
+        self.code_edit.set_context_words([f"${p['name']}" for p in params])
         self._refresh_list()
 
     # --- Teilen: Export/Import als .op2action-Dateien ---

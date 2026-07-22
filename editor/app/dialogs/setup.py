@@ -73,9 +73,10 @@ class MissionSetupDialog(QDialog):
         self.briefing_edit.setMaximumHeight(100)
         # Handgeschriebener C++-Code auf Datei-Ebene (eigene Helfer etc.)
         # Hand-written file-scope C++ code (own helpers etc.)
-        self.custom_code_edit = QPlainTextEdit(custom_code)
-        cf = self.custom_code_edit.font(); cf.setFamily("Consolas"); cf.setStyleHint(QFont.Monospace)
-        self.custom_code_edit.setFont(cf)
+        from ..code_editor import CodeEditor
+        self.custom_code_edit = CodeEditor(
+            context_words=[v.name for v in (variables or [])])
+        self.custom_code_edit.setPlainText(custom_code)
         self.custom_code_edit.setPlaceholderText(tr("setup.custom_code_placeholder"))
         self.custom_code_edit.setMaximumHeight(120)
 

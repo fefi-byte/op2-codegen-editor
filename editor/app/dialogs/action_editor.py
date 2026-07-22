@@ -344,12 +344,10 @@ class ActionInlineForm(QWidget):
         self.dialog_text.setMaximumHeight(110)
         # customCode: handgeschriebener C++-Block (Monospace)
         # customCode: hand-written C++ block (monospace)
-        self.code_edit = QPlainTextEdit()
+        from ..code_editor import CodeEditor
+        self.code_edit = CodeEditor(context_words=self._code_context_words())
         self.code_edit.setPlaceholderText(tr("action_editor.code_placeholder"))
-        f = self.code_edit.font(); f.setFamily("Consolas"); f.setStyleHint(QFont.Monospace)
-        self.code_edit.setFont(f)
         self.code_edit.setMinimumHeight(140)
-        self.code_edit.setTabStopDistance(4 * self.code_edit.fontMetrics().horizontalAdvance(" "))
         # custom: dynamisches Parameterformular je Designer-Definition
         # custom: dynamic parameter form per designer definition
         self.custom_box = QWidget()
@@ -1137,6 +1135,18 @@ class ActionInlineForm(QWidget):
         if j >= 0:
             self.produce_item.setCurrentIndex(j)
         self.produce_item.blockSignals(False)
+
+    def _code_context_words(self) -> list[str]:
+        """Eigene Namen fuer die Code-Vervollstaendigung: Missions-Variablen
+        und Gruppennamen aus dem Kontext.
+
+        Own names for code completion: mission variables and group names
+        from the context."""
+        if not isinstance(self.ctx, dict):
+            return []
+        words = [v.name for v in (self.ctx.get("variables") or [])]
+        words += list((self.ctx.get("target_group_types") or {}).keys())
+        return words
 
     def _custom_def(self, name):
         for d in (self.ctx.get("custom_actions") or [] if isinstance(self.ctx, dict) else []):
