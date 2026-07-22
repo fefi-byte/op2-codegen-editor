@@ -69,6 +69,10 @@ hiddenimports = [
     # codegen modules (added to sys.path at runtime, not a proper package import)
     "mission_model",
     "codegen",
+    "codegen_cpp",
+    "codegen_actions",
+    "codegen_triggers",
+    "codegen_groups",
     "build",
 ]
 
