@@ -34,6 +34,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_loop_refs(w)
     findings += _check_dialogs(w)
     findings += _check_campaign(w)
+    findings += _check_custom_actions(w)
     return findings
 
 
@@ -618,4 +619,38 @@ def _check_campaign(w):
             if hard:
                 out.append(("warning", tr("validation.campaign_carryover"),
                             ("player", 0)))
+    return out
+
+
+def _check_custom_actions(w):
+    """Designer-Aktionen: unbekannte Referenzen und Platzhalter ohne
+    passenden Parameter melden.
+
+    Designer actions: report unknown references and placeholders without a
+    matching parameter."""
+    import re as _re
+    out = []
+    defs = {d.get("name"): d for d in (getattr(w, "custom_actions", None) or [])}
+    for name, d in defs.items():
+        pnames = {p.get("name") for p in (d.get("params") or [])}
+        for tok in set(_re.findall(r"\$(\w+)", d.get("code", "") or "")):
+            if tok not in pnames:
+                out.append(("warning", tr("validation.custom_unknown_param",
+                                          name=name, p=tok), None))
+        if not (d.get("code") or "").strip():
+            out.append(("warning", tr("validation.custom_empty", name=name), None))
+
+    def walk(actions, ti, tname):
+        for a in (actions or []):
+            if getattr(a, "kind", "") == "custom":
+                cn = getattr(a, "custom_name", "") or ""
+                if cn not in defs:
+                    out.append(("error", tr("validation.custom_missing",
+                                            t=tname, name=cn or "?"),
+                                ("trigger", ti)))
+            walk(getattr(a, "then_actions", None), ti, tname)
+            walk(getattr(a, "else_actions", None), ti, tname)
+
+    for ti, t in enumerate(getattr(w, "triggers", None) or []):
+        walk(t.actions, ti, t.name)
     return out

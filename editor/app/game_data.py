@@ -249,6 +249,8 @@ ACTION_KINDS = {
     "Musik-Playlist setzen":             "setMusic",
     "Lavastrom-Animation":               "lavaFlowAni",
     "Einheiten-Werte ändern (HFL)":      "modUnitStats",
+    "Eigener C++-Code":                  "customCode",
+    "Eigene Aktion (Designer)":          "custom",
 }
 
 # Gruppierung des "+ Aktion"-Menues (Untermenue -> Aktions-Kinds).
@@ -260,7 +262,8 @@ ACTION_KINDS = {
 # resp. superseded by FightGroups + group command); existing projects using
 # them still load and build.
 ACTION_MENU_GROUPS = {
-    "general":  ["if", "message", "showDialog", "modVar", "createTrigger"],
+    "general":  ["if", "message", "showDialog", "modVar", "createTrigger",
+                 "customCode"],
     "units":    ["createUnit", "unitCmd", "fightGroupCmd",
                  "assignToGroup", "setTargCount"],
     "record":   ["recordBuilding", "recordTube", "recordWall"],

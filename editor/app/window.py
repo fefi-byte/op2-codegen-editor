@@ -39,6 +39,8 @@ class EditorWindow(
         self.mission_type: MissionType = MissionType.Colony
         self.tech_tree: str = "MULTITEK.TXT"
         self.briefing: str = ""
+        self.custom_code: str = ""
+        self.custom_actions: list = []
         self.campaign: str = ""            # "" | "eden" | "plymouth"
         self.campaign_mission: int = 1
         self.max_tech_level: int = 12

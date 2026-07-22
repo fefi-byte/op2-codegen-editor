@@ -131,6 +131,8 @@ class _ProjectMixin:
             "mission_type": int(self.mission_type),
             "tech_tree": self.tech_tree,
             "briefing": self.briefing,
+            "custom_code": self.custom_code,
+            "custom_actions": self.custom_actions,
             "campaign": self.campaign,
             "campaign_mission": self.campaign_mission,
             "max_tech_level": self.max_tech_level,
@@ -236,6 +238,9 @@ class _ProjectMixin:
         self.mission_type = MissionType(data.get("mission_type", int(MissionType.Colony)))
         self.tech_tree = data.get("tech_tree", "MULTITEK.TXT")
         self.briefing = data.get("briefing", "")
+        self.custom_code = data.get("custom_code", "")
+        self.custom_actions = [dict(d) for d in data.get("custom_actions", [])
+                               if isinstance(d, dict)]
         self.campaign = data.get("campaign", "")
         self.campaign_mission = int(data.get("campaign_mission", 1) or 1)
         self.max_tech_level = int(data.get("max_tech_level", 12) or 12)

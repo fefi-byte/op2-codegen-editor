@@ -176,6 +176,58 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
     if k == "message":
         return [f"{indent}AddGameMessage({_cpp_string(action.text)});"]
 
+    if k == "customCode":
+        # Handgeschriebener Code, woertlich uebernommen; eigener {}-Scope,
+        # damit lokale Variablen keine Nachbar-Aktionen stoeren.
+        # Hand-written code taken verbatim; its own {} scope so locals
+        # don't clash with neighbouring actions.
+        lines = [f"{indent}{{"]
+        for cl in (getattr(action, "code", "") or "").splitlines():
+            lines.append(f"{indent}    {cl}" if cl.strip() else "")
+        lines.append(f"{indent}}}")
+        return lines
+
+    if k == "custom":
+        # Designer-Aktion: Code-Template mit $param-Platzhaltern.
+        # Designer action: code template with $param placeholders.
+        defs = {d.get("name", ""): d for d in (ctx.get("custom_actions") or [])}
+        cdef = defs.get(getattr(action, "custom_name", "") or "")
+        if not cdef:
+            return [f"{indent}// TODO custom action "
+                    f"[{getattr(action, 'custom_name', '?')}] not defined"]
+        code = cdef.get("code", "") or ""
+        args = getattr(action, "custom_args", None) or {}
+        # Laengere Namen zuerst ersetzen ($count vor $c).
+        # Substitute longer names first ($count before $c).
+        params = sorted(cdef.get("params") or [],
+                        key=lambda p: -len(p.get("name", "")))
+        for p in params:
+            pname = p.get("name", "")
+            if not pname:
+                continue
+            ptype = p.get("type", "int")
+            v = args.get(pname, p.get("default"))
+            if ptype in ("int", "player"):
+                try:
+                    rep = str(int(v))
+                except (TypeError, ValueError):
+                    rep = "0"
+            elif ptype == "text":
+                rep = _cpp_string("" if v is None else str(v))
+            elif ptype == "unit_type":
+                rep = mapid(str(v or "mapNone"))
+            elif ptype == "position":
+                pos = v if isinstance(v, dict) else {}
+                rep = _xy(int(pos.get("x", 0)), int(pos.get("y", 0)))
+            else:
+                rep = "0"
+            code = code.replace(f"${pname}", rep)
+        lines = [f"{indent}{{"]
+        for cl in code.splitlines():
+            lines.append(f"{indent}    {cl}" if cl.strip() else "")
+        lines.append(f"{indent}}}")
+        return lines
+
     if k == "showDialog":
         # Echte Dialogbox ueber dem Spiel (HFL TethysGameEx::MsgBox).
         # Blockiert bis OK -- fuer Story-Dialoge in Einzelspieler-Missionen.

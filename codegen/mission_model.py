@@ -315,6 +315,15 @@ class TriggerAction:
     # showDialog: Fenstertitel der Dialogbox (leer = Missionsname)
     # showDialog: window title of the dialog box (empty = mission name)
     caption: str = ""
+    # customCode: handgeschriebener C++-Block, woertlich emittiert (im
+    # eigenen {}-Scope innerhalb des Trigger-Callbacks)
+    # customCode: hand-written C++ block, emitted verbatim (inside its own
+    # {} scope within the trigger callback)
+    code: str = ""
+    # custom: Instanz einer Designer-Aktion (Name + Parameterwerte)
+    # custom: instance of a designer action (name + parameter values)
+    custom_name: str = ""
+    custom_args: dict = field(default_factory=dict)
     unit_type: str = "mapScout"
     weapon_type: str = "mapNone"
     target_count: int | str = 1   # int oder Ausdruck (z.B. "ceil(5 * diff / 10)")
@@ -605,6 +614,19 @@ class Mission:
     # Maximum researchable tech level (12 = everything; campaigns classically
     # ramp it with the mission number).
     max_tech_level: int = 12
+
+    # Handgeschriebener C++-Code auf Datei-Ebene (eigene Helferfunktionen,
+    # Konstanten, Includes) -- wird vor den Trigger-Callbacks emittiert und
+    # kann daher aus customCode-Bloecken aufgerufen werden.
+    # Hand-written file-scope C++ code (own helper functions, constants,
+    # includes) -- emitted before the trigger callbacks, so customCode
+    # blocks can call into it.
+    custom_code: str = ""
+    # Designer-Aktionen: [{"name", "params": [{"name","type","default"}],
+    # "code"}]; $param-Platzhalter im Code werden beim Emittieren ersetzt.
+    # Designer actions: [{"name", "params": [...], "code"}]; $param
+    # placeholders in the code are substituted at emission time.
+    custom_actions: list = field(default_factory=list)
 
     # Briefing-Text: wird kurz nach Spielstart als Dialogbox angezeigt
     # (OP2 hat keinen eigenen Briefing-Screen fuer Custom-Missionen).

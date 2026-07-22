@@ -12,7 +12,8 @@ class MissionSetupDialog(QDialog):
                  variables: list[VariableDef],
                  map_names: list[str] | None = None, current_map: str = "",
                  briefing: str = "", campaign: str = "",
-                 campaign_mission: int = 1, max_tech_level: int = 12):
+                 campaign_mission: int = 1, max_tech_level: int = 12,
+                 custom_code: str = ""):
         super().__init__(parent)
         self.setWindowTitle(tr("setup.title"))
         self.resize(560, 580)
@@ -70,6 +71,13 @@ class MissionSetupDialog(QDialog):
         self.briefing_edit = QPlainTextEdit(briefing)
         self.briefing_edit.setPlaceholderText(tr("setup.briefing_placeholder"))
         self.briefing_edit.setMaximumHeight(100)
+        # Handgeschriebener C++-Code auf Datei-Ebene (eigene Helfer etc.)
+        # Hand-written file-scope C++ code (own helpers etc.)
+        self.custom_code_edit = QPlainTextEdit(custom_code)
+        cf = self.custom_code_edit.font(); cf.setFamily("Consolas"); cf.setStyleHint(QFont.Monospace)
+        self.custom_code_edit.setFont(cf)
+        self.custom_code_edit.setPlaceholderText(tr("setup.custom_code_placeholder"))
+        self.custom_code_edit.setMaximumHeight(120)
 
         form = QFormLayout()
         form.addRow(tr("setup.lbl_map"), self.map_combo)
@@ -80,6 +88,7 @@ class MissionSetupDialog(QDialog):
         self._form = form
         form.addRow(tr("setup.lbl_tech_tree"), self.tech_edit)
         form.addRow(tr("setup.lbl_briefing"), self.briefing_edit)
+        form.addRow(tr("setup.lbl_custom_code"), self.custom_code_edit)
 
         # --- Schwierigkeit ---
         self.hard_spin = QSpinBox(); self.hard_spin.setRange(0, 1000); self.hard_spin.setValue(diff_setup.hard)
@@ -204,6 +213,10 @@ class MissionSetupDialog(QDialog):
     @property
     def briefing(self) -> str:
         return self.briefing_edit.toPlainText().strip()
+
+    @property
+    def custom_code(self) -> str:
+        return self.custom_code_edit.toPlainText().rstrip()
 
     @property
     def diff_setup(self) -> DifficultySetup:

@@ -23,6 +23,10 @@ class _MenuMixin:
         redo_act.setShortcut("Ctrl+Y")
         redo_act.triggered.connect(self.redo)
         edit_menu.addAction(redo_act)
+        edit_menu.addSeparator()
+        a = QAction(tr("window.menu_custom_actions"), self)
+        a.triggered.connect(self.edit_custom_actions)
+        edit_menu.addAction(a)
 
         view_menu = self.menuBar().addMenu(tr("window.menu_view"))
         # Kachelgitter-Umschalter; Anfangszustand aus config.ini.

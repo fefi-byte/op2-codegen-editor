@@ -142,6 +142,12 @@ def _action_summary_core(a) -> str:
     if a.kind == "showDialog":
         t = (a.text or "").replace("\n", " ")
         return f"MsgBox({t[:40]}{'…' if len(t) > 40 else ''})"
+    if a.kind == "customCode":
+        first = next((l.strip() for l in (getattr(a, "code", "") or "").splitlines()
+                      if l.strip()), "")
+        return f"C++: {first[:44]}{'…' if len(first) > 44 else ''}"
+    if a.kind == "custom":
+        return f"{getattr(a, 'custom_name', '') or '?'}(…)"
     if a.kind == "setTargCount":
         source = f" via {a.source_group_name} P{a.reinforce_priority}" if a.source_group_name else ""
         entries = list(getattr(a, "targ_counts", None) or [])
@@ -308,6 +314,15 @@ def action_params_summary(a) -> str:
             return (f"{getattr(a, 'group_name', '?')}  ·  {e.get('wall_type', '?')}  "
                     f"({e.get('x', 0)},{e.get('y', 0)}) → ({e.get('x2', 0)},{e.get('y2', 0)})")
         return f"{getattr(a, 'group_name', '?')}  ·  {len(entries)} Abschnitte"
+    if a.kind == "customCode":
+        first = next((l.strip() for l in (getattr(a, "code", "") or "").splitlines()
+                      if l.strip()), "")
+        return f"C++  {first[:48]}{'…' if len(first) > 48 else ''}"
+    if a.kind == "custom":
+        cn = getattr(a, "custom_name", "") or "?"
+        args = getattr(a, "custom_args", None) or {}
+        comp = ", ".join(f"{k}={v}" for k, v in list(args.items())[:4])
+        return f"{cn}({comp})"
     if a.kind == "showDialog":
         t = (getattr(a, "text", "") or "").replace("\n", " ")
         return f"\u201e{t[:48]}{'…' if len(t) > 48 else ''}\u201c"

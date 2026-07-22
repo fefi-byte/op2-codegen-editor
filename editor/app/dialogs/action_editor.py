@@ -277,6 +277,8 @@ class ActionInlineForm(QWidget):
     _VIS = {
         "message": ["text"],
         "showDialog": ["caption", "dialog_text"],
+        "customCode": ["code_editor"],
+        "custom": ["custom_editor"],
         "createUnit": ["unit_editor", "player"],
         "createDisaster": ["disaster_type", "x_expr", "y_expr"],
         "createTrigger": ["target"],
@@ -330,6 +332,21 @@ class ActionInlineForm(QWidget):
         self.dialog_text = QPlainTextEdit()
         self.dialog_text.setPlaceholderText(tr("action_editor.dialog_placeholder"))
         self.dialog_text.setMaximumHeight(110)
+        # customCode: handgeschriebener C++-Block (Monospace)
+        # customCode: hand-written C++ block (monospace)
+        self.code_edit = QPlainTextEdit()
+        self.code_edit.setPlaceholderText(tr("action_editor.code_placeholder"))
+        f = self.code_edit.font(); f.setFamily("Consolas"); f.setStyleHint(QFont.Monospace)
+        self.code_edit.setFont(f)
+        self.code_edit.setMinimumHeight(140)
+        self.code_edit.setTabStopDistance(4 * self.code_edit.fontMetrics().horizontalAdvance(" "))
+        # custom: dynamisches Parameterformular je Designer-Definition
+        # custom: dynamic parameter form per designer definition
+        self.custom_box = QWidget()
+        self.custom_form = QFormLayout(self.custom_box)
+        self.custom_form.setContentsMargins(0, 0, 0, 0)
+        self.custom_form.setRowWrapPolicy(QFormLayout.WrapAllRows)
+        self._custom_widgets = {}
         self.unit = QComboBox()
         for d, m in ALL_UNITS:
             self.unit.addItem(d, m)
@@ -935,6 +952,7 @@ class ActionInlineForm(QWidget):
         self._rows = {
             "text": self.text, "unit": self.unit, "weapon": self.weapon,
             "caption": self.caption, "dialog_text": self.dialog_text,
+            "code_editor": self.code_edit, "custom_editor": self.custom_box,
             "x": self.x, "y": self.y, "x2": self.x2, "y2": self.y2,
             "x_expr": self.x_expr, "y_expr": self.y_expr,
             "x2_expr": self.x2_expr, "y2_expr": self.y2_expr,
@@ -977,6 +995,8 @@ class ActionInlineForm(QWidget):
             "text": tr("action_editor.lbl_text"), "unit": tr("action_editor.lbl_unit"),
             "caption": tr("action_editor.lbl_caption"),
             "dialog_text": tr("action_editor.lbl_dialog_text"),
+            "code_editor": tr("action_editor.lbl_code"),
+            "custom_editor": tr("action_editor.lbl_custom_params"),
             "weapon": tr("action_editor.lbl_weapon_cargo"),
             "x": tr("action_editor.lbl_x"), "y": tr("action_editor.lbl_y"),
             "x2": tr("action_editor.lbl_x2"), "y2": tr("action_editor.lbl_y2"),
@@ -1105,6 +1125,86 @@ class ActionInlineForm(QWidget):
         if j >= 0:
             self.produce_item.setCurrentIndex(j)
         self.produce_item.blockSignals(False)
+
+    def _custom_def(self, name):
+        for d in (self.ctx.get("custom_actions") or [] if isinstance(self.ctx, dict) else []):
+            if d.get("name") == name:
+                return d
+        return None
+
+    def _rebuild_custom_form(self, a):
+        """Parameterfelder passend zur Designer-Definition aufbauen.
+
+        Build the parameter fields matching the designer definition."""
+        while self.custom_form.rowCount():
+            self.custom_form.removeRow(0)
+        self._custom_widgets = {}
+        if getattr(a, "kind", "") != "custom":
+            return
+        cdef = self._custom_def(getattr(a, "custom_name", "") or "")
+        if not cdef:
+            lbl = QLabel(tr("action_editor.custom_no_def",
+                            name=getattr(a, "custom_name", "") or "?"))
+            lbl.setWordWrap(True)
+            self.custom_form.addRow(lbl)
+            return
+        args = getattr(a, "custom_args", None) or {}
+        for p in (cdef.get("params") or []):
+            pname = p.get("name", "")
+            if not pname:
+                continue
+            ptype = p.get("type", "int")
+            v = args.get(pname, p.get("default"))
+            if ptype == "position":
+                box = QWidget(); h = QHBoxLayout(box); h.setContentsMargins(0, 0, 0, 0)
+                sx = QSpinBox(); sx.setRange(0, 1023)
+                sy = QSpinBox(); sy.setRange(0, 1023)
+                pos = v if isinstance(v, dict) else {}
+                sx.setValue(int(pos.get("x", 0))); sy.setValue(int(pos.get("y", 0)))
+                sx.valueChanged.connect(self._save); sy.valueChanged.connect(self._save)
+                h.addWidget(sx, 1); h.addWidget(sy, 1)
+                self.custom_form.addRow(f"{pname}:", box)
+                self._custom_widgets[pname] = ("position", (sx, sy))
+            elif ptype == "unit_type":
+                cb = QComboBox()
+                for d_, m_ in ALL_UNITS:
+                    cb.addItem(d_, m_)
+                i = cb.findData(v)
+                if i >= 0:
+                    cb.setCurrentIndex(i)
+                cb.currentIndexChanged.connect(self._save)
+                self.custom_form.addRow(f"{pname}:", cb)
+                self._custom_widgets[pname] = ("unit_type", cb)
+            elif ptype == "text":
+                le = QLineEdit(str(v) if v is not None else "")
+                le.textChanged.connect(self._save)
+                self.custom_form.addRow(f"{pname}:", le)
+                self._custom_widgets[pname] = ("text", le)
+            else:  # int / player
+                sp = QSpinBox()
+                sp.setRange(0 if ptype == "player" else -1000000,
+                            6 if ptype == "player" else 1000000)
+                try:
+                    sp.setValue(int(v))
+                except (TypeError, ValueError):
+                    pass
+                sp.valueChanged.connect(self._save)
+                self.custom_form.addRow(f"{pname}:", sp)
+                self._custom_widgets[pname] = (ptype, sp)
+
+    def _collect_custom_args(self) -> dict:
+        out = {}
+        for pname, (ptype, w) in self._custom_widgets.items():
+            if ptype == "position":
+                sx, sy = w
+                out[pname] = {"x": sx.value(), "y": sy.value()}
+            elif ptype == "unit_type":
+                out[pname] = w.currentData() or "mapNone"
+            elif ptype == "text":
+                out[pname] = w.text()
+            else:
+                out[pname] = w.value()
+        return out
 
     def _update_unit_commands(self):
         self._fill_unit_commands()
@@ -1702,6 +1802,8 @@ class ActionInlineForm(QWidget):
         self.text.setText(a.text)
         self.caption.setText(getattr(a, "caption", "") or "")
         self.dialog_text.setPlainText(a.text if a.kind == "showDialog" else "")
+        self.code_edit.setPlainText(getattr(a, "code", "") or "")
+        self._rebuild_custom_form(a)
         self._set_combo(self.unit, a.unit_type)
         self._set_combo(self.weapon, a.weapon_type)
         self.x.setValue(a.x); self.y.setValue(a.y); self.x2.setValue(a.x2); self.y2.setValue(a.y2)
@@ -1825,6 +1927,7 @@ class ActionInlineForm(QWidget):
         self.comment.textChanged.connect(self._save)
         self.caption.textChanged.connect(self._save)
         self.dialog_text.textChanged.connect(self._save)
+        self.code_edit.textChanged.connect(self._save)
         self.group_var_name.currentIndexChanged.connect(self._save)
         for w in (self.x, self.y, self.x2, self.y2, self.player, self.priority, self.spread_speed,
                   self.attack_x, self.attack_y, self.attack_x2, self.attack_y2,
@@ -1861,6 +1964,10 @@ class ActionInlineForm(QWidget):
         if k == "showDialog":
             a.text = self.dialog_text.toPlainText()
             a.caption = self.caption.text().strip()
+        if k == "customCode":
+            a.code = self.code_edit.toPlainText()
+        if k == "custom":
+            a.custom_args = self._collect_custom_args()
         a.unit_type = self.unit.currentData() or ""
         a.weapon_type = self.weapon.currentData() or "mapNone"
         a.x = self.x.value(); a.y = self.y.value()
@@ -2106,10 +2213,23 @@ class ActionListWidget(QWidget):
             sub = menu.addMenu(tr(f"action_groups.{gkey}"))
             for k in kinds:
                 sub.addAction(tr(f"action_kinds.{k}")).setData(k)
+        # Designer-Aktionen als eigenes Untermenue (dynamisch aus dem Kontext)
+        # Designer actions as their own submenu (dynamic from the context)
+        custom_defs = (self.ctx.get("custom_actions") or []
+                       if isinstance(self.ctx, dict) else [])
+        if custom_defs:
+            sub = menu.addMenu(tr("action_groups.custom"))
+            for d in custom_defs:
+                if d.get("name"):
+                    sub.addAction(d["name"]).setData(("custom", d["name"]))
         picked = menu.exec(QCursor.pos())
         if picked is None:
             return
         k = picked.data()
+        if isinstance(k, tuple):
+            self.actions.append(TriggerAction(kind="custom", custom_name=k[1]))
+            self.rebuild(expand_last=True)
+            return
         self.actions.append(TriggerAction(kind=k))
         self.rebuild(expand_last=(k not in ("noop", "if")))
 

@@ -259,6 +259,7 @@ class TriggerPanel(QWidget):
         # Named placed units (for the unit command)
         named_units = [(o.unit_name, o.map_id) for o in w.objects
                        if getattr(o, "unit_name", "")]
+        custom_actions = [dict(d) for d in getattr(w, "custom_actions", [])]
         # Platzierte Mine-/Smelter-Gebaeude (fuer die Mine-/Smelter-Auswahl der
         # startMining-Aktion -- Bequemlichkeit statt X/Y-Koordinaten eintippen).
         # Placed mine/smelter buildings (for startMining's mine/smelter picker
@@ -273,6 +274,7 @@ class TriggerPanel(QWidget):
             "fight_groups": wave_groups,
             "all_command_groups": all_command_groups,
             "named_units": named_units,
+            "custom_actions": custom_actions,
             "building_groups": w.building_groups,
             "reinforce_groups": w.reinforce_groups,
             "fight_group_specs": w.fight_groups,

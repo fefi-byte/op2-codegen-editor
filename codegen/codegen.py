@@ -112,6 +112,7 @@ def _build_codegen_context(mission: Mission) -> dict:
     ctx["assign_action_vars"] = {}
     ctx["assign_actions"] = []
     ctx["mission_name"] = mission.name
+    ctx["custom_actions"] = list(getattr(mission, "custom_actions", None) or [])
     ctx["wave_action_vars"] = {}
     ctx["wave_actions"] = []
     ctx["repair_action_vars"] = {}
@@ -556,6 +557,17 @@ def generate_levelmain(mission: Mission) -> str:
     add('    op2::log::line("InitProc: done");')
     add("}")
     add("")
+
+    # Handgeschriebener Missions-Code (Datei-Ebene): vor den Callbacks,
+    # damit Callbacks/customCode-Bloecke ihn aufrufen koennen.
+    # Hand-written mission code (file scope): before the callbacks so
+    # callbacks/customCode blocks can call into it.
+    if (getattr(mission, "custom_code", "") or "").strip():
+        add("// --- Eigener Missions-Code (Missions-Einstellungen) ---")
+        add("// --- Custom mission code (mission settings) ---")
+        for cl in mission.custom_code.splitlines():
+            add(cl)
+        add("")
 
     # Custom-trigger helper functions live at file scope so they (a) can be
     # called from a createTrigger action via forward decl and (b) reach the

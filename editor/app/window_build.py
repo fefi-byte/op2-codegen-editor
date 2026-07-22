@@ -71,10 +71,12 @@ class _BuildMixin:
             briefing=self.briefing, campaign=self.campaign,
             campaign_mission=self.campaign_mission,
             max_tech_level=self.max_tech_level,
+            custom_code=self.custom_code,
         )
         if dlg.exec() == QDialog.Accepted:
             self.mission_name = dlg.mission_name
             self.briefing = dlg.briefing
+            self.custom_code = dlg.custom_code
             self.campaign = dlg.campaign
             self.campaign_mission = dlg.campaign_mission
             self.max_tech_level = dlg.max_tech_level
@@ -98,6 +100,17 @@ class _BuildMixin:
                 self.load_map(dlg.map_name)
             self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}"
                                 + (f"  [{self.mission_folder.name}]" if self.mission_folder else ""))
+
+    def edit_custom_actions(self):
+        from .dialogs.custom_actions import CustomActionsDialog
+        dlg = CustomActionsDialog(self, self.custom_actions)
+        if dlg.exec() == QDialog.Accepted:
+            self.custom_actions = dlg.defs
+            # Aktionsformulare/Menues neu aufbauen (Kontext hat sich geaendert)
+            # Rebuild action forms/menus (the context changed)
+            self.trigger_panel.refresh()
+            self.statusBar().showMessage(
+                tr("window.status_custom_actions", n=len(self.custom_actions)))
 
     def edit_players(self):
         dlg = PlayersDialog(self, self.players, diff_setup=self.diff_setup)
@@ -173,6 +186,8 @@ class _BuildMixin:
             triggers=list(self.triggers),
             start_message=StartMessage(tr("window.default_start_message")),
             briefing=self.briefing,
+            custom_code=self.custom_code,
+            custom_actions=[dict(d) for d in self.custom_actions],
             campaign=self.campaign,
             campaign_mission=self.campaign_mission,
             max_tech_level=self.max_tech_level,
