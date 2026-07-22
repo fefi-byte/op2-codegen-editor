@@ -33,7 +33,8 @@ class _NoWheelFilter(QObject):
 
 # Aktionstypen, die per Dialog (mit Parametern) angelegt werden:
 # Action kinds that are created via a dialog (with parameters):
-_DIALOG_KINDS = {label: k for label, k in ACTION_KINDS.items() if k not in ("if", "noop")}
+_DIALOG_KINDS = {label: k for label, k in ACTION_KINDS.items()
+                 if k not in ("if", "noop", "custom", "defendArea")}
 
 # Gruppen-Befehle je Gruppentyp (MiningGroups sind jetzt vordefinierte
 # Gruppen wie die anderen, bekommen aber bewusst keine Befehle hier -- kein
@@ -1635,8 +1636,18 @@ class ActionInlineForm(QWidget):
 
     def _set_kind(self, k):
         i = self.kind.findData(k)
-        if i >= 0:
-            self.kind.setCurrentIndex(i)
+        if i < 0:
+            # Kind ist nicht im Angebot (Designer-Aktion oder Altbestand wie
+            # defendArea): Eintrag nur fuer DIESE Aktion dynamisch ergaenzen,
+            # damit die Anzeige stimmt.
+            # Kind not on offer (designer action or legacy like defendArea):
+            # add the entry dynamically for THIS action so the display is
+            # correct.
+            self.kind.blockSignals(True)
+            self.kind.addItem(tr(f"action_kinds.{k}"), k)
+            self.kind.blockSignals(False)
+            i = self.kind.count() - 1
+        self.kind.setCurrentIndex(i)
 
     def _set_combo(self, combo, value):
         i = combo.findData(value)
