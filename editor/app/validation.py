@@ -35,6 +35,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_dialogs(w)
     findings += _check_campaign(w)
     findings += _check_custom_actions(w)
+    findings += _check_text_vars(w)
     return findings
 
 
@@ -648,6 +649,31 @@ def _check_custom_actions(w):
                     out.append(("error", tr("validation.custom_missing",
                                             t=tname, name=cn or "?"),
                                 ("trigger", ti)))
+            walk(getattr(a, "then_actions", None), ti, tname)
+            walk(getattr(a, "else_actions", None), ti, tname)
+
+    for ti, t in enumerate(getattr(w, "triggers", None) or []):
+        walk(t.actions, ti, t.name)
+    return out
+
+
+def _check_text_vars(w):
+    """$name in Nachricht/Dialog, das keine Missions-Variable ist -> Hinweis
+    (bleibt woertlich im Text stehen).
+
+    $name in message/dialog that is no mission variable -> notice (stays
+    verbatim in the text)."""
+    import re as _re
+    out = []
+    names = {v.name for v in (getattr(w, "variables", None) or [])}
+
+    def walk(actions, ti, tname):
+        for a in (actions or []):
+            if getattr(a, "kind", "") in ("message", "showDialog"):
+                for tok in set(_re.findall(r"\$(\w+)", getattr(a, "text", "") or "")):
+                    if tok not in names:
+                        out.append(("warning", tr("validation.text_var_unknown",
+                                                  t=tname, v=tok), ("trigger", ti)))
             walk(getattr(a, "then_actions", None), ti, tname)
             walk(getattr(a, "else_actions", None), ti, tname)
 

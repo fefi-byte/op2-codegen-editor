@@ -159,6 +159,38 @@ def _emit_action_conditions_combined(action: TriggerAction, depth: int = 0) -> s
 # TriggerActions: emit C++ statements (recursive for if/then/else).
 # ---------------------------------------------------------------------------
 
+def _text_with_vars(text: str, ctx: dict) -> tuple[str, list[str]]:
+    """$variablenname im Text -> snprintf-Format (%d) + Argumentliste.
+
+    Nur Namen, die als Missions-Variable existieren, werden ersetzt --
+    beliebige andere $-Vorkommen bleiben woertlich erhalten. Ohne Treffer
+    kommt eine leere Argumentliste zurueck (Aufrufer emittiert das Literal).
+
+    $varname in the text -> snprintf format (%d) + argument list. Only
+    names that exist as mission variables are substituted -- any other $
+    occurrences stay verbatim. With no hits the argument list is empty
+    (caller emits the plain literal).
+    """
+    names = ctx.get("var_names") or set()
+    args: list[str] = []
+    # Literal-% zuerst schuetzen, dann Variablen ersetzen.
+    # Protect literal % first, then substitute variables.
+    fmt_text = (text or "").replace("%", "%%")
+
+    def _sub(m):
+        n = m.group(1)
+        if n in names:
+            args.append(f"(int){n}")
+            return "%d"
+        return m.group(0)
+
+    import re as _re
+    fmt_text = _re.sub(r"\$(\w+)", _sub, fmt_text)
+    if not args:
+        return "", []
+    return _cpp_string(fmt_text), args
+
+
 def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int = 0) -> list[str]:
     """Emit the raw statements for one non-`if` action (without the IF gate).
 
@@ -174,7 +206,18 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
         return [f"{indent}// (empty action)"]
 
     if k == "message":
-        return [f"{indent}AddGameMessage({_cpp_string(action.text)});"]
+        target = int(getattr(action, "msg_player", -1))
+        fmt, args = _text_with_vars(action.text, ctx)
+        if not args:
+            return [f"{indent}AddGameMessage({_cpp_string(action.text)}, "
+                    f"sndMessage2, {target});"]
+        return [
+            f"{indent}{{",
+            f"{indent}    char _msg[240];",
+            f"{indent}    snprintf(_msg, sizeof(_msg), {fmt}, {', '.join(args)});",
+            f"{indent}    AddGameMessage(_msg, sndMessage2, {target});",
+            f"{indent}}}",
+        ]
 
     if k == "customCode":
         # Handgeschriebener Code, woertlich uebernommen; eigener {}-Scope,
@@ -235,8 +278,18 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
         # Blocks until OK -- for story dialogs in single-player missions.
         cap = (getattr(action, "caption", "") or "").strip() \
             or ctx.get("mission_name", "Outpost 2")
-        return [f"{indent}TethysGameEx::MsgBox(NULL, {_cpp_string(action.text)}, "
-                f"{_cpp_string(cap)}, MB_OK | MB_ICONINFORMATION);"]
+        fmt, args = _text_with_vars(action.text, ctx)
+        if not args:
+            return [f"{indent}TethysGameEx::MsgBox(NULL, {_cpp_string(action.text)}, "
+                    f"{_cpp_string(cap)}, MB_OK | MB_ICONINFORMATION);"]
+        return [
+            f"{indent}{{",
+            f"{indent}    char _msg[512];",
+            f"{indent}    snprintf(_msg, sizeof(_msg), {fmt}, {', '.join(args)});",
+            f"{indent}    TethysGameEx::MsgBox(NULL, _msg, {_cpp_string(cap)}, "
+            f"MB_OK | MB_ICONINFORMATION);",
+            f"{indent}}}",
+        ]
 
     if k == "createUnit":
         entries = list(getattr(action, "unit_list", None) or [])

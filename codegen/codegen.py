@@ -113,6 +113,7 @@ def _build_codegen_context(mission: Mission) -> dict:
     ctx["assign_actions"] = []
     ctx["mission_name"] = mission.name
     ctx["custom_actions"] = list(getattr(mission, "custom_actions", None) or [])
+    ctx["var_names"] = {v.name for v in (getattr(mission, "variables", None) or [])}
     ctx["wave_action_vars"] = {}
     ctx["wave_actions"] = []
     ctx["repair_action_vars"] = {}

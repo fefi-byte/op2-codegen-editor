@@ -312,6 +312,9 @@ class TriggerAction:
     # Optional author note; emitted as a // comment in the generated code.
     comment: str = ""
     text: str = ""
+    # message: Zielspieler (-1 = alle Spieler)
+    # message: target player (-1 = all players)
+    msg_player: int = -1
     # showDialog: Fenstertitel der Dialogbox (leer = Missionsname)
     # showDialog: window title of the dialog box (empty = mission name)
     caption: str = ""

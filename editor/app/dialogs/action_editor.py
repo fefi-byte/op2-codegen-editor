@@ -276,7 +276,7 @@ class ActionInlineForm(QWidget):
     pick_requested = Signal(str)  # "primary" or "secondary"
 
     _VIS = {
-        "message": ["text"],
+        "message": ["text", "msg_target"],
         "showDialog": ["caption", "dialog_text"],
         "customCode": ["code_editor"],
         "custom": ["custom_editor"],
@@ -326,12 +326,21 @@ class ActionInlineForm(QWidget):
         self.kind.currentIndexChanged.connect(self._update)
 
         self.text = QLineEdit(tr("action_editor.default_message"))
+        self.text.setToolTip(tr("action_editor.tooltip_text_vars"))
+        # Nachricht: Zielspieler (-1 = alle)
+        # Message: target player (-1 = all)
+        self.msg_target = QComboBox()
+        self.msg_target.addItem(tr("action_editor.msg_target_all"), -1)
+        for _i in range(6):
+            self.msg_target.addItem(f"P{_i}", _i)
+        self.msg_target.currentIndexChanged.connect(self._save)
         # showDialog: Titel + mehrzeiliger Text
         # showDialog: caption + multi-line body
         self.caption = QLineEdit()
         self.caption.setPlaceholderText(tr("action_editor.caption_placeholder"))
         self.dialog_text = QPlainTextEdit()
         self.dialog_text.setPlaceholderText(tr("action_editor.dialog_placeholder"))
+        self.dialog_text.setToolTip(tr("action_editor.tooltip_text_vars"))
         self.dialog_text.setMaximumHeight(110)
         # customCode: handgeschriebener C++-Block (Monospace)
         # customCode: hand-written C++ block (monospace)
@@ -953,6 +962,7 @@ class ActionInlineForm(QWidget):
         self._rows = {
             "text": self.text, "unit": self.unit, "weapon": self.weapon,
             "caption": self.caption, "dialog_text": self.dialog_text,
+            "msg_target": self.msg_target,
             "code_editor": self.code_edit, "custom_editor": self.custom_box,
             "x": self.x, "y": self.y, "x2": self.x2, "y2": self.y2,
             "x_expr": self.x_expr, "y_expr": self.y_expr,
@@ -995,6 +1005,7 @@ class ActionInlineForm(QWidget):
         labels = {
             "text": tr("action_editor.lbl_text"), "unit": tr("action_editor.lbl_unit"),
             "caption": tr("action_editor.lbl_caption"),
+            "msg_target": tr("action_editor.lbl_msg_target"),
             "dialog_text": tr("action_editor.lbl_dialog_text"),
             "code_editor": tr("action_editor.lbl_code"),
             "custom_editor": tr("action_editor.lbl_custom_params"),
@@ -1814,6 +1825,8 @@ class ActionInlineForm(QWidget):
         self.caption.setText(getattr(a, "caption", "") or "")
         self.dialog_text.setPlainText(a.text if a.kind == "showDialog" else "")
         self.code_edit.setPlainText(getattr(a, "code", "") or "")
+        mi = self.msg_target.findData(int(getattr(a, "msg_player", -1)))
+        self.msg_target.setCurrentIndex(mi if mi >= 0 else 0)
         self._rebuild_custom_form(a)
         self._set_combo(self.unit, a.unit_type)
         self._set_combo(self.weapon, a.weapon_type)
@@ -1975,6 +1988,10 @@ class ActionInlineForm(QWidget):
         if k == "showDialog":
             a.text = self.dialog_text.toPlainText()
             a.caption = self.caption.text().strip()
+        if k == "message":
+            a.msg_player = self.msg_target.currentData()
+            if a.msg_player is None:
+                a.msg_player = -1
         if k == "customCode":
             a.code = self.code_edit.toPlainText()
         if k == "custom":
