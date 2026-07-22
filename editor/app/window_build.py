@@ -68,11 +68,28 @@ class _BuildMixin:
             self, self.mission_name, self.mission_type,
             self.tech_tree, self.diff_setup, self.variables,
             map_names=self.res.names(), current_map=self.map_name or "",
-            briefing=self.briefing,
+            briefing=self.briefing, campaign=self.campaign,
+            campaign_mission=self.campaign_mission,
+            max_tech_level=self.max_tech_level,
         )
         if dlg.exec() == QDialog.Accepted:
             self.mission_name = dlg.mission_name
             self.briefing = dlg.briefing
+            self.campaign = dlg.campaign
+            self.campaign_mission = dlg.campaign_mission
+            self.max_tech_level = dlg.max_tech_level
+            if self.campaign:
+                # Engine-Namensschema: e## (Eden) / p## (Plymouth) -- der
+                # DLL-Name entscheidet, zu welcher Kampagne die Mission
+                # gehoert und welche Mission danach kommt.
+                # Engine naming scheme: e## (Eden) / p## (Plymouth) -- the
+                # DLL name decides which campaign the mission belongs to
+                # and which mission follows.
+                prefix = "e" if self.campaign == "eden" else "p"
+                self.dll_name = f"{prefix}{self.campaign_mission:02d}.dll"
+                appconfig.set_output(self.output_dir, self.dll_name)
+                self.statusBar().showMessage(
+                    tr("window.status_campaign_dll", name=self.dll_name))
             self.mission_type = dlg.mission_type
             self.tech_tree = dlg.tech_tree
             self.diff_setup = dlg.diff_setup
@@ -156,6 +173,9 @@ class _BuildMixin:
             triggers=list(self.triggers),
             start_message=StartMessage(tr("window.default_start_message")),
             briefing=self.briefing,
+            campaign=self.campaign,
+            campaign_mission=self.campaign_mission,
+            max_tech_level=self.max_tech_level,
             victories=list(self.victories), defeats=list(self.defeats),
             difficulty=DifficultySetup(
                 hard=self.diff_setup.hard,

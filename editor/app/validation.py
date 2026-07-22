@@ -33,6 +33,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_mine_beacons(w)
     findings += _check_loop_refs(w)
     findings += _check_dialogs(w)
+    findings += _check_campaign(w)
     return findings
 
 
@@ -577,4 +578,44 @@ def _check_dialogs(w):
         walk(t.actions)
     if has_dialog:
         out.append(("warning", tr("validation.dialog_multiplayer"), None))
+    return out
+
+
+def _check_campaign(w):
+    """Kampagnenregeln: DLL-Name e##/p##, Kolonie passend, und ab Mission 2
+    keine harten Kolonisten-/Forschungswerte (die Engine reicht sie via
+    MissionResults aus der Vormission weiter).
+
+    Campaign rules: DLL name e##/p##, matching colony, and from mission 2 on
+    no hard colonist/research values (the engine hands them over from the
+    previous mission via MissionResults)."""
+    out = []
+    camp = getattr(w, "campaign", "") or ""
+    if not camp:
+        return out
+    num = int(getattr(w, "campaign_mission", 1) or 1)
+    prefix = "e" if camp == "eden" else "p"
+    dll = (getattr(w, "dll_name", "") or "").lower()
+    base = dll[:-4] if dll.endswith(".dll") else dll
+    import re
+    if not re.fullmatch(rf"{prefix}\d+", base):
+        out.append(("warning", tr("validation.campaign_dll_name",
+                                  want=f"{prefix}{num:02d}.dll", have=dll or "?"),
+                    None))
+    players = getattr(w, "players", None) or []
+    if players:
+        from mission_model import Colony
+        want = Colony.Eden if camp == "eden" else Colony.Plymouth
+        if players[0].colony != want:
+            out.append(("warning", tr("validation.campaign_colony",
+                                      c="Eden" if camp == "eden" else "Plymouth"),
+                        ("player", 0)))
+        if num >= 2:
+            p0 = players[0]
+            hard = (p0.kids is not None or p0.workers is not None
+                    or p0.scientists is not None or (p0.researches or [])
+                    or (p0.tech_level not in (None, 0)))
+            if hard:
+                out.append(("warning", tr("validation.campaign_carryover"),
+                            ("player", 0)))
     return out

@@ -11,7 +11,8 @@ class MissionSetupDialog(QDialog):
                  tech_tree: str, diff_setup: DifficultySetup,
                  variables: list[VariableDef],
                  map_names: list[str] | None = None, current_map: str = "",
-                 briefing: str = ""):
+                 briefing: str = "", campaign: str = "",
+                 campaign_mission: int = 1, max_tech_level: int = 12):
         super().__init__(parent)
         self.setWindowTitle(tr("setup.title"))
         self.resize(560, 580)
@@ -37,10 +38,32 @@ class MissionSetupDialog(QDialog):
             (MissionType.MultiLastOneStanding, "Multi: Last One Standing (-8)"),
         ]:
             self.type_combo.addItem(label, mt)
-        for i in range(self.type_combo.count()):
-            if self.type_combo.itemData(i) == mission_type:
-                self.type_combo.setCurrentIndex(i)
-                break
+        # Kampagnen: positiver missionType, DLL-Name e##/p## (siehe
+        # RequiredExports.h) -- als String-Daten neben den Enum-Werten.
+        # Campaigns: positive missionType, DLL name e##/p## (see
+        # RequiredExports.h) -- string data next to the enum values.
+        self.type_combo.addItem(tr("setup.type_campaign_eden"), "campaign_eden")
+        self.type_combo.addItem(tr("setup.type_campaign_plymouth"), "campaign_plymouth")
+        if campaign:
+            want = f"campaign_{campaign}"
+            for i in range(self.type_combo.count()):
+                if self.type_combo.itemData(i) == want:
+                    self.type_combo.setCurrentIndex(i)
+                    break
+        else:
+            for i in range(self.type_combo.count()):
+                if self.type_combo.itemData(i) == mission_type:
+                    self.type_combo.setCurrentIndex(i)
+                    break
+        self.campaign_spin = QSpinBox()
+        self.campaign_spin.setRange(1, 99)
+        self.campaign_spin.setValue(max(1, int(campaign_mission or 1)))
+        self.campaign_spin.setToolTip(tr("setup.tooltip_campaign_no"))
+        self.maxtech_spin = QSpinBox()
+        self.maxtech_spin.setRange(1, 12)
+        self.maxtech_spin.setValue(max(1, min(12, int(max_tech_level or 12))))
+        self.maxtech_spin.setToolTip(tr("setup.tooltip_max_tech"))
+        self.type_combo.currentIndexChanged.connect(self._update_campaign_rows)
         self.tech_edit = QLineEdit(tech_tree)
         # Briefing: Dialogbox kurz nach Spielstart (leer = kein Briefing).
         # Briefing: dialog box shortly after game start (empty = none).
@@ -52,6 +75,9 @@ class MissionSetupDialog(QDialog):
         form.addRow(tr("setup.lbl_map"), self.map_combo)
         form.addRow(tr("setup.lbl_mission_name"), self.name_edit)
         form.addRow(tr("setup.lbl_mission_type"), self.type_combo)
+        form.addRow(tr("setup.lbl_campaign_no"), self.campaign_spin)
+        form.addRow(tr("setup.lbl_max_tech"), self.maxtech_spin)
+        self._form = form
         form.addRow(tr("setup.lbl_tech_tree"), self.tech_edit)
         form.addRow(tr("setup.lbl_briefing"), self.briefing_edit)
 
@@ -106,6 +132,16 @@ class MissionSetupDialog(QDialog):
         root.addWidget(self.var_table, 1)
         root.addLayout(var_btns)
         root.addWidget(btns)
+        self._update_campaign_rows()
+
+    def _update_campaign_rows(self):
+        is_c = isinstance(self.type_combo.currentData(), str)
+        self._form.setRowVisible(self.campaign_spin, is_c)
+        # max_tech ist auch ausserhalb von Kampagnen nuetzlich, aber dort
+        # selten -- nur bei Kampagnen anzeigen (Standard bleibt 12).
+        # max_tech is useful outside campaigns too but rarely -- only show
+        # it for campaigns (default stays 12).
+        self._form.setRowVisible(self.maxtech_spin, is_c)
 
     # --- Variablen-Tabelle ---
 
@@ -141,7 +177,25 @@ class MissionSetupDialog(QDialog):
 
     @property
     def mission_type(self) -> MissionType:
-        return self.type_combo.currentData() or MissionType.Colony
+        d = self.type_combo.currentData()
+        # Kampagnen verhalten sich editorseitig wie Colony-Missionen.
+        # Campaigns behave like colony missions inside the editor.
+        if isinstance(d, str):
+            return MissionType.Colony
+        return d or MissionType.Colony
+
+    @property
+    def campaign(self) -> str:
+        d = self.type_combo.currentData()
+        return d.replace("campaign_", "") if isinstance(d, str) else ""
+
+    @property
+    def campaign_mission(self) -> int:
+        return self.campaign_spin.value()
+
+    @property
+    def max_tech_level(self) -> int:
+        return self.maxtech_spin.value()
 
     @property
     def tech_tree(self) -> str:

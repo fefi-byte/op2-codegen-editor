@@ -2551,8 +2551,17 @@ def generate_levelmain(mission: Mission) -> str:
         # In multiplayer AIModDesc.numPlayers counts HUMAN players only
         # (max 6); AI slots are reported via DescBlockEx (Coding 101 W11).
         num_players = max(1, num_players - num_ai)
+    # Kampagne: positiver missionType = Missionsnummer (RequiredExports.h);
+    # sonst der klassische Enum-Name. max_tech_level begrenzt die Forschung.
+    # Campaign: positive missionType = mission number (RequiredExports.h);
+    # otherwise the classic enum name. max_tech_level caps research.
+    if getattr(mission, "campaign", ""):
+        mt_literal = str(max(1, int(getattr(mission, "campaign_mission", 1) or 1)))
+    else:
+        mt_literal = _mission_type_literal(mission.type)
+    max_tech = int(getattr(mission, "max_tech_level", 12) or 12)
     add(f"ExportLevelDetailsFull({_cpp_string(mission.name)}, {_cpp_string(mission.map)}, "
-        f"{_cpp_string(tech_tree)}, {_mission_type_literal(mission.type)}, {num_players}, 12, 0)")
+        f"{_cpp_string(tech_tree)}, {mt_literal}, {num_players}, {max_tech}, 0)")
     add(f"Export const AIModDescEx DescBlockEx = {{ {num_ai} }};")
     add("")
 

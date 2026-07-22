@@ -590,6 +590,22 @@ class Mission:
     # World/wraparound map (512 tiles wide): the engine offset there is
     # -1/-1 instead of +31/-1 -- the codegen redefines MkXY/MkRect/XYPos.
     world_map: bool = False
+    # Kampagne: "" = keine; "eden"/"plymouth" -> missionType wird die
+    # POSITIVE campaign_mission-Nummer, DLL-Name muss e##/p## heissen.
+    # Die Engine reicht Forschung + Kolonisten via MissionResults an die
+    # naechste Kampagnenmission weiter.
+    # Campaign: "" = none; "eden"/"plymouth" -> missionType becomes the
+    # POSITIVE campaign_mission number, DLL name must be e##/p##. The
+    # engine hands research + colonists to the next campaign mission via
+    # MissionResults.
+    campaign: str = ""
+    campaign_mission: int = 1
+    # Maximal erforschbares Tech-Level (12 = alles; Kampagnen steigern es
+    # klassisch mit der Missionsnummer).
+    # Maximum researchable tech level (12 = everything; campaigns classically
+    # ramp it with the mission number).
+    max_tech_level: int = 12
+
     # Briefing-Text: wird kurz nach Spielstart als Dialogbox angezeigt
     # (OP2 hat keinen eigenen Briefing-Screen fuer Custom-Missionen).
     # Briefing text: shown as a dialog box shortly after game start

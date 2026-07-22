@@ -131,6 +131,9 @@ class _ProjectMixin:
             "mission_type": int(self.mission_type),
             "tech_tree": self.tech_tree,
             "briefing": self.briefing,
+            "campaign": self.campaign,
+            "campaign_mission": self.campaign_mission,
+            "max_tech_level": self.max_tech_level,
             "difficulty": asdict(self.diff_setup),
             "variables": [asdict(v) for v in self.variables],
             "map": self.map_name,
@@ -233,6 +236,9 @@ class _ProjectMixin:
         self.mission_type = MissionType(data.get("mission_type", int(MissionType.Colony)))
         self.tech_tree = data.get("tech_tree", "MULTITEK.TXT")
         self.briefing = data.get("briefing", "")
+        self.campaign = data.get("campaign", "")
+        self.campaign_mission = int(data.get("campaign_mission", 1) or 1)
+        self.max_tech_level = int(data.get("max_tech_level", 12) or 12)
         if "difficulty" in data:
             try:
                 self.diff_setup = DifficultySetup(**data["difficulty"])

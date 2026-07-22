@@ -39,6 +39,9 @@ class EditorWindow(
         self.mission_type: MissionType = MissionType.Colony
         self.tech_tree: str = "MULTITEK.TXT"
         self.briefing: str = ""
+        self.campaign: str = ""            # "" | "eden" | "plymouth"
+        self.campaign_mission: int = 1
+        self.max_tech_level: int = 12
         self.diff_setup: DifficultySetup = DifficultySetup()
         self.variables: list[VariableDef] = []
         self.players: list[PlayerSpec] = [PlayerSpec()]
