@@ -1,0 +1,22 @@
+KOLONIE-LEITSTAND - DEMO-MISSION
+
+Commander, dies ist eine Vorfuehrung des OP2 Mission Editors.
+
+Ihr befehligt eine kleine Lynx-Truppe im Nordwesten. Die grosse
+Plymouth-Kolonie im Zentrum laeuft vollautomatisch: sie baut ihre
+Mine selbst, ersetzt zerstoerte Gebaeude an Ort und Stelle,
+repariert Schaeden und ersetzt verlorene Fahrzeuge.
+
+Ablauf der Demo (1 Marke = 100 Ticks):
+  Marke  2  -  Begruessung und Musik-Playlist
+  Marke  3  -  Die KI errichtet ihre Mine und startet den Erzabbau
+  Marke  4  -  Der Reparatur-Trupp (Spider) nimmt die Arbeit auf
+  Marke  8  -  Meteoreinschlag - beobachtet den Wiederaufbau!
+  Marke 12  -  Eine Angriffswelle greift eure Truppe an
+  Marke 16  -  EMP-Raketenstart der KI
+  Marke 20  -  Die Ost-Kolonie schliesst sich euch an
+
+SIEG: Besitzt 5 Gebaeude (wartet die Uebergabe bei Marke 20 ab).
+NIEDERLAGE: Verlust aller eigenen Fahrzeuge.
+
+Viel Erfolg, Commander!

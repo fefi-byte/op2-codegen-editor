@@ -1,0 +1,60 @@
+# Demo Showcase
+
+An Outpost 2 mission built on the classic **[OP2MissionSDK](https://github.com/OutpostUniverse/OP2MissionSDK)** (Outpost2DLL + OP2Helper + HFL).
+
+## Files in this folder
+
+- `mission.op2proj` — editor project file (JSON, re-open in the editor)
+- `mission.cpp` — generated mission source code (the main file)
+- `op2_log.hpp`, `op2_crash.hpp` — per-mission logging/crash scaffolding
+- `version.rc.in` — Windows version info resource (filled by CMake)
+- `CMakeLists.txt` — CMake project definition
+- `build.bat` — one-click build script
+- `cm02.map` — the map this mission runs on
+- `MULTITEK.TXT` *(optional)* — custom tech tree, if this mission uses one
+
+## Build requirements
+
+- **CMake 3.21+** on PATH
+- **Visual Studio 2026** with the C++ x86 toolset — **MSVC only**: the
+  mission links against `Outpost2DLL/Lib/Outpost2.lib`, whose C++ imports use
+  MSVC name mangling (MinGW/Clang cannot link it)
+- The **OP2MissionSDK** (contains `Outpost2DLL/`, `OP2Helper/`, `HFL/`)
+
+`CMakeLists.txt` looks for the SDK in this order: (1) wherever the editor
+that generated this project found it, (2) `../../OP2MissionSDK` relative to
+this folder (works for a full repo checkout), (3) an explicit override you
+pass on the command line.
+
+If you got this folder as part of the full repo, clone with submodules:
+
+```powershell
+git clone --recursive https://github.com/fefi-byte/op2-codegen-editor.git
+```
+
+If you only have this mission folder, clone the SDK separately and point
+CMake at it:
+
+```powershell
+git clone --recursive https://github.com/OutpostUniverse/OP2MissionSDK.git
+cmake -S . -B build -G "Visual Studio 18 2026" -A Win32 -DOP2SDK_DIR="<path>\OP2MissionSDK"
+```
+
+## Build
+
+```powershell
+build.bat
+```
+
+…or manually:
+
+```powershell
+cmake -S . -B build -G "Visual Studio 18 2026" -A Win32
+cmake --build build --config Release
+```
+
+The mission DLL appears in `build/Release/cDemoShowcase.dll`.
+
+## Install
+
+Copy the DLL into your Outpost 2 install folder (the `OPU\` subfolder for OPU 1.4.x).
