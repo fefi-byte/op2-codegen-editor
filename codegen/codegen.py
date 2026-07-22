@@ -1216,7 +1216,7 @@ def _emit_patrol_route(indent: str, action, gvar: str, *, braces: bool = True) -
     x = -1 terminiert, siehe Structs.h) + SetPatrolMode + DoPatrolOnly.
 
     WICHTIG: Die Engine BEHAELT den Pointer auf Route und Wegpunktliste
-    (verifiziert in TitanAPI groups.hpp) -- beide muessen den Aufruf
+    (bekanntes Engine-Verhalten, siehe Wiki) -- beide muessen den Aufruf
     ueberleben, deshalb `static`. Jede Emissionsstelle hat ihren eigenen
     Block-Scope und damit ihre eigene statische Kopie.
 
@@ -1224,7 +1224,7 @@ def _emit_patrol_route(indent: str, action, gvar: str, *, braces: bool = True) -
     with x = -1, see Structs.h) + SetPatrolMode + DoPatrolOnly.
 
     IMPORTANT: The engine KEEPS the pointer to the route and waypoint list
-    (verified in TitanAPI groups.hpp) -- both must outlive the call, hence
+    (known engine behaviour, see wiki) -- both must outlive the call, hence
     `static`. Each emission site has its own block scope and therefore its
     own static copy.
     """

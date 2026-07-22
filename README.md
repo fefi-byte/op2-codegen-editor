@@ -2,9 +2,9 @@
 
 > **Alpha release.** Expect rough edges. Feedback and bug reports welcome.
 
-A visual mission editor for *Outpost 2: Divided Destiny*. Design missions by clicking, generate native C++23 source code, compile it to a 32-bit DLL that Outpost 2 loads directly.
+A visual mission editor for *Outpost 2: Divided Destiny*. Design missions by clicking, generate native C++ source code, compile it to a 32-bit DLL that Outpost 2 loads directly.
 
-Built against [TitanAPI](https://github.com/leviathan400/TitanAPI), a modern header-only C++23 SDK by leviathan400.
+Built against the classic [OP2MissionSDK](https://github.com/OutpostUniverse/OP2MissionSDK) (Outpost2DLL + OP2Helper + HFL) maintained by Outpost Universe.
 
 ![Main window](docs/images/Main.png)
 
@@ -34,7 +34,7 @@ Recent changes: [CHANGELOG.md](CHANGELOG.md).
 - Visual Studio Build Tools 2019+ with the **C++ x86 build tools** component (for the 32-bit DLL)
 - Outpost 2 installed (OPU 1.4.1 recommended — the editor reads its extracted `OPU\base\` and `OPU\maps` layout, no `.vol` archives needed)
 
-### Clone with the TitanAPI submodule
+### Clone with the OP2MissionSDK submodule
 
 ```powershell
 git clone --recursive https://github.com/fefi-byte/op2-codegen-editor.git
@@ -102,7 +102,7 @@ codegen/            Mission model + C++ code generator
 mapview/            Tile renderer for the map view
 missions/           Example mission projects
 LevelTemplate/      C++ mission project template (MSBuild)
-TitanAPI/           SDK submodule (leviathan400/TitanAPI)
+OP2MissionSDK/      SDK submodule (OutpostUniverse/OP2MissionSDK)
 lang.de.ini         German UI strings
 lang.en.ini         English UI strings
 ```
@@ -111,7 +111,7 @@ lang.en.ini         English UI strings
 
 1. The editor loads a project into an in-memory **Mission model** (`codegen/mission_model.py`), a set of dataclasses describing every unit, group, trigger and action.
 2. Every change is validated live (`editor/app/validation.py`) — errors and warnings appear in the right sidebar.
-3. On **Build**, the code generator (`codegen/codegen.py`) walks the model and emits a single self-contained `mission.cpp` targeting the TitanAPI facade.
+3. On **Build**, the code generator (`codegen/codegen.py`) walks the model and emits a single self-contained `mission.cpp` against the classic OP2MissionSDK (Outpost2DLL + OP2Helper + HFL).
 4. **MSBuild** compiles that C++ into a 32-bit DLL.
 5. **Test in OP2** launches Outpost 2 with the mission preselected via `op2launcher.exe`.
 

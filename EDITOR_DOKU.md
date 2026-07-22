@@ -360,7 +360,7 @@ Werte stammen aus dem Hard/Normal/Easy-Tripel im Einstellungen-Dialog.
 
 ## Codegenerierung
 
-Der Editor erzeugt eine einzige, in sich geschlossene `mission.cpp` für die TitanAPI-Fassade.
+Der Editor erzeugt eine einzige, in sich geschlossene `mission.cpp` gegen das klassische OP2MissionSDK (Outpost2DLL + OP2Helper + HFL).
 
 ### Dateistruktur
 
@@ -406,7 +406,7 @@ static void initProc() {
 
 ### Koordinaten
 
-Editor-Kacheln sind 0-basiert, TitanAPI-Kacheln 1-basiert. Der Generator addiert automatisch +1 auf jedes X/Y. Jedes ausgegebene `{ x, y }` entspricht der Anzeige in der OP2-Statuszeile.
+Editor-Kacheln sind 0-basiert, der generierte Code nutzt 1-basierte OP2-Koordinaten (MkXY/XYPos). Der Generator addiert automatisch +1 auf jedes X/Y. Jedes ausgegebene `{ x, y }` entspricht der Anzeige in der OP2-Statuszeile.
 
 ### Spielstand-Sicherheit
 

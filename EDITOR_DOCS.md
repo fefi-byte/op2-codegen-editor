@@ -360,7 +360,7 @@ Values come from the Settings dialog's Hard / Normal / Easy triple.
 
 ## Code generation
 
-The editor emits a single self-contained `mission.cpp` targeting the TitanAPI facade.
+The editor emits a single self-contained `mission.cpp` against the classic OP2MissionSDK (Outpost2DLL + OP2Helper + HFL).
 
 ### File shape
 
@@ -406,7 +406,7 @@ static void initProc() {
 
 ### Coordinates
 
-Editor tiles are 0-based; TitanAPI tiles are 1-based. The generator adds +1 on every X/Y automatically. Every emitted `{ x, y }` literal is what OP2's status bar shows.
+Editor tiles are 0-based; the generated code uses 1-based OP2 coordinates (MkXY/XYPos). The generator adds +1 on every X/Y automatically. Every emitted `{ x, y }` literal is what OP2's status bar shows.
 
 ### Save-game safety
 
