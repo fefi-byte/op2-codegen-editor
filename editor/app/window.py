@@ -72,6 +72,7 @@ class EditorWindow(
         self.view = MapView(self.scene)
         self.view.tileClicked.connect(self.on_place)
         self.view.tileRemoved.connect(self.on_remove)
+        self.view.brushSizeStep.connect(self._lava_brush_step)
         self.view.tileHover.connect(self._on_tile_hover)
         self.view.rectDragStarted.connect(self._rect_drag_start)
         self.view.rectDragMoved.connect(self._rect_drag_move)

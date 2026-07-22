@@ -82,9 +82,8 @@ class _MapPickMixin:
 
     def _rect_drag_start(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
-            if self.map and 0 <= tx < self.map.width and 0 <= ty < self.map.height:
-                self._lava_paint_drag_start = (tx, ty)
-                self._update_lava_rect_preview(tx, ty, tx, ty)
+            self._lava_stamp(tx, ty, add=True)
+            self._lava_update_brush_cursor(tx, ty)
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" \
                 and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)):
@@ -115,12 +114,10 @@ class _MapPickMixin:
 
     def _rect_drag_move(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
-            if self._lava_paint_drag_start is not None:
-                sx, sy = self._lava_paint_drag_start
-                self._update_lava_rect_preview(sx, sy, tx, ty)
-                self.coord_label.setText(
-                    f"Lava-Rect: ({min(sx,tx)},{min(sy,ty)}) "
-                    f"{abs(tx-sx)+1}x{abs(ty-sy)+1}")
+            self._lava_stamp(tx, ty, add=True)
+            self._lava_update_brush_cursor(tx, ty)
+            self.coord_label.setText(
+                tr("window.lava_brush_coord", x=tx, y=ty, s=self._lava_brush_size))
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" \
                 and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)) \
@@ -157,13 +154,7 @@ class _MapPickMixin:
 
     def _rect_drag_finish(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
-            self._clear_lava_rect_preview()
-            if self._lava_paint_drag_start is not None:
-                sx, sy = self._lava_paint_drag_start
-                self._lava_paint_fill_rect(sx, sy, tx, ty)
-                self._lava_paint_drag_start = None
-            else:
-                self._lava_paint_add(tx, ty)
+            self._lava_stamp(tx, ty, add=True)
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" \
                 and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)):
@@ -265,12 +256,15 @@ class _MapPickMixin:
         self._action_pick = request
         self._lava_paint_set = {(xy[0], xy[1]) for xy in (request["action"].lava_zone or [])}
         self._lava_paint_items = []
+        if not hasattr(self, "_lava_brush_size"):
+            self._lava_brush_size = 3
+        self._lava_brush_cursor_item = None
         self.view.rect_select_enabled = True
         self.view.lava_paint_enabled = True
         self.view.setCursor(Qt.CrossCursor)
         self._redraw_lava_paint_tiles()
         self.statusBar().showMessage(
-            "Linksklick/Ziehen: Lavakachel hinzufügen | Rechtsklick: Entfernen | 'Lava Zone'-Button: Fertig")
+            tr("window.lava_paint_hint", size=self._lava_brush_size))
 
     def _end_lava_paint(self):
         action = self._action_pick["action"]
@@ -279,26 +273,66 @@ class _MapPickMixin:
         self.view.rect_select_enabled = False
         self.view.lava_paint_enabled = False
         self.view.setCursor(Qt.ArrowCursor)
-        self._clear_lava_rect_preview()
-        self._lava_paint_drag_start = None
+        self._clear_lava_brush_cursor()
         self._clear_lava_paint_items()
         self._action_pick = None
         self.trigger_panel.refresh_actions(expand_index=action_index)
         self._redraw_planned_actions()
 
-    def _lava_paint_add(self, tx, ty):
-        if self.map is None or not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
-            return
-        if (tx, ty) not in self._lava_paint_set:
-            self._lava_paint_set.add((tx, ty))
+    def _lava_brush_tiles(self, tx, ty):
+        """Kacheln unter dem quadratischen Pinsel (Groesse s, zentriert).
+
+        Tiles under the square brush (size s, centred)."""
+        s = self._lava_brush_size
+        for dx in range(-(s // 2), s - s // 2):
+            for dy in range(-(s // 2), s - s // 2):
+                x, y = tx + dx, ty + dy
+                if self.map and 0 <= x < self.map.width and 0 <= y < self.map.height:
+                    yield (x, y)
+
+    def _lava_stamp(self, tx, ty, add=True):
+        """Pinselabdruck setzen/radieren (ein Redraw pro Abdruck).
+
+        Apply/erase one brush stamp (a single redraw per stamp)."""
+        tiles = set(self._lava_brush_tiles(tx, ty))
+        before = len(self._lava_paint_set)
+        if add:
+            self._lava_paint_set |= tiles
+        else:
+            self._lava_paint_set -= tiles
+        if len(self._lava_paint_set) != before:
             self._save_lava_zone()
             self._redraw_lava_paint_tiles()
 
-    def _lava_paint_remove(self, tx, ty):
-        if (tx, ty) in self._lava_paint_set:
-            self._lava_paint_set.discard((tx, ty))
-            self._save_lava_zone()
-            self._redraw_lava_paint_tiles()
+    def _lava_brush_step(self, delta):
+        if not (self._action_pick and self._action_pick.get("kind") == "lava_paint"):
+            return
+        self._lava_brush_size = max(1, min(9, self._lava_brush_size + delta))
+        self.statusBar().showMessage(
+            tr("window.lava_paint_hint", size=self._lava_brush_size))
+        if self._lava_brush_cursor_item is not None:
+            r = self._lava_brush_cursor_item.rect()
+            cx = int(r.center().x() // SCENE_TILE)
+            cy = int(r.center().y() // SCENE_TILE)
+            self._lava_update_brush_cursor(cx, cy)
+
+    def _lava_update_brush_cursor(self, tx, ty):
+        """Pinsel-Umriss am Cursor / brush outline at the cursor."""
+        self._clear_lava_brush_cursor()
+        s = self._lava_brush_size
+        x0 = (tx - s // 2) * SCENE_TILE
+        y0 = (ty - s // 2) * SCENE_TILE
+        item = QGraphicsRectItem(x0, y0, s * SCENE_TILE, s * SCENE_TILE)
+        item.setPen(QPen(QColor(255, 200, 0), 2, Qt.DashLine))
+        item.setBrush(QBrush(QColor(255, 160, 0, 30)))
+        item.setZValue(1070)
+        self.scene.addItem(item)
+        self._lava_brush_cursor_item = item
+
+    def _clear_lava_brush_cursor(self):
+        if getattr(self, "_lava_brush_cursor_item", None) is not None:
+            self.scene.removeItem(self._lava_brush_cursor_item)
+            self._lava_brush_cursor_item = None
 
     def _save_lava_zone(self):
         self._action_pick["action"].lava_zone = [list(xy) for xy in sorted(self._lava_paint_set)]
@@ -317,40 +351,6 @@ class _MapPickMixin:
             rect.setZValue(1050)
             self.scene.addItem(rect)
             self._lava_paint_items.append(rect)
-
-    def _lava_paint_fill_rect(self, x1, y1, x2, y2):
-        x_min, x_max = min(x1, x2), max(x1, x2)
-        y_min, y_max = min(y1, y2), max(y1, y2)
-        changed = False
-        for tx in range(x_min, x_max + 1):
-            for ty in range(y_min, y_max + 1):
-                if self.map and 0 <= tx < self.map.width and 0 <= ty < self.map.height:
-                    if (tx, ty) not in self._lava_paint_set:
-                        self._lava_paint_set.add((tx, ty))
-                        changed = True
-        if changed:
-            self._save_lava_zone()
-            self._redraw_lava_paint_tiles()
-
-    def _update_lava_rect_preview(self, x1, y1, x2, y2):
-        self._clear_lava_rect_preview()
-        x_min, x_max = min(x1, x2), max(x1, x2)
-        y_min, y_max = min(y1, y2), max(y1, y2)
-        px = x_min * SCENE_TILE
-        py = y_min * SCENE_TILE
-        pw = (x_max - x_min + 1) * SCENE_TILE
-        ph = (y_max - y_min + 1) * SCENE_TILE
-        item = QGraphicsRectItem(px, py, pw, ph)
-        item.setPen(QPen(QColor(255, 160, 0), 2, Qt.DashLine))
-        item.setBrush(QBrush(QColor(255, 160, 0, 50)))
-        item.setZValue(1060)
-        self.scene.addItem(item)
-        self._lava_rect_preview = item
-
-    def _clear_lava_rect_preview(self):
-        if self._lava_rect_preview is not None:
-            self.scene.removeItem(self._lava_rect_preview)
-            self._lava_rect_preview = None
 
     def _begin_action_pick(self, request):
         if request["kind"] == "lava_paint":

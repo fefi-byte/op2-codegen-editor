@@ -35,6 +35,9 @@ class MapView(QGraphicsView):
     rectDragMoved = Signal(int, int)
     rectDragFinished = Signal(int, int)
     rectDragCanceled = Signal()
+    # brushSizeStep(delta): Strg+Mausrad im Lava-Malmodus (+1/-1).
+    # brushSizeStep(delta): Ctrl+wheel in lava paint mode (+1/-1).
+    brushSizeStep = Signal(int)
 
     def __init__(self, scene):
         super().__init__(scene)
@@ -46,6 +49,7 @@ class MapView(QGraphicsView):
         self.rect_select_enabled = False
         self.lava_paint_enabled = False
         self._rect_dragging = False
+        self._erase_dragging = False
         # Kachelgitter standardmaessig aus (via set_grid umschaltbar).
         # Tile grid off by default (toggled via set_grid).
         self.show_grid = False
@@ -124,6 +128,12 @@ class MapView(QGraphicsView):
         self.fitInView(self.sceneRect(), Qt.KeepAspectRatio)
 
     def wheelEvent(self, event):
+        # Strg+Rad im Lava-Malmodus: Pinselgroesse statt Zoom.
+        # Ctrl+wheel in lava paint mode: brush size instead of zoom.
+        if self.lava_paint_enabled and event.modifiers() & Qt.ControlModifier:
+            self.brushSizeStep.emit(1 if event.angleDelta().y() > 0 else -1)
+            event.accept()
+            return
         # Mausrad zoomt frei (zusaetzlich zu den Standard-Zoomstufen).
         # The mouse wheel free-zooms (in addition to the preset zoom levels).
         f = 1.25 if event.angleDelta().y() > 0 else 0.8
@@ -139,6 +149,9 @@ class MapView(QGraphicsView):
             self.rectDragStarted.emit(*self._tile(event.position()))
         elif event.button() == Qt.RightButton and self.rect_select_enabled:
             if self.lava_paint_enabled:
+                # Radieren: auch beim Ziehen weiterfeuern (siehe mouseMove).
+                # Erasing: keeps firing while dragging (see mouseMove).
+                self._erase_dragging = True
                 self.tileRemoved.emit(*self._tile(event.position()))
             else:
                 self._rect_dragging = False
@@ -160,6 +173,9 @@ class MapView(QGraphicsView):
         if self._rect_dragging:
             self.rectDragMoved.emit(*self._tile(event.position()))
             return
+        if self._erase_dragging:
+            self.tileRemoved.emit(*self._tile(event.position()))
+            return
         self.tileHover.emit(*self._tile(event.position()))
         super().mouseMoveEvent(event)
 
@@ -170,6 +186,8 @@ class MapView(QGraphicsView):
         elif event.button() == Qt.LeftButton and self._rect_dragging:
             self._rect_dragging = False
             self.rectDragFinished.emit(*self._tile(event.position()))
+        elif event.button() == Qt.RightButton and self._erase_dragging:
+            self._erase_dragging = False
         else:
             super().mouseReleaseEvent(event)
 

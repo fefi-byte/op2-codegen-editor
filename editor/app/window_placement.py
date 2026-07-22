@@ -106,6 +106,8 @@ class _PlacementMixin:
 
     def _on_tile_hover(self, tx, ty):
         self.coord_label.setText(f"Tile: {tx}, {ty}")
+        if self._action_pick is not None and self._action_pick.get("kind") == "lava_paint":
+            self._lava_update_brush_cursor(tx, ty)
         # Footprint-Vorschau am Cursor: auch fuer den "primary"-Pick der
         # recordBuilding-/createUnit-/assignToGroup-Formulare (dort kommt
         # der Gebaeudetyp aus der Aktion, siehe _draw_action_building_preview).
@@ -158,7 +160,7 @@ class _PlacementMixin:
 
     def on_place(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
-            self._lava_paint_add(tx, ty)
+            self._lava_stamp(tx, ty, add=True)
             return
         # Generischer "auf Karte setzen"-Pfad fuer Action-Felder (vom Card-Editor).
         if self._action_pick and self._action_pick["kind"] == "action_field":
@@ -257,7 +259,7 @@ class _PlacementMixin:
 
     def on_remove(self, tx, ty):
         if self._action_pick is not None and self._action_pick.get("kind") == "lava_paint":
-            self._lava_paint_remove(tx, ty)
+            self._lava_stamp(tx, ty, add=False)
             return
         if self._action_pick is not None:
             self._end_action_pick()
