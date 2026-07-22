@@ -280,12 +280,22 @@ class _MapPickMixin:
         self._redraw_planned_actions()
 
     def _lava_brush_tiles(self, tx, ty):
-        """Kacheln unter dem quadratischen Pinsel (Groesse s, zentriert).
+        """Kacheln unter dem runden Pinsel (Durchmesser s, zentriert).
 
-        Tiles under the square brush (size s, centred)."""
+        Bei s <= 2 ist Kreis == Quadrat; ab s == 3 schneidet die Kreismaske
+        die Ecken ab (s=3 -> Plus, s=5 -> Scheibe mit 21 Kacheln, ...).
+
+        Tiles under the round brush (diameter s, centred). For s <= 2 the
+        circle equals the square; from s == 3 on the circular mask cuts the
+        corners (s=3 -> plus shape, s=5 -> 21-tile disc, ...)."""
         s = self._lava_brush_size
-        for dx in range(-(s // 2), s - s // 2):
-            for dy in range(-(s // 2), s - s // 2):
+        lo, hi = -(s // 2), s - s // 2 - 1
+        c = (lo + hi) / 2.0
+        limit = (s / 2.0) ** 2 - 0.25
+        for dx in range(lo, hi + 1):
+            for dy in range(lo, hi + 1):
+                if s > 2 and (dx - c) ** 2 + (dy - c) ** 2 >= limit:
+                    continue
                 x, y = tx + dx, ty + dy
                 if self.map and 0 <= x < self.map.width and 0 <= y < self.map.height:
                     yield (x, y)
@@ -322,7 +332,12 @@ class _MapPickMixin:
         s = self._lava_brush_size
         x0 = (tx - s // 2) * SCENE_TILE
         y0 = (ty - s // 2) * SCENE_TILE
-        item = QGraphicsRectItem(x0, y0, s * SCENE_TILE, s * SCENE_TILE)
+        # Runder Umriss passend zur Kreismaske (eckig nur bei s <= 2).
+        # Round outline matching the circular mask (square only for s <= 2).
+        if s <= 2:
+            item = QGraphicsRectItem(x0, y0, s * SCENE_TILE, s * SCENE_TILE)
+        else:
+            item = QGraphicsEllipseItem(x0, y0, s * SCENE_TILE, s * SCENE_TILE)
         item.setPen(QPen(QColor(255, 200, 0), 2, Qt.DashLine))
         item.setBrush(QBrush(QColor(255, 160, 0, 30)))
         item.setZValue(1070)
