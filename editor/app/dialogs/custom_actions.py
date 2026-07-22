@@ -13,6 +13,9 @@ show up as their own submenu in the "+ add action" menu.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from ..common import *
 
 PARAM_TYPES = ["int", "text", "unit_type", "position", "player"]
@@ -36,9 +39,17 @@ class CustomActionsDialog(QDialog):
         btn_rm.clicked.connect(self._remove_def)
         lbtns = QHBoxLayout(); lbtns.addWidget(btn_add); lbtns.addWidget(btn_rm)
         lbtns.addStretch(1)
+        # Teilen: jede Aktion als eigene .op2action-Datei (JSON)
+        # Sharing: each action as its own .op2action file (JSON)
+        btn_exp = QPushButton(tr("custom_actions.btn_export"))
+        btn_exp.clicked.connect(self._export_def)
+        btn_imp = QPushButton(tr("custom_actions.btn_import"))
+        btn_imp.clicked.connect(self._import_defs)
+        sbtns = QHBoxLayout(); sbtns.addWidget(btn_exp); sbtns.addWidget(btn_imp)
         left = QVBoxLayout()
         left.addWidget(self.listw, 1)
         left.addLayout(lbtns)
+        left.addLayout(sbtns)
 
         # --- rechte Seite: Definition bearbeiten ---
         self.name_edit = QLineEdit()
@@ -203,6 +214,66 @@ class CustomActionsDialog(QDialog):
             "code": self.code_edit.toPlainText(),
         }
         self._refresh_list()
+
+    # --- Teilen: Export/Import als .op2action-Dateien ---
+
+    def _export_def(self):
+        row = self.listw.currentRow()
+        if not (0 <= row < len(self._defs)):
+            return
+        self._store_row()
+        d = self._defs[row]
+        if not d.get("name"):
+            return
+        fname, _ = QFileDialog.getSaveFileName(
+            self, tr("custom_actions.export_title"),
+            f"{d['name']}.op2action", tr("custom_actions.file_filter"))
+        if not fname:
+            return
+        payload = {"format": "op2action", "version": 1,
+                   "name": d.get("name", ""),
+                   "params": d.get("params") or [],
+                   "code": d.get("code", "")}
+        Path(fname).write_text(json.dumps(payload, indent=2, ensure_ascii=False),
+                               encoding="utf-8")
+
+    def _import_defs(self):
+        fnames, _ = QFileDialog.getOpenFileNames(
+            self, tr("custom_actions.import_title"), "",
+            tr("custom_actions.file_filter"))
+        for fname in fnames:
+            try:
+                d = json.loads(Path(fname).read_text(encoding="utf-8"))
+            except Exception as e:
+                QMessageBox.warning(self, tr("custom_actions.title"),
+                                    tr("custom_actions.import_bad",
+                                       f=Path(fname).name, err=str(e)))
+                continue
+            if d.get("format") != "op2action" or not d.get("name"):
+                QMessageBox.warning(self, tr("custom_actions.title"),
+                                    tr("custom_actions.import_bad",
+                                       f=Path(fname).name, err="format"))
+                continue
+            clean = {"name": str(d["name"]),
+                     "params": [dict(p) for p in (d.get("params") or [])
+                                if isinstance(p, dict)],
+                     "code": str(d.get("code", ""))}
+            existing = next((i for i, x in enumerate(self._defs)
+                             if x.get("name") == clean["name"]), None)
+            if existing is not None:
+                # Gleicher Name: ersetzen? (typisch beim Update einer geteilten Aktion)
+                # Same name: replace? (typical when updating a shared action)
+                if QMessageBox.question(
+                        self, tr("custom_actions.title"),
+                        tr("custom_actions.import_replace", name=clean["name"]),
+                ) == QMessageBox.Yes:
+                    self._defs[existing] = clean
+            else:
+                self._defs.append(clean)
+        self._refresh_list()
+        if self._defs:
+            self._set_enabled(True)
+            self.listw.setCurrentRow(self.listw.count() - 1)
 
     @property
     def defs(self) -> list[dict]:
