@@ -1,0 +1,17 @@
+// Vor-Spielstart-Briefing: Dialogvorlage + Briefing-Text als TEXT-Ressource
+// (siehe briefing_dialog.cpp; Text liegt in briefing.txt).
+// Pre-game briefing: dialog template + briefing text as a TEXT resource
+// (see briefing_dialog.cpp; the text lives in briefing.txt).
+#include <windows.h>
+#include "resource.h"
+
+IDD_MISSIONINFO DIALOGEX 0, 0, 282, 250
+STYLE DS_SETFONT | DS_MODALFRAME | DS_SETFOREGROUND | DS_3DLOOK | DS_CENTER | WS_POPUP | WS_VISIBLE | WS_CAPTION
+CAPTION "MISSION BRIEFING"
+FONT 8, "MS Sans Serif", 0, 0, 0x0
+BEGIN
+    DEFPUSHBUTTON   "&CONTINUE",IDOK,75,230,130,15
+    CONTROL         "",IDC_TEXTAREA,"RICHEDIT",ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER | WS_VSCROLL | WS_TABSTOP,5,5,270,220
+END
+
+IDR_MISSIONTEXT TEXT "briefing.txt"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from PySide6.QtWidgets import QHeaderView
+
 from ..common import *
 
 
@@ -61,7 +63,16 @@ class ObjectsPanel(QWidget):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSortingEnabled(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        # Der Typ ist die laengste Spalte und wurde bisher abgeschnitten,
+        # waehrend "Position" (immer ~7 Zeichen) den Rest bekam.
+        # Type is the longest column and used to be elided while "Position"
+        # (always ~7 characters) got all the leftover width.
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.Stretch)           # Name
+        header.setSectionResizeMode(1, QHeaderView.Stretch)           # Typ / type
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Spieler / player
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Position
         self.table.itemSelectionChanged.connect(self._on_selection)
         self.table.itemDoubleClicked.connect(self._on_double_click)
         lay.addWidget(self.table, 1)

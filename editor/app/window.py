@@ -11,12 +11,13 @@ from .window_map_pick import _MapPickMixin
 from .window_project import _ProjectMixin
 from .window_build import _BuildMixin
 from .window_overlays import _OverlaysMixin
+from .window_terrain import _TerrainMixin
 
 
 class EditorWindow(
     _MenuMixin, _SidebarMixin, _OverviewMixin,
     _PlacementMixin, _MapPickMixin, _ProjectMixin,
-    _BuildMixin, _OverlaysMixin, QMainWindow,
+    _BuildMixin, _OverlaysMixin, _TerrainMixin, QMainWindow,
 ):
     def __init__(self):
         super().__init__()
@@ -56,6 +57,11 @@ class EditorWindow(
         self.fight_groups: list[FightGroupSpec] = []
         self.mining_groups: list[MiningGroupSpec] = []
         self.node_positions: dict = {}
+        self.mapgen_params: dict | None = None
+        self.spawn_points: list = []
+        self.volcano_points: list = []
+        self.lava_fields: list = []
+        self.newmap_panel = None
         self.mission_folder: Path | None = None
         self._next_object_id = 1
         self._pending_trigger_index = 0
@@ -67,6 +73,7 @@ class EditorWindow(
         self._placement_preview_items = []
         self._init_overlays()
         self._init_undo()
+        self._init_terrain()
 
         self.scene = QGraphicsScene(self)
         self.view = MapView(self.scene)
@@ -78,6 +85,7 @@ class EditorWindow(
         self.view.rectDragMoved.connect(self._rect_drag_move)
         self.view.rectDragFinished.connect(self._rect_drag_finish)
         self.view.rectDragCanceled.connect(self._rect_drag_cancel)
+        self.view.zoomChanged.connect(self._on_zoom_changed)
         self.setCentralWidget(self.view)
         self._rect_pick_group = None
         self._rect_pick_start = None
@@ -89,14 +97,38 @@ class EditorWindow(
 
         self._build_menu()
         self._build_sidebar()
+        self.terrain_panel.load()
         self.trigger_panel.load()
         self.groups_panel.load()
+        self.conditions_panel.load()
         self._build_overview()
         self._refresh_player_range()
 
+        self.validation_label = QLabel("")
+        self.statusBar().addPermanentWidget(self.validation_label)
+        self.zoom_label = QLabel("")
+        self.statusBar().addPermanentWidget(self.zoom_label)
         self.coord_label = QLabel("Tile: –")
         self.statusBar().addPermanentWidget(self.coord_label)
         self.statusBar().showMessage(tr("window.status_ready"))
         self.load_map(self.map_name)
         self._refresh_overview()
         QTimer.singleShot(0, self._maybe_reopen_last_mission)
+
+    def showEvent(self, event):
+        """Karte erst einpassen, wenn das Fenster seine endgueltige Groesse hat.
+
+        Fit the map only once the window has its final size -- the fit inside
+        __init__ still runs against the pre-maximised viewport."""
+        super().showEvent(event)
+        if not getattr(self, "_did_initial_fit", False):
+            self._did_initial_fit = True
+            QTimer.singleShot(0, self.view.zoom_fit)
+
+    def _on_zoom_changed(self, scale: float):
+        """Zoomabhaengige Anzeige nachziehen (Beschriftungen + Statusleiste).
+
+        Update zoom-dependent display (labels + status bar)."""
+        self._update_label_zoom()
+        if hasattr(self, "zoom_label"):
+            self.zoom_label.setText(tr("window.status_zoom", pct=round(scale * 100)))

@@ -6,6 +6,8 @@ from .common import *
 class _MenuMixin:
     def _build_menu(self):
         m = self.menuBar().addMenu(tr("window.menu_file"))
+        a = QAction(tr("window.new_map"), self); a.triggered.connect(self.new_generated_map); m.addAction(a)
+        m.addSeparator()
         a = QAction(tr("window.open_project"), self); a.triggered.connect(self.open_project); m.addAction(a)
         a = QAction(tr("window.save_project"), self); a.triggered.connect(self.save_project); m.addAction(a)
         a = QAction(tr("window.save_project_as"), self); a.triggered.connect(self.save_project_as); m.addAction(a)
@@ -13,6 +15,16 @@ class _MenuMixin:
         a = QAction(tr("window.choose_output"), self); a.triggered.connect(self.choose_output); m.addAction(a)
         m.addSeparator()
         a = QAction(tr("window.quit"), self); a.triggered.connect(self.close); m.addAction(a)
+
+        # Esc bricht ab, was gerade "scharf" ist -- Platzieren, Karten-Pick
+        # oder Bereichsauswahl. Modale Dialoge fangen die Taste selbst ab.
+        # Esc cancels whatever is armed -- placement, map pick or rect
+        # selection. Modal dialogs consume the key themselves.
+        escape = QAction(self)
+        escape.setShortcut("Esc")
+        escape.setShortcutContext(Qt.WindowShortcut)
+        escape.triggered.connect(self._escape_pressed)
+        self.addAction(escape)
 
         edit_menu = self.menuBar().addMenu(tr("window.menu_edit"))
         undo_act = QAction(tr("window.undo"), self)
@@ -27,8 +39,19 @@ class _MenuMixin:
         a = QAction(tr("window.menu_custom_actions"), self)
         a.triggered.connect(self.edit_custom_actions)
         edit_menu.addAction(a)
+        edit_menu.addSeparator()
+        # Lavafelder gehoeren zur Karte (SetLavaPossible im InitProc), nicht
+        # zu einem Trigger -- deshalb ein eigener Eintrag.
+        # Lava fields belong to the map (SetLavaPossible in InitProc), not to
+        # a trigger -- hence their own entry.
+        a = QAction(tr("window.menu_lava_fields"), self)
+        a.triggered.connect(self.edit_lava_fields)
+        edit_menu.addAction(a)
 
         view_menu = self.menuBar().addMenu(tr("window.menu_view"))
+        # Die Dock-Umschalter kommen aus _build_overview (laeuft spaeter).
+        # The dock toggles are added by _build_overview (runs later).
+        self._view_menu = view_menu
         # Kachelgitter-Umschalter; Anfangszustand aus config.ini.
         # Tile-grid toggle; initial state from config.ini.
         grid_on = appconfig.show_grid()
@@ -52,9 +75,11 @@ class _MenuMixin:
         # Zoom-Voreinstellungen; das Mausrad zoomt weiterhin frei.
         # Zoom presets; the mouse wheel still free-zooms.
         zoom_def = QAction(tr("window.zoom_default"), self)
+        zoom_def.setShortcut("Ctrl+0")
         zoom_def.triggered.connect(self.view.zoom_default)
         view_menu.addAction(zoom_def)
         zoom_fit = QAction(tr("window.zoom_fit"), self)
+        zoom_fit.setShortcut("Ctrl+F")
         zoom_fit.triggered.connect(self.view.zoom_fit)
         view_menu.addAction(zoom_fit)
 
@@ -99,6 +124,16 @@ class _MenuMixin:
         act = QAction(tr("window.tb_clear"), self)
         act.triggered.connect(self.clear_objects)
         tb.addAction(act)
+
+    def _escape_pressed(self):
+        """Abbruch in der Reihenfolge: Karten-Pick, Bereichsauswahl, Platzieren."""
+        if getattr(self, "_action_pick", None) is not None:
+            self._end_action_pick()
+            self.statusBar().showMessage(tr("window.status_action_canceled"))
+        elif getattr(self, "_rect_pick_group", None) is not None:
+            self._rect_drag_cancel()
+        elif getattr(self, "_placement_active", False):
+            self._cancel_placement()
 
     def _set_language(self, code):
         appconfig.set_language(code)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .common import *
+from .mapview import MapView
 from .placed_object import PlacedObject
 from .dialogs.object_edit import ObjectEditDialog
 
@@ -41,7 +42,11 @@ class _PlacementMixin:
         self._apply_forward(op, obj)
         self._undo_stack.append((op, obj))
 
-    def _apply_inverse(self, op: str, obj: PlacedObject):
+    def _apply_inverse(self, op: str, obj):
+        if op == "terrain":
+            self._apply_terrain_changes(obj, forward=False)
+            self.statusBar().showMessage(tr("terrain.status_undo", n=len(obj.changes)))
+            return
         if op == "place":
             self._delete_object_silent(obj)
             self.statusBar().showMessage(tr("window.status_undo_place", display=obj.display))
@@ -50,7 +55,11 @@ class _PlacementMixin:
             self.statusBar().showMessage(tr("window.status_undo_remove", display=obj.display))
         self._refresh_overview()
 
-    def _apply_forward(self, op: str, obj: PlacedObject):
+    def _apply_forward(self, op: str, obj):
+        if op == "terrain":
+            self._apply_terrain_changes(obj, forward=True)
+            self.statusBar().showMessage(tr("terrain.status_redo", n=len(obj.changes)))
+            return
         if op == "place":
             self._restore_object_silent(obj)
         else:
@@ -100,12 +109,20 @@ class _PlacementMixin:
         label = QGraphicsSimpleTextItem(display.split()[0][:10])
         label.setBrush(QBrush(Qt.white))
         label.setPos(x0 + 2, y0 + 1)
+        # Vorschau-Beschriftung immer lesbar: feste Bildschirmgroesse,
+        # unabhaengig vom Zoom (der Rahmen zeigt die echte Groesse).
+        # Preview label always readable: constant screen size, independent of
+        # zoom (the frame shows the real footprint).
+        label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         label.setZValue(1051)
         self.scene.addItem(label)
         self._placement_preview_items = [rect, label]
 
     def _on_tile_hover(self, tx, ty):
         self.coord_label.setText(f"Tile: {tx}, {ty}")
+        if getattr(self, "_terrain_active", False):
+            self._update_terrain_preview(tx, ty)
+            return
         if self._action_pick is not None and self._action_pick.get("kind") == "lava_paint":
             self._lava_update_brush_cursor(tx, ty)
         # Footprint-Vorschau am Cursor: auch fuer den "primary"-Pick der
@@ -151,16 +168,37 @@ class _PlacementMixin:
         if obj.kind not in ("structure", "vehicle"):
             self.statusBar().showMessage(tr("window.status_no_unit_params", display=obj.display))
             return
-        dlg = ObjectEditDialog(self, obj, len(self.players))
-        if dlg.exec() == QDialog.Accepted:
-            dlg.apply_to(obj)
-            self._redraw_object(obj)
-            label = obj.unit_name or obj.display
-            self.statusBar().showMessage(tr("window.status_updated", label=label))
+        # Ein Doppelklick liefert zwei Klick-Ereignisse; ohne diese Sperre
+        # oeffnet sich der Dialog zweimal hintereinander.
+        # A double-click delivers two click events; without this guard the
+        # dialog opens twice in a row.
+        if getattr(self, "_object_dialog_open", False):
+            return
+        self._object_dialog_open = True
+        try:
+            dlg = ObjectEditDialog(self, obj, len(self.players))
+            if dlg.exec() == QDialog.Accepted:
+                dlg.apply_to(obj)
+                self._redraw_object(obj)
+                label = obj.unit_name or obj.display
+                self.statusBar().showMessage(tr("window.status_updated", label=label))
+        finally:
+            self._object_dialog_open = False
 
     def on_place(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
             self._lava_stamp(tx, ty, add=True)
+            return
+        # Sieg-/Niederlage-Bedingung: Punkt per Klick setzen (point-Kind).
+        # Victory/defeat condition: set the point via click (point kind).
+        if self._action_pick and self._action_pick["kind"] == "cond_field" \
+                and self._action_pick.get("field") == "point":
+            if self.map is None or not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
+                return
+            cond = self._action_pick["cond"]
+            cond.x, cond.y = tx, ty
+            self.statusBar().showMessage(tr("window.status_cond_point_set", x=tx, y=ty))
+            self._end_action_pick()
             return
         # Generischer "auf Karte setzen"-Pfad fuer Action-Felder (vom Card-Editor).
         if self._action_pick and self._action_pick["kind"] == "action_field":
@@ -236,8 +274,14 @@ class _PlacementMixin:
         kind, disp, mid, fp = sel
         params = {}
         if mid == "mapCargoTruck":
-            params["truck_cargo"] = TRUCK_CARGO[self.cargo_combo.currentData()]
-            params["truck_amount"] = self.cargo_amount.value()
+            raw_cargo = self.cargo_combo.currentData() or "truckEmpty"
+            if ":" in raw_cargo:
+                truck_cargo, part = raw_cargo.split(":", 1)
+                params["truck_cargo"] = truck_cargo
+                params["truck_amount"] = part
+            else:
+                params["truck_cargo"] = raw_cargo
+                params["truck_amount"] = self.cargo_amount.value()
         elif mid == "mapConVec":
             convec_kit = self.kit_combo.currentData()
             if convec_kit:
@@ -258,6 +302,9 @@ class _PlacementMixin:
         self.statusBar().showMessage(tr("window.status_placed", label=label, x=tx, y=ty, n=len(self.objects)))
 
     def on_remove(self, tx, ty):
+        if getattr(self, "_terrain_active", False):
+            self._terrain_pick(tx, ty)
+            return
         if self._action_pick is not None and self._action_pick.get("kind") == "lava_paint":
             self._lava_stamp(tx, ty, add=False)
             return
@@ -265,10 +312,27 @@ class _PlacementMixin:
             self._end_action_pick()
             self.statusBar().showMessage(tr("window.status_action_canceled"))
             return
-        if self._placement_active:
-            self._cancel_placement()
-            return
+        # Rechtsklick entfernt das Objekt unter dem Zeiger -- auch waehrend
+        # des Platzierens. Frueher brach jeder Rechtsklick zuerst den
+        # Platziermodus ab; der Katalogeintrag blieb dabei markiert, sodass
+        # die Oberflaeche weiter "scharf" aussah, Linksklicks aber nur noch
+        # den Objekt-Editor oeffneten.
+        # Right-click removes the object under the cursor -- while placing,
+        # too. Previously every right-click cancelled placement first, leaving
+        # the catalog entry highlighted so the UI still looked armed while
+        # left-clicks only opened the object editor.
         obj = self._object_at(tx, ty)
+        if obj is None:
+            # Auf leerer Flaeche passiert bewusst NICHTS mehr. Frueher brach
+            # der Rechtsklick hier den Platziermodus ab -- ein Klick daneben
+            # beendete das Platzieren, ohne dass man es sah. Abbrechen macht
+            # jetzt Esc.
+            # On empty ground nothing happens on purpose. This right-click used
+            # to cancel placement -- one click beside the target ended placing
+            # invisibly. Esc is the cancel now.
+            if self._placement_active:
+                self.statusBar().showMessage(tr("window.status_nothing_to_remove"))
+            return
         if obj is not None:
             for item in obj.items:
                 self.scene.removeItem(item)
@@ -295,8 +359,31 @@ class _PlacementMixin:
         label = QGraphicsSimpleTextItem(text[:10])
         label.setBrush(QBrush(Qt.black if obj.kind == "beacon" else Qt.white))
         label.setPos(x0 + 2, y0 + 1)
+        self._style_map_label(label)
         self.scene.addItem(label)
         obj.items = [rect, label]
+
+    # --- Beschriftungen auf der Karte / map labels ---------------------
+
+    def _style_map_label(self, label):
+        """Beschriftung in fester Bildschirmgroesse zeichnen und bei starkem
+        Herauszoomen ausblenden (sonst unlesbare Kruemel bzw. Ueberlappung).
+
+        Draw the label at a constant screen size and hide it when zoomed far
+        out (otherwise unreadable specks resp. overlapping text)."""
+        label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        label.setZValue(1100)
+        label.setVisible(self.view.tile_screen_px() >= MapView.LABEL_MIN_TILE_PX)
+
+    def _update_label_zoom(self, *_args):
+        """Sichtbarkeit aller Kartenbeschriftungen an den Zoom anpassen.
+
+        Update the visibility of all map labels for the current zoom."""
+        visible = self.view.tile_screen_px() >= MapView.LABEL_MIN_TILE_PX
+        for obj in self.objects:
+            for item in obj.items:
+                if isinstance(item, QGraphicsSimpleTextItem):
+                    item.setVisible(visible)
 
     def clear_objects(self):
         for obj in self.objects:

@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 from .common import *
+from .sidebar_nav import SidebarNav
 from .panels.trigger_panel import TriggerPanel
 from .panels.groups_panel import GroupsPanel
 from .panels.objects_panel import ObjectsPanel
+from .panels.conditions_panel import ConditionsPanel
+from .panels.terrain_panel import TerrainPanel
 
 
 class _SidebarMixin:
     def _build_sidebar(self):
-        dock = QDockWidget(tr("window.dock_place"), self)
+        # Dock-Titel bewusst nicht "Platzieren": der erste Tab heisst schon so,
+        # und der Titel bleibt stehen, wenn ein anderer Tab aktiv ist.
+        # Deliberately not titled "Place": the first tab is already called that,
+        # and the title stays put while another tab is active.
+        dock = QDockWidget(tr("window.dock_mission"), self)
         # Breit genug fuer die Aktions-Formulare; per Splitter frei veraenderbar.
         # Wide enough for the action forms; freely resizable via the splitter.
         dock.setMinimumWidth(390)
@@ -27,16 +34,43 @@ class _SidebarMixin:
         # --- Tab 3: Objekte ---
         self.objects_panel = ObjectsPanel(self)
 
-        self._sidebar_tabs = QTabWidget()
+        # --- Tab 4: Sieg & Niederlage ---
+        self.conditions_panel = ConditionsPanel(self)
+        self.conditions_panel.map_pick_requested.connect(self._on_trigger_map_pick)
+
+        # --- Tab 5: Gelaende ---
+        self.terrain_panel = TerrainPanel(self)
+
+        # Sechs Bereiche passen nicht in eine Tab-Reihe -- Raster mit zwei
+        # Reihen zu drei Knoepfen.
+        # Six sections do not fit into one tab row -- grid with two rows of
+        # three buttons.
+        self._sidebar_tabs = SidebarNav(columns=3)
         self._sidebar_tabs.addTab(place_widget, tr("window.tab_place"))
         self._sidebar_tabs.addTab(self.trigger_panel, tr("window.tab_triggers"))
         self._sidebar_tabs.addTab(self.groups_panel, tr("window.tab_groups"))
         self._sidebar_tabs.addTab(self.objects_panel, tr("window.tab_objects"))
+        self._sidebar_tabs.addTab(self.conditions_panel, tr("window.tab_conditions"))
+        self._terrain_tab_index = self._sidebar_tabs.addTab(
+            self.terrain_panel, tr("window.tab_terrain"))
+        # Das Befahrbarkeits-Overlay haengt am Tab: wer Gelaende malt, will
+        # sehen, was er erzeugt.
+        # The passability overlay follows the tab: whoever paints terrain
+        # wants to see what they are creating.
+        self._sidebar_tabs.currentChanged.connect(self._on_sidebar_tab_changed)
 
         dock.setWidget(self._sidebar_tabs)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.resizeDocks([dock], [560], Qt.Horizontal)
         self._fill_list(self.cat_combo.currentData())
+
+    def _on_sidebar_tab_changed(self, index: int):
+        # Der Gelaendemodus haengt am Panel, nicht an einer festen Nummer --
+        # das Karten-Panel kommt zeitweise dazu und verschiebt die Indizes.
+        # Terrain mode follows the panel, not a fixed number -- the new-map
+        # panel appears temporarily and shifts the indices.
+        widget = self._sidebar_tabs.widget(index)
+        self._set_terrain_mode(widget is self.terrain_panel)
 
     def _on_trigger_map_pick(self, request: dict):
         self._begin_action_pick(request)
@@ -50,6 +84,15 @@ class _SidebarMixin:
         fill_combo(self.cat_combo, CATALOG, "catalog")
         self.cat_combo.currentIndexChanged.connect(lambda *_: self._fill_list(self.cat_combo.currentData()))
         lay.addWidget(self.cat_combo)
+
+        # Suchfeld: der Katalog hat ueber 50 Eintraege je Kategorie.
+        # Search box: the catalog has 50+ entries per category.
+        self.place_search = QLineEdit()
+        self.place_search.setClearButtonEnabled(True)
+        self.place_search.setPlaceholderText(tr("window.place_search_placeholder"))
+        self.place_search.textChanged.connect(
+            lambda *_: self._fill_list(self.cat_combo.currentData()))
+        lay.addWidget(self.place_search)
 
         self.list = QListWidget()
         self.list.currentItemChanged.connect(self._on_place_selection_changed)
@@ -76,16 +119,20 @@ class _SidebarMixin:
         # Cargo-Truck-Parameter / Cargo truck parameters
         self.cargo_row = QWidget()
         cr = QFormLayout(self.cargo_row)
+        self.cargo_form = cr
         cr.setContentsMargins(0, 0, 0, 0)
         self.cargo_combo = QComboBox()
-        fill_combo(self.cargo_combo, TRUCK_CARGO, "truck_cargo")
-        self.cargo_combo.setCurrentIndex(self.cargo_combo.findData("Leer"))
+        for label, value in truck_cargo_items():
+            self.cargo_combo.addItem(label, value)
+        self.cargo_combo.setCurrentIndex(self.cargo_combo.findData("truckEmpty"))
+        self.cargo_combo.currentIndexChanged.connect(self._update_cargo_amount_visibility)
         self.cargo_amount = QSpinBox()
         self.cargo_amount.setRange(0, 5000)
         self.cargo_amount.setValue(1000)
         cr.addRow(tr("window.lbl_cargo"), self.cargo_combo)
         cr.addRow(tr("window.lbl_amount"), self.cargo_amount)
         lay.addWidget(self.cargo_row)
+        self._update_cargo_amount_visibility()
 
         # ConVec-Bausatz / ConVec kit
         self.kit_row = QWidget()
@@ -125,9 +172,12 @@ class _SidebarMixin:
 
     def _fill_list(self, category):
         default_kind, items = CATALOG[category]
+        needle = self.place_search.text().strip().lower()
         self.list.clear()
         for item in items:
             disp, mid, fp = item[0], item[1], item[2]
+            if needle and needle not in disp.lower() and needle not in mid.lower():
+                continue
             kind = item[3] if len(item) > 3 else default_kind
             it = QListWidgetItem(f"{disp}  ({fp[0]}×{fp[1]})" if fp != (1, 1) else disp)
             it.setData(Qt.UserRole, (kind, disp, mid, fp))
@@ -159,6 +209,14 @@ class _SidebarMixin:
     def _cancel_placement(self):
         self._placement_active = False
         self._clear_placement_preview()
+        # Auch die Katalogauswahl aufheben: solange der Eintrag markiert
+        # bleibt, sieht die Oberflaeche scharf aus, obwohl nichts mehr
+        # platziert wird.
+        # Clear the catalog selection as well: while the entry stays
+        # highlighted the UI looks armed although nothing gets placed.
+        if self.list.currentItem() is not None:
+            self.list.setCurrentItem(None)
+            self.list.clearSelection()
         if self._action_pick is None and self._rect_pick_group is None:
             self.view.setCursor(Qt.ArrowCursor)
         self.statusBar().showMessage(tr("window.status_place_deselected"))
@@ -177,6 +235,11 @@ class _SidebarMixin:
         self.kit_row.setVisible(mid == "mapConVec")
         self.beacon_row.setVisible(mid == "mapMiningBeacon")
         self.weapon_row.setVisible(mid in WEAPON_UNITS)
+
+    def _update_cargo_amount_visibility(self):
+        """Menge-Feld nur bei quantifizierter Ladung zeigen (nicht bei Spaceport/Schrott-Teilen)."""
+        code = (self.cargo_combo.currentData() or "").split(":", 1)[0]
+        self.cargo_form.setRowVisible(self.cargo_amount, code in QUANTIFIED_TRUCK_CARGO_CODES)
 
     def _refresh_player_range(self):
         self.player_spin.setMaximum(max(0, len(self.players) - 1))

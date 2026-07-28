@@ -21,31 +21,35 @@ class GroupsPanel(QWidget):
         self.glist = QTreeWidget()
         self.glist.setHeaderHidden(True)
         self.glist.currentItemChanged.connect(self._on_item_changed)
-        add_building = QPushButton(tr("groups.add_building"))
-        add_building.clicked.connect(self._add_building)
-        apply_role(add_building, "primary")
-        add_reinforce = QPushButton(tr("groups.add_reinforce"))
-        add_reinforce.clicked.connect(self._add_reinforce)
-        apply_role(add_reinforce, "primary")
-        add_fight = QPushButton(tr("groups.add_fight"))
-        add_fight.clicked.connect(self._add_fight)
-        apply_role(add_fight, "primary")
-        add_mining = QPushButton(tr("groups.add_mining"))
-        add_mining.clicked.connect(self._add_mining)
-        apply_role(add_mining, "primary")
+        # Vier gleich aussehende Vollbreite-Knoepfe wurden zu einem Menue-Knopf
+        # zusammengefasst -- der Gruppentyp ist eine Auswahl, kein Dauerzustand.
+        # Four identical full-width buttons merged into one menu button -- the
+        # group type is a choice, not something that needs permanent screen space.
+        self.add_menu = QMenu(self)
+        for key, slot in (("groups.add_building", self._add_building),
+                          ("groups.add_reinforce", self._add_reinforce),
+                          ("groups.add_fight", self._add_fight),
+                          ("groups.add_mining", self._add_mining)):
+            act = QAction(tr(key), self)
+            act.triggered.connect(slot)
+            self.add_menu.addAction(act)
+        add_btn = QPushButton(tr("groups.add_group"))
+        add_btn.setMenu(self.add_menu)
+        apply_role(add_btn, "primary")
         rm_btn = QPushButton(tr("groups.remove"))
         rm_btn.clicked.connect(self._remove)
         apply_role(rm_btn, "danger")
         left = QWidget()
         left_lay = QVBoxLayout(left)
         left_lay.setContentsMargins(0, 0, 0, 0)
-        left_lay.addWidget(QLabel(tr("groups.groups_label")))
+        list_lbl = QLabel(tr("groups.groups_label"))
+        list_lbl.setProperty("role", "section")
+        left_lay.addWidget(list_lbl)
         left_lay.addWidget(self.glist, 1)
-        left_lay.addWidget(add_building)
-        left_lay.addWidget(add_reinforce)
-        left_lay.addWidget(add_fight)
-        left_lay.addWidget(add_mining)
-        left_lay.addWidget(rm_btn)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(add_btn)
+        btn_row.addWidget(rm_btn)
+        left_lay.addLayout(btn_row)
 
         # --- Detailformular ---
         self.name = QLineEdit()

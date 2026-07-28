@@ -90,6 +90,20 @@ def _emit_base_layout(mission: Mission, ctx: dict) -> list[str]:
     players_with_content = set(by_player_units.keys()) | {0}
     lines: list[str] = []
 
+    # Lavafelder: legen fest, WO Lava ueberhaupt fliessen kann. Bewusst hier
+    # im InitProc und nicht an einem Ausbruch-Trigger -- der Ausbruch ist
+    # Missionslogik, die Lavaflaeche gehoert zur Karte.
+    # Lava fields: define WHERE lava can flow at all. Deliberately here in
+    # InitProc rather than on an eruption trigger -- the eruption is mission
+    # logic, the lava area belongs to the map.
+    lava = list(getattr(mission, "lava_fields", None) or [])
+    if lava:
+        lines.append("")
+        lines.append(f"    // --- Lava fields ({len(lava)} tiles) ---")
+        for tile in lava:
+            lines.append(
+                f"    GameMap::SetLavaPossible({_xy(int(tile[0]), int(tile[1]))}, 1);")
+
     for pidx in sorted(players_with_content):
         units = by_player_units.get(pidx, [])
         if not (units or (pidx == 0 and (beacons or walls))):
@@ -161,9 +175,23 @@ def _emit_base_layout(mission: Mission, ctx: dict) -> list[str]:
             facing = ("East", "SouthEast", "South", "SouthWest",
                       "West", "NorthWest", "North", "NorthEast")[facing_idx]
             uvar = handle_vars.get(getattr(u, "uid", ""), "_u")
+            vtype = mapid(u.unit_type)
             lines.append(
-                f"        TethysGame::CreateUnit({uvar}, {mapid(u.unit_type)}, "
+                f"        TethysGame::CreateUnit({uvar}, {vtype}, "
                 f"{_xy(u.x, u.y)}, {pidx}, {weapon}, {facing});")
+            # Cargo Truck: initial freight (quantity, or a starship-part
+            # subtype for truckSpaceport/truckGarbage -- see game_data.py
+            # truck_cargo_items()). "truckEmpty" is the spawn default -- no
+            # call needed (SetTruckCargo(truckEmpty, N) would show a bogus
+            # amount on an empty truck). ConVec: building-kit cargo.
+            truck_cargo = getattr(u, "truck_cargo", None)
+            if vtype == "mapCargoTruck" and truck_cargo and truck_cargo != "truckEmpty":
+                lines.append(
+                    f"        {uvar}.SetTruckCargo({truck_cargo}, "
+                    f"{_expr_or_int(getattr(u, 'truck_amount', 0) or 0)});")
+            convec_kit = getattr(u, "convec_kit", None)
+            if vtype == "mapConVec" and convec_kit:
+                lines.append(f"        {uvar}.SetCargo({mapid(convec_kit)}, mapNone);")
 
         lines.append(f"    }}")
 

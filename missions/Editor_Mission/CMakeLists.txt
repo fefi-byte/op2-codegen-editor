@@ -58,6 +58,15 @@ target_include_directories(cEditorMission PRIVATE
 target_link_libraries(cEditorMission PRIVATE
   "${OP2SDK_DIR}/Outpost2DLL/Lib/Outpost2.lib")
 
+# Optionales Vor-Spielstart-Briefing: Dialog-Ressource + odasl-Skinning
+# (odasl.dll liegt im Outpost-2-Ordner und wird zur Laufzeit gefunden).
+# Optional pre-game briefing: dialog resource + odasl skinning (odasl.dll
+# lives in the Outpost 2 folder and is found at runtime).
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/briefing_dialog.cpp")
+  target_sources(cEditorMission PRIVATE briefing_dialog.cpp briefing.rc)
+  target_link_libraries(cEditorMission PRIVATE "${OP2SDK_DIR}/odasl/odasl.lib")
+endif()
+
 target_compile_definitions(cEditorMission PRIVATE
   WIN32_LEAN_AND_MEAN
   NOMINMAX

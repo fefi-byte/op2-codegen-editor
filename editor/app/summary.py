@@ -4,7 +4,10 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from . import i18n
-from .game_data import COMPARE
+from .game_data import (
+    ALL_UNITS, COMPARE, SPACEPORT_PRODUCTS, WEAPONS, condition_cargo_items,
+    truck_cargo_items,
+)
 from mission_model import (
     BuildingGroupSpec, Condition, FightGroupSpec, MiningGroupSpec, ReinforceGroupSpec,
 )
@@ -14,6 +17,40 @@ tr = i18n.tr
 
 def _cmp_sym(compare):
     return {v: k for k, v in COMPARE.items()}.get(compare, compare)
+
+
+def _display_map() -> dict[str, str]:
+    """map_id/Cargo-Code -> Anzeigename, einmalig aufgebaut.
+
+    map_id/cargo code -> display name, built once."""
+    global _DISPLAY_NAMES
+    if _DISPLAY_NAMES is None:
+        names = {m: d for d, m in ALL_UNITS}
+        names.update({m: d for d, m in SPACEPORT_PRODUCTS})
+        names.update({m: d for d, m in WEAPONS})
+        names.update({v: k for k, v in truck_cargo_items()})
+        for unit in ("mapCargoTruck", "mapEvacuationTransport", "mapConVec"):
+            names.update({v: k for k, v in condition_cargo_items(unit)})
+        _DISPLAY_NAMES = names
+    return _DISPLAY_NAMES
+
+
+_DISPLAY_NAMES: dict[str, str] | None = None
+
+
+def display_name(code) -> str:
+    """Interner Code (mapCargoTruck, truckFood, …) -> Anzeigename.
+
+    Zusammenfassungen sollen lesbare Namen zeigen, keine SDK-Bezeichner;
+    Unbekanntes wird unveraendert durchgereicht.
+
+    Internal code (mapCargoTruck, truckFood, …) -> display name. Summaries
+    should show readable names, not SDK identifiers; anything unknown is
+    passed through unchanged."""
+    if not code:
+        return code
+    text = str(code)
+    return _display_map().get(text, text)
 
 
 def action_condition_summary(c) -> str:
@@ -60,6 +97,15 @@ def action_summary(a) -> str:
 def _action_summary_core(a) -> str:
     if a.kind == "noop":
         return tr("action_kinds.noop")
+    if a.kind in ("addVictory", "addDefeat"):
+        spec = dict(getattr(a, "condition_spec", None) or {})
+        spec.setdefault("kind", "time")
+        try:
+            detail = condition_summary(Condition(**spec))
+        except TypeError:
+            detail = spec.get("kind", "time")
+        key = "sum.act_addvictory" if a.kind == "addVictory" else "sum.act_adddefeat"
+        return tr(key, cond=detail)
     if a.kind == "if":
         logic = tr("sum.or") if getattr(a, "condition_logic", "and") == "or" else tr("sum.and")
         base = tr("sum.act_if", n=len(getattr(a, "conditions", [])), logic=logic,
@@ -187,11 +233,11 @@ def _action_summary_core(a) -> str:
         tag = f" '{name}'" if name else ""
         return f"AttackWave{tag}(P{a.player}, {mode}: {comp})"
     if a.kind == "fightGroupCmd":
-        cmd = _GROUP_CMD_LABELS.get(getattr(a, "fg_command", "attackArea"), "?")
-        return f"Gruppe '{getattr(a, 'group_name', '?')}': {cmd}"
+        cmd = _cmd_label(_GROUP_CMD_KEYS, getattr(a, "fg_command", "attackArea"))
+        return tr("sum.act_group_cmd", g=getattr(a, 'group_name', '?'), cmd=cmd)
     if a.kind == "unitCmd":
-        cmd = _UNIT_CMD_LABELS.get(getattr(a, "fg_command", "move"), "?")
-        return f"Einheit '{getattr(a, 'unit_ref', '?')}': {cmd}"
+        cmd = _cmd_label(_UNIT_CMD_KEYS, getattr(a, "fg_command", "move"))
+        return tr("sum.act_unit_cmd", u=getattr(a, 'unit_ref', '?'), cmd=cmd)
     if a.kind == "defendArea":
         return f"DefendArea(P{a.player}, ({a.x},{a.y}) -> ({a.x2},{a.y2}))"
     if a.kind == "repairBuildings":
@@ -200,39 +246,55 @@ def _action_summary_core(a) -> str:
         return f"EMP-Rakete(P{a.player}, ({a.x},{a.y}) -> ({a.x2},{a.y2}))"
     if a.kind == "setMorale":
         mode = getattr(a, "morale_mode", "good") or "good"
-        p = "alle" if int(getattr(a, "player", 0)) < 0 else f"P{a.player}"
+        p = tr("sum.all_players") if int(getattr(a, "player", 0)) < 0 else f"P{a.player}"
         return f"Moral: {mode} ({p})"
     if a.kind == "setMusic":
         n = len(getattr(a, "songs", None) or [])
-        return f"Musik-Playlist ({n} Songs, Loop ab {getattr(a, 'repeat_start', 0)})"
+        return tr("sum.act_music", n=n, start=getattr(a, 'repeat_start', 0))
     if a.kind == "lavaFlowAni":
         fn = "FreezeFlow" if getattr(a, "flow_freeze", False) else "AnimateFlow"
         return f"{fn}{getattr(a, 'flow_dir', 'S')} @ ({a.x},{a.y})"
     if a.kind == "modUnitStats":
         n = len(getattr(a, "stat_mods", None) or [])
-        return f"UnitInfo {getattr(a, 'unit_type', '?')}: {n} Werte (P{a.player})"
+        return tr("sum.act_unit_stats", u=getattr(a, 'unit_type', '?'), n=n, p=a.player)
     return a.kind
 
 
-# Befehls-Labels fuer Zusammenfassungen / command labels for summaries
-_GROUP_CMD_LABELS = {
-    "attackArea": "Bereich angreifen", "attackEnemy": "Feind jagen",
-    "guardArea": "Bereich bewachen", "patrol": "Patrouillieren",
-    "exitMap": "Karte verlassen",
-    "combineFireOn": "Feuer bündeln: an", "combineFireOff": "Feuer bündeln: aus",
-    "setBuildRect": "Baubereich setzen",
-    "reinforceGroup": "Verstärkung starten", "unReinforceGroup": "Verstärkung stoppen",
-    "lightsOn": "Lichter an", "lightsOff": "Lichter aus",
-    "clearTargCount": "Sollstärken löschen",
+# Befehls-Labels fuer Zusammenfassungen: dieselben i18n-Schluessel wie die
+# Auswahlfelder im Aktions-Editor (action_editor.gc_*/uc_*), damit die
+# Zusammenfassung in derselben Sprache steht wie die restliche Oberflaeche.
+# Command labels for summaries: the same i18n keys as the action editor's
+# combo boxes (action_editor.gc_*/uc_*) so the summary is in the same
+# language as the rest of the UI.
+_GROUP_CMD_KEYS = {
+    "attackArea": "gc_attack_area", "attackEnemy": "gc_attack_enemy",
+    "guardArea": "gc_guard_area", "patrol": "gc_patrol",
+    "exitMap": "gc_exit_map",
+    "combineFireOn": "gc_combine_fire_on", "combineFireOff": "gc_combine_fire_off",
+    "setBuildRect": "gc_set_build_rect", "setIdleRect": "gc_set_idle_rect",
+    "reinforceGroup": "gc_reinforce_group", "unReinforceGroup": "gc_un_reinforce_group",
+    "addUnit": "gc_add_unit", "removeUnit": "gc_remove_unit",
+    "lightsOn": "gc_lights_on", "lightsOff": "gc_lights_off",
+    "clearTargCount": "gc_clear_targ_count",
 }
-_UNIT_CMD_LABELS = {
-    "move": "Bewegen", "patrol": "Patrouillieren", "attackGround": "Position angreifen",
-    "repair": "Reparieren",
-    "stop": "Stopp", "idle": "Stilllegen", "unidle": "Aktivieren",
-    "selfDestruct": "Selbstzerstörung", "remove": "Entfernen",
-    "transfer": "An Spieler übergeben",
-    "lightsOn": "Lichter an", "lightsOff": "Lichter aus",
+_UNIT_CMD_KEYS = {
+    "move": "uc_move", "patrol": "uc_patrol", "repair": "uc_repair",
+    "stop": "uc_stop", "idle": "uc_idle", "unidle": "uc_unidle",
+    "selfDestruct": "uc_self_destruct", "remove": "uc_remove",
+    "transfer": "uc_transfer",
+    "lightsOn": "uc_lights_on", "lightsOff": "uc_lights_off",
 }
+
+
+def _cmd_label(keys: dict, cmd: str) -> str:
+    """Uebersetztes Befehls-Label oder der interne Name als Rueckfallebene.
+
+    Translated command label, falling back to the internal name."""
+    key = keys.get(cmd)
+    if not key:
+        return cmd or "?"
+    label = tr(f"action_editor.{key}")
+    return cmd if label == f"action_editor.{key}" else label
 
 _KIND_TITLE = {
     "noop": "Platzhalter",
@@ -258,10 +320,21 @@ _KIND_TITLE = {
     "setMusic": "Musik-Playlist",
     "lavaFlowAni": "Lavastrom-Animation",
     "modUnitStats": "Einheiten-Werte",
+    "addVictory": "Siegbedingung hinzufügen",
+    "addDefeat": "Niederlagebedingung hinzufügen",
 }
 
 
 def action_kind_label(kind: str) -> str:
+    """Titel einer Aktionskarte -- bevorzugt aus der Sprachdatei
+    ([action_kinds]), damit die Karten nicht deutsch bleiben, wenn die
+    Oberflaeche englisch laeuft.
+
+    Title of an action card -- preferably from the language file
+    ([action_kinds]) so the cards don't stay German while the UI is English."""
+    label = tr(f"action_kinds.{kind}")
+    if label != f"action_kinds.{kind}":
+        return label
     return _KIND_TITLE.get(kind, kind)
 
 
@@ -271,6 +344,13 @@ def action_params_summary(a) -> str:
         return ""
     if a.kind == "message":
         return f'"{getattr(a, "text", "")}"'
+    if a.kind in ("addVictory", "addDefeat"):
+        spec = dict(getattr(a, "condition_spec", None) or {})
+        spec.setdefault("kind", "time")
+        try:
+            return condition_summary(Condition(**spec))
+        except TypeError:
+            return spec.get("kind", "time")
     if a.kind == "createUnit":
         entries = list(getattr(a, "unit_list", None) or [])
         if not entries:
@@ -280,15 +360,17 @@ def action_params_summary(a) -> str:
         if len(entries) == 1:
             e = entries[0]
             weapon = e.get("weapon_type", "mapNone")
-            w = "" if weapon == "mapNone" else f"  Waffe: {weapon}"
-            return f"Einheit: {e.get('unit_type', '?')}{w}  P{getattr(a, 'player', 0)}  @ ({e.get('x', 0)},{e.get('y', 0)})"
-        return f"{len(entries)} Einheiten  P{getattr(a, 'player', 0)}"
+            w = "" if weapon == "mapNone" else "  " + tr("sum.p_weapon", w=weapon)
+            return tr("sum.p_unit_at", u=e.get('unit_type', '?'), w=w,
+                      p=getattr(a, 'player', 0), x=e.get('x', 0), y=e.get('y', 0))
+        return tr("sum.p_units_n", n=len(entries), p=getattr(a, 'player', 0))
     if a.kind == "createDisaster":
         dtype = getattr(a, "disaster_type", "meteor")
         x, y = getattr(a, "x_expr", 0), getattr(a, "y_expr", 0)
         if dtype in ("storm", "vortex"):
-            return f"Typ: {dtype}  ({x},{y}) → ({getattr(a, 'x2_expr', 0)},{getattr(a, 'y2_expr', 0)})"
-        return f"Typ: {dtype}  @ ({x},{y})"
+            return tr("sum.p_disaster_area", t=dtype, x=x, y=y,
+                      x2=getattr(a, 'x2_expr', 0), y2=getattr(a, 'y2_expr', 0))
+        return tr("sum.p_disaster_at", t=dtype, x=x, y=y)
     if a.kind == "createTrigger":
         return f"→ {getattr(a, 'target', '?')}"
     if a.kind == "recordBuilding":
@@ -297,7 +379,7 @@ def action_params_summary(a) -> str:
             e = entries[0] if entries else {"building_type": getattr(a, "building_type", "?"),
                                              "x": getattr(a, "x", 0), "y": getattr(a, "y", 0)}
             return f"{getattr(a, 'group_name', '?')}  ·  {e.get('building_type', '?')}  @ ({e.get('x', 0)},{e.get('y', 0)})"
-        return f"{getattr(a, 'group_name', '?')}  ·  {len(entries)} Gebäude"
+        return tr("sum.p_buildings_n", g=getattr(a, 'group_name', '?'), n=len(entries))
     if a.kind == "recordTube":
         entries = list(getattr(a, "tube_list", None) or [])
         if len(entries) <= 1:
@@ -365,7 +447,7 @@ def action_params_summary(a) -> str:
                 f"Sammeln ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → "
                 f"Angriff ({getattr(a, 'attack_x', 0)},{getattr(a, 'attack_y', 0)})")
     if a.kind == "fightGroupCmd":
-        cmd = _GROUP_CMD_LABELS.get(getattr(a, "fg_command", "attackArea"), "?")
+        cmd = _cmd_label(_GROUP_CMD_KEYS, getattr(a, "fg_command", "attackArea"))
         extra = ""
         if getattr(a, "fg_command", "") in ("attackArea", "guardArea", "setBuildRect", "patrol"):
             extra = f"  ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})"
@@ -373,13 +455,13 @@ def action_params_summary(a) -> str:
             extra = f"  → '{getattr(a, 'target', '?')}'"
         return f"'{getattr(a, 'group_name', '?')}'  {cmd}{extra}"
     if a.kind == "unitCmd":
-        cmd = _UNIT_CMD_LABELS.get(getattr(a, "fg_command", "move"), "?")
+        cmd = _cmd_label(_UNIT_CMD_KEYS, getattr(a, "fg_command", "move"))
         extra = ""
         if getattr(a, "fg_command", "") in ("move", "attackGround"):
             extra = f"  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})"
         elif getattr(a, "fg_command", "") == "patrol":
             pts = getattr(a, "patrol_points", None) or []
-            extra = (f"  {len(pts)} Wegpunkte" if pts
+            extra = ("  " + tr("sum.p_waypoints", n=len(pts)) if pts
                      else f"  ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) ↔ ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})")
         elif getattr(a, "fg_command", "") == "transfer":
             extra = f"  → P{getattr(a, 'player', 0)}"
@@ -391,16 +473,17 @@ def action_params_summary(a) -> str:
                 f"({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})")
     if a.kind == "empMissile":
         return (f"P{getattr(a, 'player', 0)}  Start ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)}) → "
-                f"Ziel ({getattr(a, 'x2', 0)},{getattr(a, 'y2', 0)})")
+                + tr("sum.p_target", x=getattr(a, 'x2', 0), y=getattr(a, 'y2', 0)))
     if a.kind == "setMorale":
-        p = "alle" if int(getattr(a, "player", 0)) < 0 else f"P{getattr(a, 'player', 0)}"
+        p = tr("sum.all_players") if int(getattr(a, "player", 0)) < 0 else f"P{getattr(a, 'player', 0)}"
         return f"{getattr(a, 'morale_mode', 'good')}  ·  {p}"
     if a.kind == "setMusic":
         songs = getattr(a, "songs", None) or []
-        return f"{len(songs)} Songs  ·  Loop ab Index {getattr(a, 'repeat_start', 0)}"
+        return tr("sum.p_music", n=len(songs), start=getattr(a, 'repeat_start', 0))
     if a.kind == "lavaFlowAni":
-        mode = "Stoppen" if getattr(a, "flow_freeze", False) else "Starten"
-        return f"{mode}  ·  Richtung {getattr(a, 'flow_dir', 'S')}  @ ({getattr(a, 'x', 0)},{getattr(a, 'y', 0)})"
+        mode = tr("sum.p_stop") if getattr(a, "flow_freeze", False) else tr("sum.p_start")
+        return tr("sum.p_lava_flow", mode=mode, dir=getattr(a, 'flow_dir', 'S'),
+                  x=getattr(a, 'x', 0), y=getattr(a, 'y', 0))
     if a.kind == "modUnitStats":
         mods = getattr(a, "stat_mods", None) or []
         comp = ", ".join(f"{m.get('stat', '?')}={m.get('value', 0)}" for m in mods[:3])
@@ -425,12 +508,36 @@ def condition_summary(c: Condition) -> str:
         return tr("sum.win_buildingcount", cmp=cmp, n=c.count, p=c.player)
     if k == "vehicleCount":
         return tr("sum.win_vehiclecount", cmp=cmp, n=c.count, p=c.player)
+    if k == "vehicleCargo":
+        return tr("sum.win_vehiclecargo", u=display_name(c.unit_type), c=display_name(c.cargo),
+                  cmp=cmp, n=c.count, p=c.player)
     if k == "research":
         return tr("sum.win_research", tech=c.tech_id, p=c.player)
     if k == "resource":
         return tr("sum.win_resource", res=c.resource, cmp=cmp, amt=c.amount, p=c.player)
     if k == "operational":
-        return tr("sum.win_operational", b=c.building, cmp=cmp, n=c.count, p=c.player)
+        return tr("sum.win_operational", b=display_name(c.building), cmp=cmp, n=c.count, p=c.player)
+    if k == "point":
+        return tr("sum.win_point", p=c.player, x=c.x, y=c.y)
+    if k == "rect":
+        return tr("sum.win_rect", p=c.player, x=c.x, y=c.y, w=c.width, h=c.height)
+    if k == "attacked":
+        return tr("sum.win_attacked", g=c.group_name)
+    if k == "damaged":
+        return tr("sum.win_damaged", g=c.group_name, d=c.damage_type)
+    if k == "specialTarget":
+        return tr("sum.win_specialtarget", u=c.target_unit, s=display_name(c.source_unit_type))
+    if k == "onePlayerLeft":
+        return tr("conditions.onePlayerLeft")
+    if k == "evac":
+        return tr("sum.win_evac", p=c.player)
+    if k == "midas":
+        return tr("sum.win_midas", marks=c.marks)
+    if k == "kit":
+        return tr("sum.win_kit", b=display_name(c.building), cmp=cmp, n=c.count, p=c.player)
+    if k == "escape":
+        return tr("sum.win_escape", u=display_name(c.unit_type), c=display_name(c.cargo), n=c.count,
+                  x=c.x, y=c.y, w=c.width, h=c.height, p=c.player)
     return k
 
 

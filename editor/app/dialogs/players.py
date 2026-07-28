@@ -95,6 +95,10 @@ class PlayersDialog(QDialog):
         self.plist.currentRowChanged.connect(self._on_select)
         self._refresh_list()
         self.plist.setCurrentRow(0)
+        # setCurrentRow(0) is a no-op if Qt already auto-selected row 0 while
+        # refreshing the list, so currentRowChanged never fires -- load
+        # explicitly to make sure the form always reflects player 0.
+        self._load(0)
 
     def _label(self, i, p):
         return tr("players.list_label",

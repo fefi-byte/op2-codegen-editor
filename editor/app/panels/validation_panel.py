@@ -31,9 +31,12 @@ class ValidationPanel(QWidget):
         self.list.setUniformItemSizes(False)
         self.list.setResizeMode(QListView.Adjust)
         self.list.itemDoubleClicked.connect(self._on_activate)
+        lay.setContentsMargins(4, 4, 4, 4)
         lay.addWidget(self.list, 1)
-        self.status_lbl = QLabel("")
-        lay.addWidget(self.status_lbl)
+        # Die Zaehlzeile steht in der Statusleiste des Fensters (immer
+        # sichtbar, auch wenn dieser Dock eingeklappt ist).
+        # The counter line lives in the window's status bar (always visible,
+        # even when this dock is collapsed).
 
     def refresh(self):
         findings = validate_mission(self._window)
@@ -53,7 +56,9 @@ class ValidationPanel(QWidget):
             ok = QListWidgetItem(tr("validation.all_ok"))
             ok.setForeground(QBrush(QColor(166, 227, 161)))
             self.list.addItem(ok)
-        self.status_lbl.setText(tr("validation.status", e=errors, w=warnings))
+        label = getattr(self._window, "validation_label", None)
+        if label is not None:
+            label.setText(tr("validation.status", e=errors, w=warnings))
 
     def _on_activate(self, item):
         target = item.data(Qt.UserRole)

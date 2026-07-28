@@ -139,6 +139,12 @@ class _ProjectMixin:
             "difficulty": asdict(self.diff_setup),
             "variables": [asdict(v) for v in self.variables],
             "map": self.map_name,
+            # Erzeugte Karten reproduzierbar halten: Seed und Regler mitschreiben.
+            # Keep generated maps reproducible: store seed and sliders.
+            "mapgen": getattr(self, "mapgen_params", None),
+            "spawn_points": getattr(self, "spawn_points", []),
+            "volcano_points": getattr(self, "volcano_points", []),
+            "lava_fields": getattr(self, "lava_fields", []),
             "players": [asdict(p) for p in self.players],
             "objects": [o.to_dict() for o in self.objects],
             "building_groups": [asdict(g) for g in self.building_groups],
@@ -151,11 +157,40 @@ class _ProjectMixin:
             "node_positions": self.node_positions,
         }
 
+    def _custom_map_name(self) -> str:
+        """Dateiname fuer eine im Editor bearbeitete Karte.
+
+        Bewusst ein eigener Name -- die Originalkarte im Spielordner bleibt
+        unangetastet, und die Mission laedt genau ihre eigene Fassung.
+
+        File name for a map edited in the editor -- deliberately its own name
+        so the original in the game folder stays untouched."""
+        stem = mission_project._slugify(self.mission_name) or "mission"
+        return f"{stem}.map"[:60]
+
+    def _ensure_custom_map_name(self):
+        """Bearbeitete Karte auf einen eigenen Dateinamen umstellen.
+
+        Switch an edited map to its own file name."""
+        if getattr(self, "map_edited", False) and self.map_name != self._custom_map_name():
+            self.map_name = self._custom_map_name()
+
     def _mission_write_kwargs(self) -> dict:
         """Argumente fuer mission_project.write_mission_folder() (ohne LevelMain)."""
+        self._ensure_custom_map_name()
         map_source = None
         if self.map_name:
             map_source = self.res._index.get(self.map_name.lower())
+            if map_source is None:
+                # Eigene (bearbeitete) Karte: liegt nicht im Spielordner,
+                # sondern beim bisherigen Missionsordner -- wichtig fuer
+                # "Speichern unter".
+                # Custom (edited) map: not in the game folder but next to the
+                # previous mission -- matters for "save as".
+                for folder in (self.mission_folder, getattr(self, "_map_search_folder", None)):
+                    if folder and (Path(folder) / self.map_name).is_file():
+                        map_source = Path(folder) / self.map_name
+                        break
         return dict(
             mission_name=self.mission_name,
             map_name=self.map_name,
@@ -173,6 +208,13 @@ class _ProjectMixin:
             mission_project.write_mission_folder(
                 folder, level_main_cpp=cpp, **self._mission_write_kwargs()
             )
+            # Bearbeitete Karte NACH write_mission_folder schreiben -- dort
+            # wuerde sonst die (nicht gefundene) Originalkarte kopiert.
+            # Write the edited map AFTER write_mission_folder -- otherwise the
+            # original copy step would overwrite it.
+            edited = self.terrain_map_bytes()
+            if edited is not None:
+                (folder / self.map_name).write_bytes(edited)
         except Exception as e:
             QMessageBox.critical(self, tr("window.save_failed_title"), str(e))
             return False
@@ -229,6 +271,11 @@ class _ProjectMixin:
             QMessageBox.critical(self, tr("window.open_failed_title"), "mission.op2proj nicht gefunden")
             return
         path = str(proj_path)
+        # Der Missionsordner ist die erste Kartenquelle -- eine im Editor
+        # bearbeitete Karte liegt dort und nicht im Spielordner.
+        # The mission folder is the first place to look for the map -- a map
+        # edited in the editor lives there, not in the game folder.
+        self._map_search_folder = proj_path.parent
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
         except Exception as e:
@@ -280,7 +327,14 @@ class _ProjectMixin:
                 except Exception:
                     continue
         self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}")
+        self.mapgen_params = data.get("mapgen") or None
+        self.spawn_points = [list(p) for p in data.get("spawn_points", [])]
+        self.volcano_points = [list(p) for p in data.get("volcano_points", [])]
+        self.lava_fields = [list(p) for p in data.get("lava_fields", [])]
         self.load_map(data.get("map", self.map_name))
+        self._draw_spawn_points()
+        self._draw_volcano_points()
+        self._draw_lava_fields()
         self._clear_undo()
         used_uids = {d.get("uid") for d in data.get("objects", []) if d.get("uid")}
         for od in data.get("objects", []):
@@ -339,6 +393,7 @@ class _ProjectMixin:
             self.mission_folder = None
         self.trigger_panel.load()
         self.groups_panel.load()
+        self.conditions_panel.load()
         self._redraw_planned_actions()
         self._refresh_overview()
         self.statusBar().showMessage(

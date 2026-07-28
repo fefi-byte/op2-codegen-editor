@@ -884,6 +884,34 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
         lines.append(f"{indent}}}")
         return lines
 
+    if k in ("addVictory", "addDefeat"):
+        # Zur Laufzeit eine neue Sieg-/Niederlage-Bedingung registrieren --
+        # derselbe Baukasten (_emit_condition/_trigger_call) wie in InitProc,
+        # abgesichert ueber ein g_save-Flag (auch unter wiederholenden
+        # Triggern wird die Bedingung nur EINMAL hinzugefuegt und ueberlebt
+        # Save/Load, weil die Engine Trigger selbst persistiert).
+        # Register a new victory/defeat condition at runtime -- same builder
+        # (_emit_condition/_trigger_call) as in InitProc, guarded by a g_save
+        # flag (even under repeating triggers the condition is added only
+        # ONCE and survives save/load because the engine persists triggers
+        # itself).
+        from codegen_triggers import _emit_condition  # spaeter Import: zyklische Modulabhaengigkeit
+        spec = dict(getattr(action, "condition_spec", None) or {})
+        spec.setdefault("kind", "time")
+        try:
+            cond = Condition(**spec)
+        except TypeError:
+            return [f"{indent}// TODO {k}: invalid condition_spec {spec!r}"]
+        inner = _emit_condition(cond, k == "addVictory", ctx.get("mission"), ctx)
+        done_var = ctx.get("addcond_action_vars", {}).get(id(action))
+        if not done_var:
+            return [f"{indent}{line.lstrip()}" for line in inner]
+        lines = [f"{indent}if (!{done_var}) {{",
+                 f"{indent}    {done_var} = true;"]
+        lines += [f"{indent}    {line.lstrip()}" for line in inner]
+        lines.append(f"{indent}}}")
+        return lines
+
     return [f"{indent}// TODO unsupported action kind: {k}"]
 
 

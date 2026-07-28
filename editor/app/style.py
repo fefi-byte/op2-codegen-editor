@@ -210,6 +210,26 @@ QPushButton[role="primary"]:hover {{
 QPushButton[role="primary"]:pressed {{
     background-color: #2e4d40;
 }}
+/* Bereichsumschalter der Seitenleiste (Raster statt Tab-Leiste) */
+QPushButton[role="navtab"] {{
+    background-color: {BASE};
+    color: {OVERLAY};
+    border: 1px solid {BORDER};
+    border-radius: 3px;
+    padding: 5px 6px;
+    font-size: 9pt;
+}}
+QPushButton[role="navtab"]:hover:!checked {{
+    color: {SUBTEXT};
+    background-color: {SURFACE0};
+}}
+QPushButton[role="navtab"]:checked {{
+    background-color: {SURFACE0};
+    color: {TEXT};
+    border: 1px solid {BORDER};
+    border-top: 2px solid {BLUE};
+    font-weight: bold;
+}}
 QPushButton[role="danger"] {{
     background-color: #3a1e28;
     color: {RED};

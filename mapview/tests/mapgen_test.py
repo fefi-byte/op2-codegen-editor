@@ -1,0 +1,492 @@
+"""Pruefungen fuer den Kartengenerator.
+
+Aufruf:  python mapview/tests/mapgen_test.py
+Exit 0 = alles gruen.
+
+Checks for the map generator: determinism, mix, symmetry, spawn quality and
+that the result is a valid .map file.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import numpy as np
+
+HERE = Path(__file__).resolve().parent
+MAPVIEW = HERE.parent
+sys.path.insert(0, str(MAPVIEW))
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+import celltypes  # noqa: E402
+import mapgen  # noqa: E402
+from op2map import Op2Map  # noqa: E402
+
+GAME = Path(r"C:\Program Files (x86)\GOG Galaxy\Games\Outpost 2")
+_failures: list[str] = []
+
+
+def check(name: str, ok, info: str = "") -> bool:
+    ok = bool(ok)
+    print(("OK  " if ok else "FAIL") + f"  {name}" + (f"  {info}" if info else ""))
+    if not ok:
+        _failures.append(name)
+    return ok
+
+
+def check_determinism():
+    a = mapgen.generate(mapgen.MapGenParams(width=64, height=64, seed=42))
+    b = mapgen.generate(mapgen.MapGenParams(width=64, height=64, seed=42))
+    c = mapgen.generate(mapgen.MapGenParams(width=64, height=64, seed=43))
+    check("gleicher Seed -> gleiche Karte", np.array_equal(a.tiles, b.tiles))
+    check("anderer Seed -> andere Karte", not np.array_equal(a.tiles, c.tiles))
+    check("Zelltypen passen zu den Kacheln",
+          all(int(a.cells[y, x]) == celltypes.default_cell_type(int(a.tiles[y, x]))
+              for y in range(0, 64, 7) for x in range(0, 64, 7)))
+
+
+def check_mix():
+    for tpl in ("canyon", "desert"):
+        params = mapgen.MapGenParams.from_template(tpl, width=128, height=128, seed=5)
+        gen = mapgen.generate(params)
+        total = sum(params.mix.values())
+        worst = 0.0
+        for family, want in params.mix.items():
+            got = gen.family_share.get(family, 0.0)
+            worst = max(worst, abs(got - want / total))
+        check(f"Mischung '{tpl}' trifft die Vorgabe (±15 %)", worst < 0.15,
+              f"groesste Abweichung {100*worst:.0f} %")
+
+
+def check_symmetry():
+    for mode in (mapgen.SYM_MIRROR_X, mapgen.SYM_ROT180, mapgen.SYM_QUAD):
+        params = mapgen.MapGenParams(width=128, height=128, seed=9,
+                                     symmetry=mode, spawns=4)
+        gen = mapgen.generate(params)
+        h, w = gen.tiles.shape
+        # Gespiegelt wird die Lage der Gelaendefamilien, nicht die Kachelgrafik.
+        fam = mapgen.model().family_of[gen.tiles]
+        if mode == mapgen.SYM_MIRROR_X:
+            other = fam[:, ::-1]
+        elif mode == mapgen.SYM_ROT180:
+            other = fam[::-1, ::-1]
+        else:
+            other = fam[:, ::-1]
+        agree = float((fam == other).mean())
+        check(f"Symmetrie '{mode}': Gelaendelage spiegelt sich", agree > 0.60,
+              f"{100*agree:.0f} % Uebereinstimmung")
+
+        spawns = gen.spawns
+        if check(f"Symmetrie '{mode}': Startpunkte erzeugt", len(spawns) >= 2,
+                 f"{len(spawns)}"):
+            xs = [p[0] for p in spawns]
+            ys = [p[1] for p in spawns]
+            if mode == mapgen.SYM_MIRROR_X:
+                mirrored = {(w - 1 - x, y) for x, y in spawns}
+            elif mode == mapgen.SYM_ROT180:
+                mirrored = {(w - 1 - x, h - 1 - y) for x, y in spawns}
+            else:
+                mirrored = {(w - 1 - x, y) for x, y in spawns}
+            check(f"Symmetrie '{mode}': Startpunkte liegen paarweise",
+                  len(mirrored & set(spawns)) >= 2,
+                  f"{len(mirrored & set(spawns))} Partner")
+
+
+def check_spawns():
+    params = mapgen.MapGenParams(width=128, height=128, seed=11, spawns=4,
+                                 spawn_clearance=6)
+    gen = mapgen.generate(params)
+    if not check("vier Startpunkte gefunden", len(gen.spawns) == 4, str(len(gen.spawns))):
+        return
+    check("Startpunkte sind verbunden", gen.connected)
+    ok_free = True
+    for x, y in gen.spawns:
+        block = gen.cells[y - 6:y + 7, x - 6:x + 7]
+        classes = {celltypes.speed_class(int(c)) for c in np.unique(block)}
+        ok_free = ok_free and classes <= mapgen.PASSABLE_CLASSES
+    check("Startpunkte stehen auf freier Flaeche", ok_free)
+    dists = [min((ax - bx) ** 2 + (ay - by) ** 2
+                 for j, (bx, by) in enumerate(gen.spawns) if j != i)
+             for i, (ax, ay) in enumerate(gen.spawns)]
+    check("Startpunkte liegen auseinander (>20 Kacheln)", min(dists) > 400,
+          f"kuerzester Abstand {min(dists) ** 0.5:.0f}")
+
+
+def check_no_scatter():
+    """Bauteile (Vulkan/Lava/Klippen/Brandspuren) duerfen nicht gestreut werden."""
+    tm = mapgen.model()
+    gen = mapgen.generate(mapgen.MapGenParams(width=128, height=128, seed=17))
+    streu = int(tm.structure[gen.tiles].sum())
+    check("ohne Vulkane liegen keine Bauteil-Kacheln herum", streu == 0, f"{streu} Kacheln")
+    check("keine Lavakacheln im Gelaende", int(tm.lava[gen.tiles].sum()) == 0)
+
+
+def check_volcanoes():
+    """Vulkane sind Stempel; Lava kommt zur Laufzeit ueber lavaPossible."""
+    tm = mapgen.model()
+    params = mapgen.MapGenParams(width=128, height=128, seed=23, volcanoes=2,
+                                 lava_zone_tiles=300)
+    gen = mapgen.generate(params)
+    if not check("zwei Vulkane gesetzt", len(gen.volcanoes) == 2, str(len(gen.volcanoes))):
+        return
+    check("je Vulkan eine lavaPossible-Zone", len(gen.lava_zones) == 2)
+    groessen = [len(z) for z in gen.lava_zones]
+    check("Zonen haben eine sinnvolle Groesse (>150 Kacheln)", min(groessen) > 150,
+          str(groessen))
+    # Der Vulkankrater muss wirklich im Gelaende stehen
+    treffer = 0
+    for vx, vy in gen.volcanoes:
+        block = gen.tiles[max(0, vy - 4):vy + 5, max(0, vx - 4):vx + 5]
+        if tm.structure[block].any():
+            treffer += 1
+    check("Vulkanstempel liegen im Gelaende", treffer == len(gen.volcanoes))
+    # Zone liegt um den Vulkan herum
+    for (vx, vy), zone in zip(gen.volcanoes, gen.lava_zones):
+        dists = [max(abs(x - vx), abs(y - vy)) for x, y in zone]
+        check("lavaPossible-Zone umschliesst den Vulkan", min(dists) <= 2,
+              f"naechste Kachel {min(dists)} entfernt")
+        break
+    gestreut = int(tm.structure[gen.tiles].sum())
+    stempel = sum(w * h for _, w, h, _ in tm.volcanoes if (w, h) == (10, 10))
+    check("ausser den Vulkanen keine Bauteile gestreut", gestreut <= 2 * 100 + 20,
+          f"{gestreut} Bauteil-Kacheln")
+
+
+def check_cliffs():
+    """Hochflaechen: richtige Zelltypen, Rampen vorhanden, alles erreichbar."""
+    params = mapgen.MapGenParams.from_template("plains", width=128, height=128,
+                                               seed=5, cliffs=0.25, spawns=2)
+    gen = mapgen.generate(params)
+    check("Klippen entstehen aus der Form", gen.plateau_share > 0.01,
+          f"{100*gen.plateau_share:.1f} % der Flaeche")
+    check("Klippen bedecken einen sinnvollen Anteil", 0.005 < gen.plateau_share < 0.25,
+          f"{100*gen.plateau_share:.1f} % der Flaeche")
+    klippen = np.isin(gen.cells, [celltypes.NORTH_CLIFFS,
+                                  celltypes.CLIFFS_HIGH_SIDE,
+                                  celltypes.CLIFFS_LOW_SIDE])
+    check("Klippenzellen gesetzt", klippen.sum() > 100, f"{int(klippen.sum())} Zellen")
+    check("Startpunkte trotz Klippen verbunden", gen.connected)
+
+    # Erreichbarkeit: der Grossteil des befahrbaren Gelaendes muss von einem
+    # Startpunkt aus erreichbar sein -- sonst sperren die Klippen die Karte ab.
+    mask = np.zeros(gen.cells.shape, dtype=bool)
+    for cell in range(32):
+        if celltypes.speed_class(cell) in mapgen.PASSABLE_CLASSES:
+            mask |= gen.cells == cell
+    if gen.spawns:
+        h, w = mask.shape
+        seen = np.zeros_like(mask)
+        stack = [tuple(gen.spawns[0])]
+        seen[gen.spawns[0][1], gen.spawns[0][0]] = True
+        while stack:
+            x, y = stack.pop()
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < w and 0 <= ny < h and mask[ny, nx] and not seen[ny, nx]:
+                    seen[ny, nx] = True
+                    stack.append((nx, ny))
+        anteil = seen.sum() / max(1, mask.sum())
+        check("Klippen sperren die Karte nicht ab (>85 % erreichbar)", anteil > 0.85,
+              f"{100*anteil:.0f} %")
+
+    ohne = mapgen.generate(mapgen.MapGenParams(width=128, height=128, seed=5, cliffs=0.0))
+    ohne_klippen = np.isin(ohne.cells, [celltypes.NORTH_CLIFFS,
+                                        celltypes.CLIFFS_HIGH_SIDE,
+                                        celltypes.CLIFFS_LOW_SIDE])
+    check("ohne Regler keine Klippen", int(ohne_klippen.sum()) == 0,
+          f"{int(ohne_klippen.sum())} Zellen")
+
+    a = mapgen.generate(params)
+    check("Klippen sind reproduzierbar", np.array_equal(a.tiles, gen.tiles))
+    # Formationen duerfen keinen rechteckigen Fleck Fremduntergrund mitbringen
+    tm = mapgen.model()
+    fremd = 0
+    for cx, cy in gen.mesas:
+        block = gen.cells[max(0, cy - 8):cy + 9, max(0, cx - 8):cx + 9]
+        fremd += int(np.isin(block, [celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
+                                     celltypes.CLIFFS_LOW_SIDE]).sum() == 0)
+    check("jede Formation bringt Klippenzellen mit", fremd == 0, f"{fremd} ohne Klippen")
+
+    # Zuordnung: die Klippe muss zur Familie ihres Untergrunds passen -- sonst
+    # steht eine Erd-Mesa im Sand und schleppt fremden Boden mit.
+    # Assignment: the cliff must match the family of its ground, otherwise a
+    # dirt mesa stands in sand dragging foreign ground along.
+    from collections import Counter
+    for tpl in ("desert", "plains"):
+        gen2 = mapgen.generate(mapgen.MapGenParams.from_template(
+            tpl, width=128, height=128, seed=5, cliffs=0.30))
+        passt = gesamt = 0
+        for cx, cy in gen2.mesas:
+            block = gen2.tiles[max(0, cy - 7):cy + 8, max(0, cx - 7):cx + 8]
+            zellen = gen2.cells[max(0, cy - 7):cy + 8, max(0, cx - 7):cx + 8]
+            ist_klippe = np.isin(zellen, [celltypes.NORTH_CLIFFS,
+                                          celltypes.CLIFFS_HIGH_SIDE,
+                                          celltypes.CLIFFS_LOW_SIDE])
+            fam_klippe = [f for f in tm.family_of[block[ist_klippe]] if f >= 0]
+            fam_boden = [f for f in tm.family_of[block[~ist_klippe]] if f >= 0]
+            if not fam_klippe or not fam_boden:
+                continue
+            gesamt += 1
+            if (Counter(fam_klippe).most_common(1)[0][0]
+                    == Counter(fam_boden).most_common(1)[0][0]):
+                passt += 1
+        if gesamt:
+            check(f"'{tpl}': Klippenfamilie passt zum Untergrund",
+                  passt / gesamt >= 0.8, f"{passt}/{gesamt}")
+
+
+def check_min_biome():
+    """Mindestgroesse: kleine Biomflecken muessen verschwinden."""
+    def kleine_flaechen(gen, grenze):
+        fam = mapgen.model().family_of[gen.tiles]
+        h, w = fam.shape
+        besucht = np.zeros(fam.shape, dtype=bool)
+        klein = 0
+        for sy in range(h):
+            for sx in range(w):
+                if besucht[sy, sx]:
+                    continue
+                f = int(fam[sy, sx])
+                stack = [(sx, sy)]
+                besucht[sy, sx] = True
+                n = 0
+                while stack:
+                    x, y = stack.pop()
+                    n += 1
+                    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        nx, ny = x + dx, y + dy
+                        if (0 <= nx < w and 0 <= ny < h and int(fam[ny, nx]) == f
+                                and not besucht[ny, nx]):
+                            besucht[ny, nx] = True
+                            stack.append((nx, ny))
+                if 1 < n < grenze:
+                    klein += 1
+        return klein
+
+    grenze = int(0.006 * 128 * 128)
+    ohne = mapgen.generate(mapgen.MapGenParams.from_template(
+        "plains", width=128, height=128, seed=5, min_biome=0.0))
+    mit = mapgen.generate(mapgen.MapGenParams.from_template(
+        "plains", width=128, height=128, seed=5, min_biome=0.006))
+    a, b = kleine_flaechen(ohne, grenze), kleine_flaechen(mit, grenze)
+    check("Mindestgroesse loest kleine Biomflecken auf", b < a, f"{a} -> {b}")
+    check("Mischung bleibt trotzdem grob erhalten",
+          all(abs(mit.family_share.get(k, 0) - v) < 0.08
+              for k, v in ohne.family_share.items()),
+          str({k: round(100 * v) for k, v in sorted(mit.family_share.items())}))
+
+
+def check_details():
+    """Streugut: Dichte folgt dem Regler, Familie passt, nichts vereinzelt."""
+    tm = mapgen.model()
+    detail_kacheln = set()
+    for tiles, _ in tm.details:
+        detail_kacheln.update(int(t) for t in np.unique(tiles))
+
+    werte = []
+    for regler in (0.0, 0.25, 0.5, 1.0):
+        gen = mapgen.generate(mapgen.MapGenParams(
+            width=128, height=128, seed=21, details=regler, cliffs=0.4))
+        werte.append(gen.detail_share)
+    check("Regler 0 streut nichts", werte[0] == 0.0, f"{100*werte[0]:.2f} %")
+    check("Regler 0.5 trifft die Originaldichte (rund 3 %)",
+           0.02 <= werte[2] <= 0.04, f"{100*werte[2]:.2f} %")
+    check("Dichte steigt mit dem Regler",
+           werte[0] < werte[1] < werte[2] < werte[3],
+           ", ".join(f"{100*w:.1f} %" for w in werte))
+
+    # Steht das Streugut im richtigen Biom? Ein Sandkrater im Fels waere falsch.
+    # Is the scatter in the right biome? A sand crater in rock would be wrong.
+    gen = mapgen.generate(mapgen.MapGenParams(
+        width=128, height=128, seed=5, details=1.0, mix={"san": 1.0}))
+    fam = tm.family_of[gen.tiles]
+    ist_detail = np.isin(gen.tiles, list(detail_kacheln))
+    fremd = 0
+    if ist_detail.any():
+        san = tm.families.index("san")
+        fremd = int((fam[ist_detail] != san).sum())
+    check("Streugut in der Sandkarte ist Sand-Streugut",
+           fremd == 0, f"{fremd} fremde Kacheln")
+
+    # Streugut liegt als Gruppe, nicht als Einzelkachel im Nichts. Gemessen
+    # wird gegen den Regler-0-Lauf: einzelne Detailkacheln kann auch der
+    # Nachbarschafts-Sampler erzeugen, die Streuung darf keine hinzufuegen.
+    # Scatter sits as a group, not as a single tile. Measured against the
+    # slider-0 run: the adjacency sampler can produce single detail tiles by
+    # itself; the scatter must not add any.
+    def einzelkacheln(tiles):
+        maske = np.isin(tiles, list(detail_kacheln))
+        h, w = maske.shape
+        n = 0
+        for y in range(1, h - 1):
+            for x in range(1, w - 1):
+                if maske[y, x] and maske[y - 1:y + 2, x - 1:x + 2].sum() == 1:
+                    n += 1
+        return n
+
+    ohne = mapgen.generate(mapgen.MapGenParams(
+        width=128, height=128, seed=5, details=0.0, mix={"san": 1.0}))
+    davor, danach = einzelkacheln(ohne.tiles), einzelkacheln(gen.tiles)
+    check("Streuung erzeugt keine vereinzelten Kacheln",
+          danach <= davor, f"{davor} -> {danach}")
+    check("keine 1x1-Stempel im Streugut",
+          all(t.size > 1 for t, _ in tm.details), f"{len(tm.details)} Stempel")
+
+
+def check_features():
+    """Gelaendemerkmale: kommt an, was bestellt wurde?"""
+    F = mapgen.Feature
+    tm = mapgen.model()
+    check("Vorrat: grosse Massive gelernt", len(tm.massifs) >= 25, f"{len(tm.massifs)}")
+    check("Vorrat: Taeler gelernt", len(tm.valleys) >= 12, f"{len(tm.valleys)}")
+
+    # Kein Stempel darf fremdes Biom mitbringen. Ohne diese Pruefung stand ein
+    # weisser Schneebalken mitten in der Wueste -- ein Talstempel aus einer
+    # Eiskarte, der als "mud" gefuehrt wurde.
+    # No stamp may drag a foreign biome along. Without this check a white snow
+    # bar stood in the middle of the desert -- a valley stamp from an ice map
+    # that was labelled "mud".
+    unrein = []
+    for bez, pool in (("Tal", [(t, f) for t, f, _, _ in tm.valleys]),
+                      ("Massiv", tm.massifs)):
+        for i, (tiles, fam) in enumerate(pool):
+            if fam not in tm.families:
+                continue
+            koerper = mapgen._sperr_maske(tiles)
+            for _ in range(4):
+                gewachsen = koerper.copy()
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        gewachsen |= np.roll(np.roll(koerper, dy, 0), dx, 1)
+                koerper = gewachsen
+            fams = tm.family_of[tiles[koerper]]
+            klass = fams[(fams >= 0) & (fams < len(tm.families))]
+            if len(klass) and float((klass == tm.families.index(fam)).mean()) < 0.85:
+                unrein.append(f"{bez}{i}")
+    check("kein Merkmal-Stempel bringt fremdes Biom mit", not unrein,
+          f"{len(unrein)} unrein: {unrein[:4]}")
+
+    basis = dict(width=128, height=128, seed=9, cliffs=0.15, details=0.3)
+    for kind in mapgen.FEATURE_KINDS:
+        feat = F(kind, where="c", to="o" if kind in ("tal", "enge") else "",
+                 size=0.6)
+        gen = mapgen.generate(mapgen.MapGenParams(features=[feat], **basis))
+        check(f"Merkmal '{kind}' wird gesetzt", gen.features.get(kind, 0) > 0,
+              f"{gen.features.get(kind, 0)}")
+
+    # Lage: das Merkmal muss dort landen, wo es bestellt wurde.
+    # Position: the feature has to end up where it was ordered.
+    KL = [celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
+          celltypes.CLIFFS_LOW_SIDE]
+    for sektor, (fx, fy) in (("nw", (0.25, 0.25)), ("so", (0.75, 0.75))):
+        gen = mapgen.generate(mapgen.MapGenParams(
+            width=128, height=128, seed=4, cliffs=0.0, details=0.0,
+            features=[F("berg", where=sektor, size=0.8)]))
+        klippen = np.isin(gen.cells, KL)
+        if not klippen.any():
+            check(f"Berg im Sektor '{sektor}'", False, "keine Klippen")
+            continue
+        ys, xs = np.nonzero(klippen)
+        dx = abs(xs.mean() / 128 - fx)
+        dy = abs(ys.mean() / 128 - fy)
+        check(f"Berg landet im Sektor '{sektor}'", dx < 0.22 and dy < 0.22,
+              f"Schwerpunkt {xs.mean()/128:.2f}/{ys.mean()/128:.2f}")
+
+    # Freiflaeche: dort darf nichts stehen, sonst taugt sie nicht als Bauplatz.
+    # Clearing: nothing may stand there or it is useless as a building site.
+    gen = mapgen.generate(mapgen.MapGenParams(
+        width=128, height=128, seed=7, cliffs=0.35, details=1.0,
+        features=[F("frei", where="c", size=0.8)]))
+    # Lage vom Generator erfragen statt zu raten: der Sektor wird verwackelt,
+    # sonst prueft der Test eine andere Flaeche als die freigehaltene.
+    # Ask the generator for the position instead of guessing: the sector is
+    # jittered, otherwise the test checks a different area than the clear one.
+    kind, cx, cy, r = gen.feature_spots[0]
+    ys, xs = np.ogrid[:128, :128]
+    kreis = ((xs - cx) ** 2 + (ys - cy) ** 2) <= r * r
+    stoerung = int(np.isin(gen.cells, KL)[kreis].sum())
+    check("Freiflaeche bleibt frei von Klippen", stoerung == 0, f"{stoerung} Zellen")
+
+    # Tal mit Lava: nur das Feld, nie gemalte Lavakacheln.
+    # Valley with lava: only the field, never painted lava tiles.
+    gen = mapgen.generate(mapgen.MapGenParams(
+        width=128, height=128, seed=9, cliffs=0.1,
+        features=[F("tal", where="w", to="o", size=0.6, lava=True)]))
+    check("Tal mit Lava meldet ein lavaPossible-Feld",
+          sum(len(z) for z in gen.lava_zones) > 0,
+          f"{sum(len(z) for z in gen.lava_zones)} Felder")
+    check("keine Lavakacheln gemalt", not tm.lava[gen.tiles].any(),
+          f"{int(tm.lava[gen.tiles].sum())} Kacheln")
+    # Die Sohle muss begehbar sein, sonst ist es kein Tal, sondern eine Wand.
+    # The floor has to be walkable, otherwise it is a wall, not a valley.
+    zone = gen.lava_zones[0] if gen.lava_zones else []
+    begehbar = sum(1 for x, y in zone
+                   if celltypes.speed_class(int(gen.cells[y, x])) in
+                   ("fast", "medium", "slow"))
+    check("Talsohle ist begehbar", zone and begehbar / len(zone) > 0.8,
+          f"{100*begehbar/max(1,len(zone)):.0f} %")
+
+    # Merkmale duerfen Symmetrie und Reproduzierbarkeit nicht brechen.
+    # Features must not break symmetry or reproducibility.
+    feats = [F("tal", where="w", to="o", size=0.5), F("berg", where="n", size=0.6)]
+    a = mapgen.generate(mapgen.MapGenParams(width=128, height=128, seed=5,
+                                            features=feats))
+    b = mapgen.generate(mapgen.MapGenParams(width=128, height=128, seed=5,
+                                            features=feats))
+    check("mit Merkmalen weiterhin reproduzierbar", bool((a.tiles == b.tiles).all()))
+    sym = mapgen.generate(mapgen.MapGenParams(
+        width=128, height=128, seed=5, symmetry=mapgen.SYM_MIRROR_X,
+        spawns=4, features=[F("berg", where="nw", size=0.6)]))
+    t = sym.tiles
+    check("Symmetrie haelt trotz Merkmal",
+          bool((t[:, 64:] == t[:, :64][:, ::-1]).all()))
+    check("Startpunkte trotz Merkmalen verbunden", sym.connected)
+
+
+def check_writes_map():
+    src = next(GAME.rglob("cm02.map"), None)
+    if not check("Vorlagenkarte gefunden", src is not None):
+        return
+    gen = mapgen.generate(mapgen.MapGenParams(width=64, height=64, seed=3))
+    m = mapgen.apply_to_map(Op2Map(src.read_bytes()), gen)
+    data = m.to_bytes()
+    again = Op2Map(data)
+    check("erzeugte Karte ist wieder lesbar",
+          again.width == 64 and again.height == 64, f"{again.width}x{again.height}")
+    check("erzeugte Karte schreibt sich stabil", again.to_bytes() == data)
+    check("Kacheln kamen richtig an",
+          all(again.tile_mapping_index(x, y) == int(gen.tiles[y, x])
+              for y in range(0, 64, 9) for x in range(0, 64, 9)))
+    check("Tilesets der Vorlage uebernommen", len(again.tileset_sources) > 0)
+    check("TileGroups der Vorlage uebernommen", len(again.tile_groups) > 100,
+          f"{len(again.tile_groups)}")
+    check("Gelaende ist ueberwiegend befahrbar", gen.passable_share > 0.5,
+          f"{100*gen.passable_share:.0f} %")
+
+
+def main() -> int:
+    if not mapgen.MODEL_PATH.exists():
+        print("tiles_model.npz fehlt -> zuerst 'python mapview/learn_tiles.py'")
+        return 1
+    check_determinism()
+    check_mix()
+    check_symmetry()
+    check_spawns()
+    check_no_scatter()
+    check_volcanoes()
+    check_cliffs()
+    check_min_biome()
+    check_details()
+    check_features()
+    check_writes_map()
+    print("\n" + ("Alle Pruefungen gruen." if not _failures
+                  else f"{len(_failures)} Pruefung(en) rot: {_failures}"))
+    return 0 if not _failures else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

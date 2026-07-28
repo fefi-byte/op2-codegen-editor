@@ -10,15 +10,27 @@ from .build_worker import BuildWorker
 from .cpp_highlight import CppHighlighter
 from . import mission_project
 from .dialogs.output_dialog import OutputDialog
-from .dialogs.conditions import ConditionsDialog
 from .dialogs.players import PlayersDialog
 from .dialogs.setup import MissionSetupDialog
 
 
 class _BuildMixin:
+    def _read_map_bytes(self, name: str) -> bytes:
+        """Karte laden -- bearbeitete Karten liegen im Missionsordner, alle
+        anderen im Spielordner.
+
+        Load a map -- edited maps live in the mission folder, all others in
+        the game folder."""
+        for folder in (getattr(self, "_map_search_folder", None), self.mission_folder):
+            if folder:
+                cand = Path(folder) / name
+                if cand.is_file():
+                    return cand.read_bytes()
+        return self.res.read_file(name)
+
     def load_map(self, name):
         try:
-            self.map = Op2Map(self.res.read_file(name))
+            self.map = Op2Map(self._read_map_bytes(name))
             arr = np.ascontiguousarray(render_array(self.map, self.res))
             qimg = QImage(arr.data, arr.shape[1], arr.shape[0], arr.shape[1] * 3, QImage.Format_RGB888)
             pix = QPixmap.fromImage(qimg.copy())
@@ -45,10 +57,15 @@ class _BuildMixin:
         self._lava_paint_set: set = set()
         self._lava_brush_size = 3
         self._lava_brush_cursor_item = None
-        self.scene.addPixmap(pix)
+        # Handle merken: der Gelaende-Editor zeichnet einzelne Kacheln direkt
+        # in dieses Pixmap nach, statt die ganze Karte neu zu rendern.
+        # Keep the handle: the terrain editor repaints individual tiles into
+        # this pixmap instead of re-rendering the whole map.
+        self._map_pixmap = pix
+        self._map_item = self.scene.addPixmap(pix)
         self.scene.setSceneRect(QRectF(pix.rect()))
-        self.view.resetTransform()
-        self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
+        self._reset_terrain_state()
+        self.view.zoom_fit()
         self.statusBar().showMessage(tr("window.status_map_loaded", name=name, w=self.map.width, h=self.map.height))
         self._refresh_overview()
 
@@ -128,18 +145,23 @@ class _BuildMixin:
         self._pending_action_index = -1
 
     def edit_conditions(self):
-        dlg = ConditionsDialog(self, self.victories, self.defeats)
-        if dlg.exec() == QDialog.Accepted:
-            self.victories = dlg.victories
-            self.defeats = dlg.defeats
-            self._refresh_overview()
-            self.statusBar().showMessage(
-                tr("window.status_conditions", w=len(self.victories), l=len(self.defeats)))
+        # Sieg & Niederlage ist jetzt ein Seitenpanel (Tab 4) statt eines
+        # modalen Dialogs -- noetig fuer das Karten-Picking von point/rect.
+        # Victory & defeat is a side panel (tab 4) now instead of a modal
+        # dialog -- required for map picking of point/rect.
+        self.conditions_panel.load()
+        self._sidebar_tabs.setCurrentWidget(self.conditions_panel)
 
     def edit_groups(self):
         self._sidebar_tabs.setCurrentIndex(2)
 
     def build_mission(self) -> Mission:
+        # Bearbeitetes Gelaende bekommt einen eigenen Kartennamen -- muss VOR
+        # der Codeerzeugung feststehen, sonst verweist die DLL auf die
+        # Originalkarte.
+        # Edited terrain gets its own map name -- must be settled BEFORE code
+        # generation, otherwise the DLL points at the original map.
+        self._ensure_custom_map_name()
         units, beacons, walls = [], [], []
         for o in self.objects:
             if o.kind in ("structure", "vehicle"):
@@ -162,6 +184,7 @@ class _BuildMixin:
                 walls.append(WallTubeSpec(o.map_id, x=o.tile_x, y=o.tile_y))
         return Mission(
             name=self.mission_name, map=self.map_name,
+            lava_fields=[list(t) for t in getattr(self, "lava_fields", [])],
             type=self.mission_type, tech_tree=self.tech_tree,
             num_players=len(self.players),
             # World-/Wraparound-Karten sind 512 Tiles breit; dort gilt der

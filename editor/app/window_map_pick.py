@@ -81,12 +81,17 @@ class _MapPickMixin:
         self.scene.addItem(self._rect_pick_item)
 
     def _rect_drag_start(self, tx, ty):
+        if getattr(self, "_terrain_active", False):
+            self._terrain_stamp(tx, ty)
+            return
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
             self._lava_stamp(tx, ty, add=True)
             self._lava_update_brush_cursor(tx, ty)
             return
-        if self._action_pick and self._action_pick["kind"] == "action_field" \
-                and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)):
+        if (self._action_pick and self._action_pick["kind"] == "action_field"
+                and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS))) \
+                or (self._action_pick and self._action_pick["kind"] == "cond_field"
+                    and self._action_pick.get("field") == "rect"):
             tx, ty = self._clamp_tile(tx, ty)
             self._action_pick_start = (tx, ty)
             x, y, w, h = self._rect_from_tiles(tx, ty, tx, ty)
@@ -113,15 +118,21 @@ class _MapPickMixin:
         self._update_rect_overlay(x, y, w, h)
 
     def _rect_drag_move(self, tx, ty):
+        if getattr(self, "_terrain_active", False):
+            self._terrain_stamp(tx, ty)
+            self._update_terrain_preview(tx, ty)
+            return
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
             self._lava_stamp(tx, ty, add=True)
             self._lava_update_brush_cursor(tx, ty)
             self.coord_label.setText(
                 tr("window.lava_brush_coord", x=tx, y=ty, s=self._lava_brush_size))
             return
-        if self._action_pick and self._action_pick["kind"] == "action_field" \
-                and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)) \
-                and self._action_pick_start is not None:
+        if self._action_pick and self._action_pick_start is not None \
+                and ((self._action_pick["kind"] == "action_field"
+                      and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)))
+                     or (self._action_pick["kind"] == "cond_field"
+                         and self._action_pick.get("field") == "rect")):
             sx, sy = self._action_pick_start
             x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
             self._update_rect_overlay(x, y, w, h)
@@ -153,8 +164,32 @@ class _MapPickMixin:
         self.coord_label.setText(f"SetRect: {x}, {y}, {w}x{h}")
 
     def _rect_drag_finish(self, tx, ty):
+        # Im Gelaendemodus ist das Loslassen bedeutungslos -- Start und
+        # Ziehen haben bereits gestempelt. Ohne diese Zeile faellt das
+        # Ereignis unten in die Rect-Pick-Aufraeumung, die
+        # `rect_select_enabled` abschaltet: dann liesse sich nach dem ersten
+        # Strich nicht mehr malen, bis man den Tab neu oeffnet.
+        # In terrain mode the release means nothing -- press and drag already
+        # stamped. Without this the event falls through to the rect-pick
+        # cleanup below, which switches `rect_select_enabled` off: painting
+        # would die after the first stroke until the tab is reopened.
+        if getattr(self, "_terrain_active", False):
+            return
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
             self._lava_stamp(tx, ty, add=True)
+            return
+        if self._action_pick and self._action_pick["kind"] == "cond_field" \
+                and self._action_pick.get("field") == "rect":
+            if self._action_pick_start is None:
+                self._end_action_pick()
+                return
+            sx, sy = self._action_pick_start
+            x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
+            cond = self._action_pick["cond"]
+            cond.x, cond.y = x, y
+            cond.width, cond.height = w, h
+            self.statusBar().showMessage(f"Bereich gesetzt: ({x},{y}) {w}x{h}")
+            self._end_action_pick()
             return
         if self._action_pick and self._action_pick["kind"] == "action_field" \
                 and self._action_pick.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS)):
@@ -253,8 +288,16 @@ class _MapPickMixin:
         self._action_preview_items = []
 
     def _begin_lava_paint(self, request):
+        # Ziel ist entweder die lava_zone einer Aktion oder -- bei
+        # {"target": "mission"} -- das Lavafeld der Karte selbst.
+        # The target is either an action's lava_zone or, with
+        # {"target": "mission"}, the map's own lava field.
         self._action_pick = request
-        self._lava_paint_set = {(xy[0], xy[1]) for xy in (request["action"].lava_zone or [])}
+        if request.get("target") == "mission":
+            quelle = getattr(self, "lava_fields", [])
+        else:
+            quelle = request["action"].lava_zone or []
+        self._lava_paint_set = {(xy[0], xy[1]) for xy in quelle}
         self._lava_paint_items = []
         if not hasattr(self, "_lava_brush_size"):
             self._lava_brush_size = 3
@@ -267,16 +310,25 @@ class _MapPickMixin:
             tr("window.lava_paint_hint", size=self._lava_brush_size))
 
     def _end_lava_paint(self):
-        action = self._action_pick["action"]
-        action.lava_zone = [list(xy) for xy in sorted(self._lava_paint_set)]
-        action_index = self._action_pick.get("action_index", -1)
+        request = self._action_pick
+        mission_ziel = request.get("target") == "mission"
+        tiles = [list(xy) for xy in sorted(self._lava_paint_set)]
+        if mission_ziel:
+            self.lava_fields = tiles
+        else:
+            request["action"].lava_zone = tiles
+        action_index = request.get("action_index", -1)
         self.view.rect_select_enabled = False
         self.view.lava_paint_enabled = False
         self.view.setCursor(Qt.ArrowCursor)
         self._clear_lava_brush_cursor()
         self._clear_lava_paint_items()
         self._action_pick = None
-        self.trigger_panel.refresh_actions(expand_index=action_index)
+        if mission_ziel:
+            self._draw_lava_fields()
+            self.statusBar().showMessage(tr("window.status_lava_fields", n=len(tiles)))
+        else:
+            self.trigger_panel.refresh_actions(expand_index=action_index)
         self._redraw_planned_actions()
 
     def _lava_brush_tiles(self, tx, ty):
@@ -315,6 +367,11 @@ class _MapPickMixin:
             self._redraw_lava_paint_tiles()
 
     def _lava_brush_step(self, delta):
+        # Strg+Rad bedient beide Malmodi -- im Gelaendemodus die Stempelgroesse.
+        # Ctrl+wheel serves both paint modes -- the stamp size in terrain mode.
+        if getattr(self, "_terrain_active", False):
+            self._terrain_brush_step(delta)
+            return
         if not (self._action_pick and self._action_pick.get("kind") == "lava_paint"):
             return
         self._lava_brush_size = max(1, min(9, self._lava_brush_size + delta))
@@ -350,7 +407,11 @@ class _MapPickMixin:
             self._lava_brush_cursor_item = None
 
     def _save_lava_zone(self):
-        self._action_pick["action"].lava_zone = [list(xy) for xy in sorted(self._lava_paint_set)]
+        tiles = [list(xy) for xy in sorted(self._lava_paint_set)]
+        if self._action_pick.get("target") == "mission":
+            self.lava_fields = tiles
+        else:
+            self._action_pick["action"].lava_zone = tiles
 
     def _clear_lava_paint_items(self):
         for item in self._lava_paint_items:
@@ -387,6 +448,7 @@ class _MapPickMixin:
             request["kind"] in ("recordTube", "recordWall")
             or (request["kind"] == "action_field"
                 and request.get("field") in ({"rect", "repair_zone"} | set(_RECT_PICK_FIELDS) | _LINE_PICK_FIELDS))
+            or (request["kind"] == "cond_field" and request.get("field") == "rect")
         ):
             self.view.rect_select_enabled = True
         self.view.setCursor(Qt.CrossCursor)
@@ -395,6 +457,10 @@ class _MapPickMixin:
             "assignToGroup": tr("window.pick_assign_group"),
             "recordTube": tr("window.pick_record_tube"),
             "recordWall": tr("window.pick_record_wall"),
+            "cond_field": {
+                "point": tr("window.pick_cond_point"),
+                "rect": tr("window.pick_cond_rect"),
+            }.get(request.get("field"), tr("window.pick_cond_point")),
             "action_field": {
                 "primary": "Klick: Position (X, Y) der Aktion setzen",
                 "secondary": "Klick: zweite Position (X2, Y2) der Aktion setzen",
@@ -413,6 +479,7 @@ class _MapPickMixin:
         self.statusBar().showMessage(tr("window.status_pick_hint", label=label))
 
     def _end_action_pick(self, reopen=True):
+        was_cond = self._action_pick is not None and self._action_pick.get("kind") == "cond_field"
         action_index = self._action_pick.get("action_index", -1) if self._action_pick else -1
         self.view.rect_select_enabled = False
         self.view.setCursor(Qt.ArrowCursor)
@@ -420,7 +487,10 @@ class _MapPickMixin:
         self._action_pick_start = None
         self._clear_action_preview()
         if reopen:
-            self.trigger_panel.refresh_actions(expand_index=action_index)
+            if was_cond:
+                self.conditions_panel.reload_current()
+            else:
+                self.trigger_panel.refresh_actions(expand_index=action_index)
 
     def _draw_action_building_preview(self, tx, ty):
         self._clear_action_preview()

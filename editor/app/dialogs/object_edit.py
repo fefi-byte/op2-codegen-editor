@@ -26,16 +26,26 @@ class ObjectEditDialog(QDialog):
 
         self.cargo_combo = None
         self.cargo_amount = None
+        self._cargo_form = None
         if obj.map_id == "mapCargoTruck":
+            self._cargo_form = form
             self.cargo_combo = QComboBox()
-            fill_combo(self.cargo_combo, TRUCK_CARGO, "truck_cargo")
-            current_cargo = TRUCK_CARGO_BY_ID.get(obj.params.get("truck_cargo"), "Leer")
-            self.cargo_combo.setCurrentIndex(self.cargo_combo.findData(current_cargo))
+            for label, value in truck_cargo_items():
+                self.cargo_combo.addItem(label, value)
+            raw_cargo = obj.params.get("truck_cargo", "truckEmpty")
+            raw_amount = obj.params.get("truck_amount", 0)
+            current = (f"{raw_cargo}:{raw_amount}"
+                       if raw_cargo in TRUCK_CARGO_SUBTYPED_CODES and isinstance(raw_amount, str)
+                       else raw_cargo)
+            index = self.cargo_combo.findData(current)
+            self.cargo_combo.setCurrentIndex(index if index >= 0 else self.cargo_combo.findData("truckEmpty"))
+            self.cargo_combo.currentIndexChanged.connect(self._update_cargo_amount_visibility)
             self.cargo_amount = QSpinBox()
             self.cargo_amount.setRange(0, 5000)
-            self.cargo_amount.setValue(obj.params.get("truck_amount", 0))
+            self.cargo_amount.setValue(raw_amount if isinstance(raw_amount, int) else 0)
             form.addRow(tr("object_edit.cargo"), self.cargo_combo)
             form.addRow(tr("object_edit.amount"), self.cargo_amount)
+            self._update_cargo_amount_visibility()
 
         self.kit_combo = None
         if obj.map_id == "mapConVec":
@@ -57,12 +67,23 @@ class ObjectEditDialog(QDialog):
         lay.addLayout(form)
         lay.addWidget(btns)
 
+    def _update_cargo_amount_visibility(self):
+        """Menge-Feld nur bei quantifizierter Ladung zeigen (nicht bei Spaceport/Schrott-Teilen)."""
+        code = (self.cargo_combo.currentData() or "").split(":", 1)[0]
+        self._cargo_form.setRowVisible(self.cargo_amount, code in QUANTIFIED_TRUCK_CARGO_CODES)
+
     def apply_to(self, obj: PlacedObject):
         obj.unit_name = self.unit_name_edit.text().strip()
         obj.player = self.player_spin.value()
         if self.cargo_combo is not None and self.cargo_amount is not None:
-            obj.params["truck_cargo"] = TRUCK_CARGO[self.cargo_combo.currentData()]
-            obj.params["truck_amount"] = self.cargo_amount.value()
+            raw_cargo = self.cargo_combo.currentData() or "truckEmpty"
+            if ":" in raw_cargo:
+                truck_cargo, part = raw_cargo.split(":", 1)
+                obj.params["truck_cargo"] = truck_cargo
+                obj.params["truck_amount"] = part
+            else:
+                obj.params["truck_cargo"] = raw_cargo
+                obj.params["truck_amount"] = self.cargo_amount.value()
         if self.kit_combo is not None:
             obj.params["convec_kit"] = self.kit_combo.currentData()
 

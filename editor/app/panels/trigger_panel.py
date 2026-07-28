@@ -95,6 +95,13 @@ class TriggerPanel(QWidget):
         sidx = self.source_unit_type.findData("mapScout")
         if sidx >= 0:
             self.source_unit_type.setCurrentIndex(sidx)
+        # vehicleCargo/escape: Fahrzeugtyp + (nach Typ gefilterte) Ladung.
+        # vehicleCargo/escape: vehicle type + (type-filtered) cargo.
+        self.unit_type = QComboBox()
+        for d, m in VEHICLE_UNITS:
+            self.unit_type.addItem(d, m)
+        self.unit_type.currentIndexChanged.connect(self._update_cargo_options)
+        self.cargo = QComboBox()
 
         self.form = QFormLayout()
         self.form.addRow(tr("triggers.lbl_name"), self.name)
@@ -110,6 +117,7 @@ class TriggerPanel(QWidget):
             "x": self.x, "y": self.y, "width": self.width, "height": self.height,
             "trigger_group": self.trigger_group, "damage_type": self.damage_type,
             "target_unit": self.target_unit, "source_unit_type": self.source_unit_type,
+            "unit_type": self.unit_type, "cargo": self.cargo,
         }
         clabels = {
             "player": tr("triggers.lbl_player"), "marks": tr("triggers.lbl_marks"),
@@ -122,6 +130,7 @@ class TriggerPanel(QWidget):
             "damage_type": tr("triggers.lbl_damage_type"),
             "target_unit": tr("triggers.lbl_target_unit"),
             "source_unit_type": tr("triggers.lbl_source_unit_type"),
+            "unit_type": tr("triggers.lbl_unit_type"), "cargo": tr("triggers.lbl_cargo"),
         }
         for key, w in self._cond_rows.items():
             self.form.addRow(clabels[key], w)
@@ -132,7 +141,7 @@ class TriggerPanel(QWidget):
         self.folder.editingFinished.connect(self._refresh_list)
         for w in (self.cond, self.compare, self.resource, self.building,
                   self.trigger_group, self.damage_type, self.target_unit,
-                  self.source_unit_type):
+                  self.source_unit_type, self.unit_type, self.cargo):
             w.currentIndexChanged.connect(self._store_current)
         for w in (self.player, self.count, self.tech_id, self.amount,
                   self.x, self.y, self.width, self.height):
@@ -179,14 +188,48 @@ class TriggerPanel(QWidget):
         # Condition and actions as separate tabs instead of stacked sections --
         # this gives whichever view is active (especially the action list)
         # much more vertical space.
-        detail_tabs = QTabWidget()
-        detail_tabs.addTab(cond_section, tr("triggers.lbl_section_condition"))
-        detail_tabs.addTab(act_widget, tr("triggers.lbl_section_actions"))
+        # Bedingung als einklappbare Kopfzeile ueber der Aktionsliste statt als
+        # zweite Tab-Ebene: die Aktionen sind der Hauptinhalt und sofort
+        # sichtbar, die Bedingung steht als Zusammenfassung darueber.
+        # Condition as a collapsible header above the action list instead of a
+        # second tab level: the actions are the main content and visible right
+        # away, with the condition summarised above them.
+        self.cond_toggle = QPushButton()
+        self.cond_toggle.setCheckable(True)
+        self.cond_toggle.setChecked(False)
+        self.cond_toggle.toggled.connect(self._toggle_condition)
+        cond_section.setVisible(False)
+        self._cond_section = cond_section
+
+        act_title = QLabel(tr("triggers.lbl_section_actions"))
+        act_title.setProperty("role", "section")
+
+        # Hinweis statt einer Wand ausgegrauter Felder, solange kein Trigger
+        # gewaehlt ist. Gehoert NICHT in die einklappbare Bedingungssektion --
+        # dort waere er im Leerzustand selbst unsichtbar.
+        # A hint instead of a wall of greyed-out fields while no trigger is
+        # selected. It must NOT live inside the collapsible condition section
+        # -- there it would itself be invisible in the empty state.
+        self.empty_hint = QLabel(tr("triggers.no_selection"))
+        self.empty_hint.setWordWrap(True)
+        self.empty_hint.setProperty("secondary", "true")
+        self.empty_hint.setContentsMargins(4, 6, 4, 6)
+
+        detail = QWidget()
+        d_lay = QVBoxLayout(detail)
+        d_lay.setContentsMargins(0, 0, 0, 0)
+        d_lay.setSpacing(2)
+        d_lay.addWidget(self.empty_hint)
+        d_lay.addWidget(self.cond_toggle)
+        d_lay.addWidget(cond_section)
+        d_lay.addWidget(act_title)
+        d_lay.addWidget(act_widget, 1)
 
         splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(left)
-        splitter.addWidget(detail_tabs)
+        splitter.addWidget(detail)
         splitter.setSizes([150, 450])
+        self._update_cond_header()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(4, 4, 4, 4)
@@ -323,6 +366,41 @@ class TriggerPanel(QWidget):
             self.cond
         ]:
             w.setEnabled(on)
+        # Ohne Auswahl gar nicht erst anzeigen: 18 leere Felder sagen nichts,
+        # ein Satz schon.
+        # Without a selection don't show them at all: 18 empty fields say
+        # nothing, one sentence does.
+        for w in (self.name, self.folder, self.comment, self.at_start,
+                  self.one_shot, self.cond):
+            self.form.setRowVisible(w, on)
+        self.empty_hint.setVisible(not on)
+        if on:
+            self._update_cond_fields()
+        else:
+            for w in self._cond_rows.values():
+                self.form.setRowVisible(w, False)
+            self.unit_checks_container.setVisible(False)
+            # Aktionsliste leeren -- der Hinweis oben erklaert den Zustand.
+            # Clear the action list -- the hint above explains the state.
+            self.act_scroll.setWidget(QWidget())
+        self._update_cond_header()
+
+    def _toggle_condition(self, on):
+        self._cond_section.setVisible(bool(on))
+        self._update_cond_header()
+
+    def _update_cond_header(self):
+        """Kopfzeile der Bedingung: Pfeil + Zusammenfassung des Triggers.
+
+        Condition header: arrow + summary of the current trigger."""
+        arrow = "▾" if self.cond_toggle.isChecked() else "▸"
+        title = tr("triggers.lbl_section_condition")
+        if 0 <= self._idx < len(self._window.triggers):
+            self.cond_toggle.setText(f"{arrow}  {title}:  {self.cond.currentText()}")
+            self.cond_toggle.setEnabled(True)
+        else:
+            self.cond_toggle.setText(f"{arrow}  {title}")
+            self.cond_toggle.setEnabled(False)
 
     def _refresh_list(self):
         triggers = self._window.triggers
@@ -483,6 +561,13 @@ class TriggerPanel(QWidget):
         sidx = self.source_unit_type.findData(getattr(t, "source_unit_type", "mapScout") or "mapScout")
         if sidx >= 0:
             self.source_unit_type.setCurrentIndex(sidx)
+        utidx = self.unit_type.findData(getattr(t, "unit_type", "mapCargoTruck") or "mapCargoTruck")
+        if utidx >= 0:
+            self.unit_type.setCurrentIndex(utidx)
+        self._update_cargo_options()
+        cidx = self.cargo.findData(getattr(t, "cargo", "mapAny") or "mapAny")
+        if cidx >= 0:
+            self.cargo.setCurrentIndex(cidx)
         if self.unit_checks_widget is not None:
             self.unit_checks_layout.removeWidget(self.unit_checks_widget)
             self.unit_checks_widget.deleteLater()
@@ -491,6 +576,7 @@ class TriggerPanel(QWidget):
         self.unit_checks_layout.addWidget(self.unit_checks_widget)
         self._loading = False
         self._update_cond_fields()
+        self._update_cond_header()
         self._window.clear_action_area_preview()
         self.act_scroll.setWidget(ActionListWidget(t.actions, self._action_ctx()))
 
@@ -521,10 +607,20 @@ class TriggerPanel(QWidget):
         t.damage_type = DAMAGE_TYPES.get(self.damage_type.currentData(), 3)
         t.target_unit = self.target_unit.currentData() or ""
         t.source_unit_type = self.source_unit_type.currentData() or "mapScout"
+        t.unit_type = self.unit_type.currentData() or "mapCargoTruck"
+        t.cargo = self.cargo.currentData() or "mapAny"
         item = self.tlist.currentItem()
         if item and item.data(0, Qt.UserRole) is not None:
             item.setText(0, trigger_summary(t))
+        self._update_cond_header()
         self._window._refresh_overview()
+
+    def _update_cargo_options(self):
+        """Ladung-Auswahl auf den gewaehlten Fahrzeugtyp zuschneiden (vehicleCargo/escape)."""
+        self.cargo.clear()
+        for label, value in condition_cargo_items(self.unit_type.currentData()):
+            self.cargo.addItem(label, value)
+        self.cargo.setEnabled(self.cargo.count() > 1)
 
     def _update_cond_fields(self):
         fields = TRIGGER_CONDITIONS[self.cond.currentData()][1]

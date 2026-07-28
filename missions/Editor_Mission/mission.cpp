@@ -72,6 +72,8 @@ struct MissionSave {
     UnitEx _unit_veh;
     UnitEx _unit_Smelter1;
     UnitEx _unit_spider;
+    UnitEx _unit_space;
+    UnitEx _unit_test;
     UnitEx _unit_Mine1;
 };
 static MissionSave g_save;
@@ -88,6 +90,8 @@ static UnitEx& _unit_struck = g_save._unit_struck;
 static UnitEx& _unit_veh = g_save._unit_veh;
 static UnitEx& _unit_Smelter1 = g_save._unit_Smelter1;
 static UnitEx& _unit_spider = g_save._unit_spider;
+static UnitEx& _unit_space = g_save._unit_space;
+static UnitEx& _unit_test = g_save._unit_test;
 static UnitEx& _unit_Mine1 = g_save._unit_Mine1;
 
 static UnitEx _boot_0;
@@ -99,12 +103,24 @@ Export void NoResponseToTrigger() {}
 static void _trigger_0_Disaster();
 static void _trigger_1_base_rep();
 static void _trigger_2_buildings();
-static void _trigger_3_Trigger5();
+static void _trigger_3_Mining_start();
+static void _trigger_4_empRocket();
+static void _trigger_5_giv_player();
 
 ExportLevelDetailsFull("Editor Mission", "cm02.map", "MULTITEK.TXT", Colony, 2, 12, 0)
 Export const AIModDescEx DescBlockEx = { 0 };
 
+// Vor-Spielstart-Briefing (briefing_dialog.cpp + briefing.rc):
+// modaler Dialog waehrend der Missions-Initialisierung.
+// Pre-game briefing (briefing_dialog.cpp + briefing.rc):
+// modal dialog during mission initialization.
+extern void ShowBriefing();
+extern void* g_briefing_hinst;
+
 static void initProc() {
+    // Briefing VOR dem Spielstart anzeigen (blockiert bis CONTINUE).
+    // Show the briefing BEFORE game start (blocks until CONTINUE).
+    ShowBriefing();
     op2::log::line("InitProc: starting");
     if (HFLInit() != HFLLOADED) {
         op2::log::line("InitProc: HFLInit FAILED");
@@ -163,6 +179,14 @@ static void initProc() {
         TethysGame::CreateUnit(_u, mapRareOreSmelter, MkXY(29, 15), 1, mapNone, 0);
         TethysGame::CreateUnit(_boot_2, mapArachnidFactory, MkXY(39, 5), 1, mapNone, 0);
         TethysGame::CreateUnit(_u, mapMHDGenerator, MkXY(47, 6), 1, mapNone, 0);
+        TethysGame::CreateUnit(_unit_space, mapSpaceport, MkXY(28, 20), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapCommandCenter, MkXY(85, 11), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapAgridome, MkXY(81, 11), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapResidence, MkXY(81, 14), 1, mapNone, 0);
+        TethysGame::CreateUnit(_unit_test, mapStructureFactory, MkXY(85, 14), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapTokamak, MkXY(90, 8), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapUniversity, MkXY(81, 8), 1, mapNone, 0);
+        TethysGame::CreateUnit(_u, mapNursery, MkXY(84, 8), 1, mapNone, 0);
         TethysGame::CreateUnit(_u, mapCargoTruck, MkXY(46, 9), 1, mapNone, East);
         TethysGame::CreateUnit(_u, mapCargoTruck, MkXY(47, 9), 1, mapNone, East);
         TethysGame::CreateUnit(_boot_0, mapConVec, MkXY(42, 10), 1, mapNone, East);
@@ -224,6 +248,22 @@ static void initProc() {
         _grp_0_BuildingGroup1.RecordBuilding(_l, mapArachnidFactory, mapNone);
         _l = MkXY(47, 6);
         _grp_0_BuildingGroup1.RecordBuilding(_l, mapMHDGenerator, mapNone);
+        _l = MkXY(28, 20);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapSpaceport, mapNone);
+        _l = MkXY(85, 11);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapCommandCenter, mapNone);
+        _l = MkXY(81, 11);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapAgridome, mapNone);
+        _l = MkXY(81, 14);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapResidence, mapNone);
+        _l = MkXY(85, 14);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapStructureFactory, mapNone);
+        _l = MkXY(90, 8);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapTokamak, mapNone);
+        _l = MkXY(81, 8);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapUniversity, mapNone);
+        _l = MkXY(84, 8);
+        _grp_0_BuildingGroup1.RecordBuilding(_l, mapNursery, mapNone);
     }
     op2::log::linef("InitProc: BuildingGroup 'BuildingGroup1' -> %d Einheiten", _grp_0_BuildingGroup1.TotalUnitCount());
     _grp_1_RebuildMines = CreateBuildingGroup(Player[1]);
@@ -246,18 +286,20 @@ static void initProc() {
     AddGameMessage("Created with the OP2 Mission Editor.");
 
     // --- Victory conditions ---
-    Trigger _v_16580 = CreateCountTrigger(1, 1, 0, mapEvacuationModule, mapAny, 1, cmpGreaterEqual, "NoResponseToTrigger");
-    CreateVictoryCondition(1, 0, _v_16580, "Complete the mission.");
+    Trigger _v_55737 = CreateCountTrigger(1, 1, 0, mapEvacuationModule, mapAny, 1, cmpGreaterEqual, "NoResponseToTrigger");
+    CreateVictoryCondition(1, 0, _v_55737, "Complete the mission.");
 
     // --- Defeat conditions ---
-    Trigger _v_22266 = CreateResourceTrigger(1, 1, resCommonOre, 10000, 0, cmpGreaterEqual, "NoResponseToTrigger");
-    CreateFailureCondition(1, 0, _v_22266, "");
+    Trigger _v_32269 = CreateResourceTrigger(1, 1, resCommonOre, 10000, 0, cmpGreaterEqual, "NoResponseToTrigger");
+    CreateFailureCondition(1, 0, _v_32269, "");
 
     // --- Custom triggers (enabled at start) ---
     _trigger_0_Disaster();
     _trigger_1_base_rep();
     _trigger_2_buildings();
-    _trigger_3_Trigger5();
+    _trigger_3_Mining_start();
+    _trigger_4_empRocket();
+    _trigger_5_giv_player();
 
     TethysGame::ForceMoraleGood(PlayerNum::PlayerAll);
     op2::log::line("InitProc: done");
@@ -440,8 +482,8 @@ static void _trigger_2_buildings() {
     CreateTimeTrigger(1, 1, (1) * kTicksPerMark, "_trigger_2_buildings_cb");
 }
 
-// Trigger 'Trigger5' (condition=time)
-Export void _trigger_3_Trigger5_cb() {
+// Trigger 'Mining start' (condition=time)
+Export void _trigger_3_Mining_start_cb() {
     {
         LOCATION _l;
         _l = MkXY(49, 16);
@@ -452,8 +494,38 @@ Export void _trigger_3_Trigger5_cb() {
     _grp_1_RebuildMines.SetTargCount(mapRoboMiner, mapNone, 1);
     _grp_2_ReinforceGroup1.RecordVehReinforceGroup(_grp_1_RebuildMines, 1000);
 }
-static void _trigger_3_Trigger5() {
-    CreateTimeTrigger(1, 1, (5) * kTicksPerMark, "_trigger_3_Trigger5_cb");
+static void _trigger_3_Mining_start() {
+    CreateTimeTrigger(1, 1, (5) * kTicksPerMark, "_trigger_3_Mining_start_cb");
+}
+
+// Trigger 'empRocket' (condition=time)
+Export void _trigger_4_empRocket_cb() {
+}
+static void _trigger_4_empRocket() {
+    CreateTimeTrigger(1, 1, (3) * kTicksPerMark, "_trigger_4_empRocket_cb");
+}
+
+// Trigger 'giv player' (condition=time)
+Export void _trigger_5_giv_player_cb() {
+    {
+        for (int _bt1 = (int)mapCommonOreMine; _bt1 <= (int)mapTokamak; ++_bt1) {
+            PlayerBuildingEnum _e1b(1, (map_id)_bt1);
+            UnitEx unit;
+            while (_e1b.GetNext(unit)) {
+                MAP_RECT _fr1 = MkRect(78, 5, 92, 17);
+                LOCATION _l1 = unit.Location();
+                if (!(_fr1.Check(_l1))) continue;
+                if (true) {
+                    unit.DoTransfer(0);
+                    AddGameMessage("ping");
+                }
+            }
+        }
+    }
+    TethysGameEx::MsgBox(NULL, "Dialog", "dialog top", MB_OK | MB_ICONINFORMATION);
+}
+static void _trigger_5_giv_player() {
+    CreateTimeTrigger(1, 1, (5) * kTicksPerMark, "_trigger_5_giv_player_cb");
 }
 
 Export void _repairGroups_cb() {
@@ -506,14 +578,46 @@ Export void _repairGroups_cb() {
         }
     }
     {
-        PlayerBuildingEnum _e(1, mapCommonOreMine);
+        PlayerBuildingEnum _e(1, mapSpaceport);
         UnitEx _u;
-        LOCATION _a = MkXY(49, 16);
+        LOCATION _a = MkXY(28, 20);
         static int _seen_anchor_3 = 0;
         while (_e.GetNext(_u)) {
             if (!(_u.Location() == _a)) continue;
             if (!isCompleted(_u)) { _seen_anchor_3 = 0; break; }
             if (_seen_anchor_3 != _u.unitID) { _seen_anchor_3 = _u.unitID; break; }
+            if (_unit_space.unitID != _u.unitID) {
+                _unit_space = _u;
+                op2::log::linef("Anker [space] -> Einheit %d gebunden", _u.unitID);
+            }
+            break;
+        }
+    }
+    {
+        PlayerBuildingEnum _e(1, mapStructureFactory);
+        UnitEx _u;
+        LOCATION _a = MkXY(85, 14);
+        static int _seen_anchor_4 = 0;
+        while (_e.GetNext(_u)) {
+            if (!(_u.Location() == _a)) continue;
+            if (!isCompleted(_u)) { _seen_anchor_4 = 0; break; }
+            if (_seen_anchor_4 != _u.unitID) { _seen_anchor_4 = _u.unitID; break; }
+            if (_unit_test.unitID != _u.unitID) {
+                _unit_test = _u;
+                op2::log::linef("Anker [test] -> Einheit %d gebunden", _u.unitID);
+            }
+            break;
+        }
+    }
+    {
+        PlayerBuildingEnum _e(1, mapCommonOreMine);
+        UnitEx _u;
+        LOCATION _a = MkXY(49, 16);
+        static int _seen_anchor_5 = 0;
+        while (_e.GetNext(_u)) {
+            if (!(_u.Location() == _a)) continue;
+            if (!isCompleted(_u)) { _seen_anchor_5 = 0; break; }
+            if (_seen_anchor_5 != _u.unitID) { _seen_anchor_5 = _u.unitID; break; }
             if (_unit_Mine1.unitID != _u.unitID) {
                 _unit_Mine1 = _u;
                 op2::log::linef("Anker [Mine1] -> Einheit %d gebunden", _u.unitID);
@@ -700,8 +804,9 @@ Export void AIProc()  { op2::crash::guard("AIProc",   &aiProc); }
 // Trigger-Stubs, armed-Flags).
 ExportSaveLoadData(g_save)
 
-extern "C" int __stdcall DllMain(void*, unsigned long reason, void*) {
+extern "C" int __stdcall DllMain(void* inst, unsigned long reason, void*) {
     if (reason == 1 /* DLL_PROCESS_ATTACH */) {
+        g_briefing_hinst = inst;
         op2::crash::installHandler();
         op2::log::setTickSource([] { return TethysGame::Tick(); });
     }

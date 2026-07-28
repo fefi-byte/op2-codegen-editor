@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from . import i18n
+
 # Footprints from building.txt (X-size, Y-size).
 # map_ids match the classic Outpost2DLL map_id enum member names ("mapXxx").
 
@@ -121,6 +123,42 @@ SPACEPORT_PRODUCTS = [
     ("Evacuation Module",      "mapEvacuationModule"),
     ("Children Module",        "mapChildrenModule"),
 ]
+# Cargo-Truck-Subtyp bei Ladung Raumschiffteil/Schrott (Truck_Cargo
+# truckSpaceport/truckGarbage): die "Menge" ist dort keine Stueckzahl, sondern
+# waehlt (wie in Unit.SetTruckCargo/UnitEx.GetCargoAmount gepackt: cargoType |
+# (subtype << 4)) genau dieses Teil aus. Andere Teilemenge als bei
+# SPACEPORT_PRODUCTS (dort fehlen die drei Cargo-Pseudo-Einheiten, dafuer sind
+# SULV/RLV/EMP Missile drin, die ein Truck nie transportiert).
+#
+# Cargo Truck subtype for Spaceport/Garbage cargo (Truck_Cargo
+# truckSpaceport/truckGarbage): the "amount" there is not a quantity but
+# (packed as in Unit.SetTruckCargo/UnitEx.GetCargoAmount: cargoType |
+# (subtype << 4)) selects exactly this part. Different set of parts than
+# SPACEPORT_PRODUCTS (which lacks the three cargo pseudo-units but includes
+# SULV/RLV/EMP Missile, which a truck never carries).
+TRUCK_SPACESHIP_PARTS = [
+    ("EDWARD Satellite",       "mapEDWARDSatellite"),
+    ("Solar Power Satellite",  "mapSolarSatellite"),
+    ("Ion Drive Module",       "mapIonDriveModule"),
+    ("Fusion Drive Module",    "mapFusionDriveModule"),
+    ("Command Module",        "mapCommandModule"),
+    ("Fueling Systems",       "mapFuelingSystems"),
+    ("Habitat Ring",          "mapHabitatRing"),
+    ("Sensor Package",        "mapSensorPackage"),
+    ("Skydock",               "mapSkydock"),
+    ("Stasis Systems",        "mapStasisSystems"),
+    ("Orbital Package",       "mapOrbitalPackage"),
+    ("Phoenix Module",        "mapPhoenixModule"),
+    ("Rare Metals Cargo",     "mapRareMetalsCargo"),
+    ("Common Metals Cargo",   "mapCommonMetalsCargo"),
+    ("Food Cargo",            "mapFoodCargo"),
+    ("Evacuation Module",     "mapEvacuationModule"),
+    ("Children Module",       "mapChildrenModule"),
+]
+# Truck_Cargo-Codes, deren "Menge" ein Teil-Subtyp ist (siehe oben) statt einer
+# Stueckzahl.
+TRUCK_CARGO_SUBTYPED_CODES = {"truckSpaceport", "truckGarbage"}
+
 MILITARY_VEHICLES = [
     (d, m) for d, m, _ in VEHICLES
     if m in ("mapLynx", "mapPanther", "mapTiger", "mapSpider", "mapScorpion")
@@ -167,16 +205,86 @@ WEAPONS = [
     ("BFG",           "mapBFG"),
 ]
 
-# Truck cargo: display name -> internal cargo code
-TRUCK_CARGO = {
-    "Common Ore":   "truckCommonOre",
-    "Rare Ore":     "truckRareOre",
-    "Food":         "truckFood",
-    "Common Metal": "truckCommonMetal",
-    "Rare Metal":   "truckRareMetal",
-    "Empty":        "truckEmpty",
-}
-TRUCK_CARGO_BY_ID = {value: label for label, value in TRUCK_CARGO.items()}
+# Truck_Cargo-Codes mit einer echten Stueckzahl (amount = Menge). Spaceport/
+# Garbage sind bewusst ausgeschlossen -- dort ist amount ein Teil-Subtyp
+# (siehe truck_cargo_items() unten).
+# Truck_Cargo codes with a real quantity (amount = quantity). Spaceport/
+# Garbage are deliberately excluded -- there amount is a part subtype
+# (see truck_cargo_items() below).
+QUANTIFIED_TRUCK_CARGO_CODES = [
+    "truckCommonOre", "truckRareOre", "truckFood",
+    "truckCommonMetal", "truckRareMetal",
+    "truckCommonRubble", "truckRareRubble",
+]
+
+
+def truck_cargo_items() -> list[tuple[str, str]]:
+    """(Anzeigename, Wert)-Paare fuer die Cargo-Truck-Ladung beim Platzieren.
+
+    Menge-Frachten kommen zuerst; Spaceport/Schrott folgen als "code:teil"
+    (siehe TRUCK_SPACESHIP_PARTS), Leer am Ende.
+
+    (Display name, value) pairs for the Cargo Truck cargo dropdown when
+    placing a unit. Quantified cargos first; Spaceport/Garbage follow as
+    "code:part" (see TRUCK_SPACESHIP_PARTS), Empty last.
+    """
+    tr = i18n.tr
+    items = [(tr(f"truck_cargo.{code}"), code) for code in QUANTIFIED_TRUCK_CARGO_CODES]
+    for base_code in ("truckSpaceport", "truckGarbage"):
+        base_label = tr(f"truck_cargo.{base_code}")
+        for part_label, part_id in TRUCK_SPACESHIP_PARTS:
+            items.append((f"{base_label}: {part_label}", f"{base_code}:{part_id}"))
+    items.append((tr("truck_cargo.truckEmpty"), "truckEmpty"))
+    return items
+
+# "Fahrzeug mit Ladung"-Bedingung (Sieg&Niederlage-Panel): welche Ladungsoptionen je
+# nach gewaehltem Fahrzeugtyp angezeigt werden -- ConVec traegt Gebaeude-
+# Bausaetze (map_id wie beim Bau-Kit), Cargo Trucks tragen Frachtgueter
+# (Truck_Cargo, cast auf map_id im Codegen), die drei Kampffahrzeuge tragen
+# Waffen (map_id), alle anderen Fahrzeuge haben keine sinnvolle Ladung.
+#
+# "Vehicle with cargo" condition (victory&defeat panel): which cargo options are
+# shown depending on the selected vehicle type -- ConVecs carry building kits
+# (map_id, like the construction kit), Cargo Trucks carry freight
+# (Truck_Cargo, cast to map_id in codegen), the three combat vehicles carry
+# weapons (map_id), every other vehicle has no meaningful cargo.
+CARGO_CONDITION_TRUCK_CODES = [
+    "truckCommonOre", "truckRareOre", "truckFood",
+    "truckCommonRubble", "truckRareRubble",
+    "truckSpaceport", "truckGarbage", "truckEmpty",
+]
+CARGO_CONDITION_WEAPON_VEHICLES = {"mapLynx", "mapPanther", "mapTiger"}
+
+
+def condition_cargo_items(unit_type: str) -> list[tuple[str, str]]:
+    """(Anzeigename, Wert)-Paare fuer das Ladung-Dropdown der Kinds
+    vehicleCargo/escape (Sieg&Niederlage-Panel UND TriggerPanel teilen sich das),
+    gefiltert nach Fahrzeugtyp: ConVec -> Gebaeude-Bausaetze, Cargo Truck ->
+    Frachtgueter (inkl. Spaceport/Schrott-Teile), Lynx/Panther/Tiger ->
+    Waffen, sonst nur "Keine" (mapNone).
+    """
+    tr = i18n.tr
+    items: list[tuple[str, str]] = []
+    if unit_type == "mapConVec":
+        items.append((tr("truck_cargo.mapAny"), "mapAny"))
+        items.append((tr("truck_cargo.mapNone"), "mapNone"))
+        items += [(disp, mid) for disp, mid, _ in STRUCTURES]
+    elif unit_type == "mapCargoTruck":
+        items.append((tr("truck_cargo.mapAny"), "mapAny"))
+        for code in CARGO_CONDITION_TRUCK_CODES:
+            items.append((tr(f"truck_cargo.{code}"), code))
+            if code in TRUCK_CARGO_SUBTYPED_CODES:
+                base_label = tr(f"truck_cargo.{code}")
+                for part_label, part_id in TRUCK_SPACESHIP_PARTS:
+                    items.append((f"{base_label}: {part_label}", f"{code}:{part_id}"))
+    elif unit_type in CARGO_CONDITION_WEAPON_VEHICLES:
+        items.append((tr("truck_cargo.mapAny"), "mapAny"))
+        items += list(WEAPONS)
+    else:
+        items.append((tr("truck_cargo.mapNone"), "mapNone"))
+    return items
+
+
 ORE_TYPES = {"Random": -1, "Common": 0, "Rare": 1}
 YIELDS = {"Random": -1, "Bar3 (high)": 0, "Bar2 (medium)": 1, "Bar1 (low)": 2}
 
@@ -187,10 +295,22 @@ CONDITIONS = {
     "Raumschiff bauen":   ("starship",       []),
     "Gebäude-Anzahl":     ("buildingCount",  ["player", "count", "compare", "objective"]),
     "Fahrzeug-Anzahl":    ("vehicleCount",   ["player", "count", "compare", "objective"]),
+    "Fahrzeug mit Ladung": ("vehicleCargo",  ["player", "unit_type", "cargo", "count", "compare", "objective"]),
     "Technologie erforscht": ("research",    ["player", "tech_id", "objective"]),
     "Ressource erreicht": ("resource",       ["player", "resource", "amount", "compare", "objective"]),
     "Gebäude operativ":   ("operational",    ["player", "building", "count", "compare", "objective"]),
     "Kein Command Center": ("noCC",          ["player"]),
+    "Punkt erreicht":     ("point",          ["player", "x", "y", "objective"]),
+    "Rechteck betreten":  ("rect",           ["player", "x", "y", "width", "height", "objective"]),
+    "Gruppe wird angegriffen": ("attacked",  ["trigger_group", "objective"]),
+    "Gruppe beschädigt":  ("damaged",        ["trigger_group", "damage_type", "objective"]),
+    "Einheit scannt Gebäude": ("specialTarget", ["target_unit", "source_unit_type", "objective"]),
+    "Nur ein Spieler übrig (Engine)": ("onePlayerLeft", ["objective"]),
+    "Evakuierung (Spacerace)": ("evac",      ["player", "objective"]),
+    "Midas-Modus":        ("midas",          ["marks", "objective"]),
+    "Bausatz-Anzahl":     ("kit",            ["player", "building", "count", "objective"]),
+    "Flucht-Zone":        ("escape",         ["player", "x", "y", "width", "height",
+                                              "unit_type", "cargo", "count", "amount", "objective"]),
 }
 COMPARE = {"≥": "cmpGreaterEqual", "≤": "cmpLowerEqual", "=": "cmpEqual",
            ">": "cmpGreater", "<": "cmpLower"}
@@ -214,6 +334,13 @@ TRIGGER_CONDITIONS = {
     "Gruppe beschädigt":      ("damaged",       ["trigger_group", "damage_type"]),
     "Einheit scannt Gebäude": ("specialTarget", ["target_unit", "source_unit_type"]),
     "Einheit zerstört":       ("unitDied",      ["target_unit"]),
+    "Fahrzeug mit Ladung":    ("vehicleCargo",  ["player", "unit_type", "cargo", "count", "compare"]),
+    "Nur ein Spieler übrig (Engine)": ("onePlayerLeft", []),
+    "Evakuierung (Spacerace)": ("evac",         ["player"]),
+    "Midas-Modus":            ("midas",         ["marks"]),
+    "Bausatz-Anzahl":         ("kit",           ["player", "building", "count"]),
+    "Flucht-Zone":            ("escape",        ["player", "x", "y", "width", "height",
+                                                  "unit_type", "cargo", "count", "amount"]),
 }
 
 # CreateDamagedTrigger: Anteil der zerstoerten Gruppe (DamageType-Enum).
@@ -251,6 +378,8 @@ ACTION_KINDS = {
     "Einheiten-Werte ändern (HFL)":      "modUnitStats",
     "Eigener C++-Code":                  "customCode",
     "Eigene Aktion (Designer)":          "custom",
+    "Siegbedingung hinzufügen":          "addVictory",
+    "Niederlagebedingung hinzufügen":    "addDefeat",
 }
 
 # Gruppierung des "+ Aktion"-Menues (Untermenue -> Aktions-Kinds).
@@ -263,7 +392,7 @@ ACTION_KINDS = {
 # them still load and build.
 ACTION_MENU_GROUPS = {
     "general":  ["if", "message", "showDialog", "modVar", "createTrigger",
-                 "customCode"],
+                 "addVictory", "addDefeat", "customCode"],
     "units":    ["createUnit", "unitCmd", "fightGroupCmd",
                  "assignToGroup", "setTargCount"],
     "record":   ["recordBuilding", "recordTube", "recordWall"],

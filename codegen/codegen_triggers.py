@@ -35,6 +35,112 @@ def _cond_var(cond) -> str:
 
 
 
+# ---------------------------------------------------------------------------
+# Shared trigger-kind registry: ONE place mapping "kind" -> the OP2 engine
+# call, used identically by Condition (victory/defeat, wrapped in
+# CreateVictoryCondition/CreateFailureCondition with a no-op callback) and
+# TriggerDef (a real callback running actions). Adding a new Trigger.h
+# function only needs a branch here to become usable in BOTH systems --
+# see mission_model.TriggerDef/Condition docstrings.
+# ---------------------------------------------------------------------------
+
+def _vehicle_cargo_expr(cargo_val: str) -> str:
+    """"code" / "mapAny" / "mapNone" / "code:part" -> a map_id C++ expression.
+
+    cargoOrWeapon (CreateCountTrigger) is declared as map_id in Trigger.h but
+    a Truck_Cargo value (SetTruckCargo's type) must be cast across for cargo
+    trucks. For truckSpaceport/truckGarbage the value is not a plain code but
+    a part subtype packed in (cargoType | (subtype << 4), matching
+    Unit.SetTruckCargo/UnitEx.GetCargoAmount) -- the editor encodes that
+    choice as "truckSpaceport:mapEDWARDSatellite" etc.
+    """
+    cargo_val = cargo_val or "mapAny"
+    if ":" in cargo_val:
+        base, subtype = cargo_val.split(":", 1)
+        return f"(map_id)(({base}) | (({subtype}) << 4))"
+    if cargo_val in ("mapAny", "mapNone"):
+        return cargo_val
+    return f"(map_id){cargo_val}"
+
+
+def _trigger_call(kind: str, obj, ctx: dict, bEnabled: str, bOneShot: str, callback: str) -> str | None:
+    """Return the `CreateXTrigger(...)` call expression for a shared trigger
+    kind (all of TriggerDef.condition / Condition.kind EXCEPT the
+    Condition-only helper kinds time/lastStanding/starship/noCC -- wait, time
+    IS shared -- and the trigger-only polling kinds findUnit/unitDied).
+
+    None means the caller must handle it: attacked/damaged/specialTarget
+    return None when their group/named-unit reference isn't declared (so the
+    caller can emit its own "not declared" comment); findUnit/unitDied and any
+    truly unknown kind also fall through to None.
+    """
+    cmp_ = _compare(getattr(obj, "compare", "cmpGreaterEqual"))
+    player = int(getattr(obj, "player", 0))
+    if kind == "time":
+        return f'CreateTimeTrigger({bEnabled}, {bOneShot}, ({_expr_or_int(obj.marks)}) * kTicksPerMark, "{callback}")'
+    if kind == "point":
+        return f'CreatePointTrigger({bEnabled}, {bOneShot}, {player}, {_xypos(obj.x, obj.y)}, "{callback}")'
+    if kind == "rect":
+        return (f'CreateRectTrigger({bEnabled}, {bOneShot}, {player}, {_xypos(obj.x, obj.y)}, '
+                f'{int(obj.width)}, {int(obj.height)}, "{callback}")')
+    if kind == "buildingCount":
+        return f'CreateBuildingCountTrigger({bEnabled}, {bOneShot}, {player}, {int(obj.count)}, {cmp_}, "{callback}")'
+    if kind == "vehicleCount":
+        return f'CreateVehicleCountTrigger({bEnabled}, {bOneShot}, {player}, {int(obj.count)}, {cmp_}, "{callback}")'
+    if kind == "vehicleCargo":
+        cargo_expr = _vehicle_cargo_expr(obj.cargo)
+        return (f'CreateCountTrigger({bEnabled}, {bOneShot}, {player}, {mapid(obj.unit_type)}, '
+                f'{cargo_expr}, {int(obj.count)}, {cmp_}, "{callback}")')
+    if kind == "research":
+        return f'CreateResearchTrigger({bEnabled}, {bOneShot}, {int(obj.tech_id)}, {player}, "{callback}")'
+    if kind == "resource":
+        return (f'CreateResourceTrigger({bEnabled}, {bOneShot}, {_resource(obj.resource)}, '
+                f'{int(obj.amount)}, {player}, {cmp_}, "{callback}")')
+    if kind == "operational":
+        return (f'CreateOperationalTrigger({bEnabled}, {bOneShot}, {player}, {mapid(obj.building)}, '
+                f'{int(obj.count)}, {cmp_}, "{callback}")')
+    if kind == "attacked":
+        gvar = ctx.get("group_vars", {}).get((getattr(obj, "group_name", "") or "").strip())
+        return f'CreateAttackedTrigger({bEnabled}, {bOneShot}, {gvar}, "{callback}")' if gvar else None
+    if kind == "damaged":
+        gvar = ctx.get("group_vars", {}).get((getattr(obj, "group_name", "") or "").strip())
+        if not gvar:
+            return None
+        dmg = int(getattr(obj, "damage_type", 3) or 3)
+        return f'CreateDamagedTrigger({bEnabled}, {bOneShot}, {gvar}, {dmg}, "{callback}")'
+    if kind == "specialTarget":
+        uvar = ctx.get("unit_vars", {}).get((getattr(obj, "target_unit", "") or "").strip())
+        if not uvar:
+            return None
+        src = mapid(getattr(obj, "source_unit_type", "mapScout") or "mapScout")
+        return f'CreateSpecialTarget({bEnabled}, {bOneShot}, {uvar}, {src}, "{callback}")'
+    if kind == "onePlayerLeft":
+        # Engine-native "Last One Standing" -- no player/extra fields at all.
+        return f'CreateOnePlayerLeftTrigger({bEnabled}, {bOneShot}, "{callback}")'
+    if kind == "evac":
+        return f'CreateEvacTrigger({bEnabled}, {bOneShot}, {player}, "{callback}")'
+    if kind == "midas":
+        return f'CreateMidasTrigger({bEnabled}, {bOneShot}, ({_expr_or_int(obj.marks)}) * kTicksPerMark, "{callback}")'
+    if kind == "kit":
+        # No compare_mode in this Trigger.h signature -- the engine's own
+        # (undocumented, presumably >=) comparison applies.
+        return (f'CreateKitTrigger({bEnabled}, {bOneShot}, {player}, {mapid(obj.building)}, '
+                f'{int(obj.count)}, "{callback}")')
+    if kind == "escape":
+        # cargoType/cargoAmount are two SEPARATE plain-int params here (unlike
+        # CreateCountTrigger's packed map_id) -- "code:part" splits cleanly
+        # across them, a bare code falls back to the numeric `amount` field.
+        cargo_val = obj.cargo or "mapAny"
+        if ":" in cargo_val:
+            cargo_type, cargo_amount = cargo_val.split(":", 1)
+        else:
+            cargo_type, cargo_amount = cargo_val, _expr_or_int(getattr(obj, "amount", 0) or 0)
+        return (f'CreateEscapeTrigger({bEnabled}, {bOneShot}, {player}, {_xypos(obj.x, obj.y)}, '
+                f'{int(obj.width)}, {int(obj.height)}, {int(obj.count)}, {mapid(obj.unit_type)}, '
+                f'{cargo_type}, {cargo_amount}, "{callback}")')
+    return None
+
+
 def _emit_condition(cond: Condition, is_victory: bool, mission: Mission | None = None,
                     ctx: dict | None = None) -> list[str]:
     """Emit one win/lose condition (called from InitProc()).
@@ -42,14 +148,20 @@ def _emit_condition(cond: Condition, is_victory: bool, mission: Mission | None =
     Klassisches Muster: einen (bedingungslosen) Engine-Trigger mit dem No-Op-
     Callback "NoResponseToTrigger" erzeugen und in CreateVictoryCondition /
     CreateFailureCondition einhaengen -- die Engine wertet den Sieg selbst aus.
+    Fuer die meisten Kinds kommt dieser Trigger aus dem _trigger_call-Register,
+    das sich Condition und TriggerDef teilen; lastStanding/starship/noCC
+    bleiben Condition-eigene OP2Helper-Mehrfach-Aufrufe.
 
     Classic pattern: create a (condition) engine trigger with the no-op
     callback "NoResponseToTrigger" and wrap it in CreateVictoryCondition /
-    CreateFailureCondition -- the engine evaluates the win itself.
+    CreateFailureCondition -- the engine evaluates the win itself. For most
+    kinds this trigger comes from the shared _trigger_call registry (shared
+    with TriggerDef); lastStanding/starship/noCC stay Condition-only
+    multi-call OP2Helper conveniences.
     """
     lines: list[str] = []
+    ctx = ctx if ctx is not None else {}
     obj = _cpp_string(cond.objective or ("Mission objective" if is_victory else ""))
-    cmp_ = _compare(cond.compare)
 
     def _wrap(trigger_expr: str, var: str) -> None:
         lines.append(f"    Trigger {var} = {trigger_expr};")
@@ -58,10 +170,7 @@ def _emit_condition(cond: Condition, is_victory: bool, mission: Mission | None =
         else:
             lines.append(f'    CreateFailureCondition(1, 0, {var}, "");')
 
-    if cond.kind == "time":
-        _wrap(f'CreateTimeTrigger(1, 1, {int(cond.marks)} * kTicksPerMark, "NoResponseToTrigger")',
-              _cond_var(cond))
-    elif cond.kind == "noCC":
+    if cond.kind == "noCC":
         # OP2Helper: CreateOperationalTrigger(CC == 0) + FailureCondition.
         lines.append(f"    CreateNoCommandCenterFailureCondition({int(cond.player)});")
     elif cond.kind == "lastStanding":
@@ -92,24 +201,16 @@ def _emit_condition(cond: Condition, is_victory: bool, mission: Mission | None =
             f'    Trigger {var} = CreateCountTrigger(1, 1, {int(cond.player)}, '
             f'mapEvacuationModule, mapAny, 1, cmpGreaterEqual, "NoResponseToTrigger");')
         lines.append(f"    CreateVictoryCondition(1, 0, {var}, {ss_obj});")
-    elif cond.kind == "buildingCount":
-        _wrap(f'CreateBuildingCountTrigger(1, 1, {int(cond.player)}, {int(cond.count)}, '
-              f'{cmp_}, "NoResponseToTrigger")', _cond_var(cond))
-    elif cond.kind == "vehicleCount":
-        _wrap(f'CreateVehicleCountTrigger(1, 1, {int(cond.player)}, {int(cond.count)}, '
-              f'{cmp_}, "NoResponseToTrigger")', _cond_var(cond))
-    elif cond.kind == "research":
-        _wrap(f'CreateResearchTrigger(1, 1, {int(cond.tech_id)}, {int(cond.player)}, '
-              f'"NoResponseToTrigger")', _cond_var(cond))
-    elif cond.kind == "resource":
-        res = _resource(cond.resource)
-        _wrap(f'CreateResourceTrigger(1, 1, {res}, {int(cond.amount)}, {int(cond.player)}, '
-              f'{cmp_}, "NoResponseToTrigger")', _cond_var(cond))
-    elif cond.kind == "operational":
-        _wrap(f'CreateOperationalTrigger(1, 1, {int(cond.player)}, {mapid(cond.building)}, '
-              f'{int(cond.count)}, {cmp_}, "NoResponseToTrigger")', _cond_var(cond))
     else:
-        lines.append(f"    // TODO unsupported condition kind: {cond.kind}")
+        expr = _trigger_call(cond.kind, cond, ctx, "1", "1", "NoResponseToTrigger")
+        if expr is not None:
+            _wrap(expr, _cond_var(cond))
+        elif cond.kind in ("attacked", "damaged"):
+            lines.append(f"    // TODO {cond.kind}: group '{getattr(cond, 'group_name', '')}' not declared")
+        elif cond.kind == "specialTarget":
+            lines.append(f"    // TODO specialTarget: unit '{getattr(cond, 'target_unit', '')}' not declared")
+        else:
+            lines.append(f"    // TODO unsupported condition kind: {cond.kind}")
     return lines
 
 
@@ -142,7 +243,6 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
     from `createTrigger` actions at runtime for triggers created on demand.
     """
     one_shot = "1" if t.one_shot else "0"
-    cmp_ = _compare(t.compare)
     cb_fn = f"{helper}_cb"
     ctx.setdefault("trigger_cb_names", {})[helper] = cb_fn
 
@@ -152,13 +252,16 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
         lines.append(f"// {cl.strip().rstrip(chr(92)).strip()}")
 
     # --- Callback als exportierte Funktion / callback as an exported function ---
-    if t.condition in ("time", "buildingCount", "vehicleCount", "research",
-                       "resource", "operational", "point", "rect",
-                       "attacked", "damaged", "specialTarget"):
-        # point/rect/attacked/damaged/specialTarget: die Engine prueft die
-        # Bedingung selbst (native Trigger).
-        # point/rect/attacked/damaged/specialTarget: the engine checks the
-        # condition itself (native triggers).
+    if t.condition in ("time", "buildingCount", "vehicleCount", "vehicleCargo",
+                       "research", "resource", "operational", "point", "rect",
+                       "attacked", "damaged", "specialTarget",
+                       "onePlayerLeft", "evac", "midas", "kit", "escape"):
+        # Alle diese Kinds sind native Engine-Trigger -- die Bedingung selbst
+        # wird von der Engine geprueft, der Callback muss nur die Aktionen
+        # ausfuehren (siehe _trigger_call fuer die Trigger-Erzeugung unten).
+        # All these kinds are native engine triggers -- the engine itself
+        # checks the condition, the callback just has to run the actions (see
+        # _trigger_call below for the trigger creation).
         lines.append(f"Export void {cb_fn}() {{")
         lines.extend(_emit_action_list(t.actions, "    ", ctx))
         lines.append(f"}}")
@@ -209,50 +312,18 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
 
     # --- Helper: erzeugt den Engine-Trigger / creates the engine trigger ---
     lines.append(f"static void {helper}() {{")
-    if t.condition == "time":
-        lines.append(f'    CreateTimeTrigger(1, {one_shot}, ({_expr_or_int(t.marks)}) * kTicksPerMark, "{cb_fn}");')
-    elif t.condition == "buildingCount":
-        lines.append(f'    CreateBuildingCountTrigger(1, {one_shot}, {int(t.player)}, '
-                     f'{int(t.count)}, {cmp_}, "{cb_fn}");')
-    elif t.condition == "vehicleCount":
-        lines.append(f'    CreateVehicleCountTrigger(1, {one_shot}, {int(t.player)}, '
-                     f'{int(t.count)}, {cmp_}, "{cb_fn}");')
-    elif t.condition == "research":
-        lines.append(f'    CreateResearchTrigger(1, {one_shot}, {int(t.tech_id)}, '
-                     f'{int(t.player)}, "{cb_fn}");')
-    elif t.condition == "resource":
-        lines.append(f'    CreateResourceTrigger(1, {one_shot}, {_resource(t.resource)}, '
-                     f'{int(t.amount)}, {int(t.player)}, {cmp_}, "{cb_fn}");')
-    elif t.condition == "operational":
-        lines.append(f'    CreateOperationalTrigger(1, {one_shot}, {int(t.player)}, '
-                     f'{mapid(t.building)}, {int(t.count)}, {cmp_}, "{cb_fn}");')
-    elif t.condition == "point":
-        lines.append(f'    CreatePointTrigger(1, {one_shot}, {int(t.player)}, '
-                     f'{_xypos(t.x, t.y)}, "{cb_fn}");')
-    elif t.condition == "rect":
-        lines.append(f'    CreateRectTrigger(1, {one_shot}, {int(t.player)}, '
-                     f'{_xypos(t.x, t.y)}, {int(t.width)}, {int(t.height)}, "{cb_fn}");')
-    elif t.condition in ("attacked", "damaged"):
-        gvar = ctx.get("group_vars", {}).get((getattr(t, "group_name", "") or "").strip())
-        if gvar:
-            if t.condition == "attacked":
-                lines.append(f'    CreateAttackedTrigger(1, {one_shot}, {gvar}, "{cb_fn}");')
-            else:
-                dmg = int(getattr(t, "damage_type", 3) or 3)
-                lines.append(f'    CreateDamagedTrigger(1, {one_shot}, {gvar}, {dmg}, "{cb_fn}");')
-        else:
-            lines.append(f"    // TODO {t.condition}: group '{getattr(t, 'group_name', '')}' not declared")
-    elif t.condition == "specialTarget":
-        uvar = ctx.get("unit_vars", {}).get((getattr(t, "target_unit", "") or "").strip())
-        if uvar:
-            src = mapid(getattr(t, "source_unit_type", "mapScout") or "mapScout")
-            lines.append(f'    CreateSpecialTarget(1, {one_shot}, {uvar}, {src}, "{cb_fn}");')
-        else:
-            lines.append(f"    // TODO specialTarget: unit '{getattr(t, 'target_unit', '')}' not declared")
-    elif t.condition in ("findUnit", "unitDied"):
+    if t.condition in ("findUnit", "unitDied"):
         lines.append(f'    g_save.{helper}_self = CreateTimeTrigger(1, 0, 10, "{cb_fn}");')
     else:
-        lines.append(f"    // TODO unsupported trigger condition: {t.condition}")
+        expr = _trigger_call(t.condition, t, ctx, "1", one_shot, cb_fn)
+        if expr is not None:
+            lines.append(f"    {expr};")
+        elif t.condition in ("attacked", "damaged"):
+            lines.append(f"    // TODO {t.condition}: group '{getattr(t, 'group_name', '')}' not declared")
+        elif t.condition == "specialTarget":
+            lines.append(f"    // TODO specialTarget: unit '{getattr(t, 'target_unit', '')}' not declared")
+        else:
+            lines.append(f"    // TODO unsupported trigger condition: {t.condition}")
     lines.append(f"}}")
     return lines
 

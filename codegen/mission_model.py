@@ -109,7 +109,11 @@ class UnitSpec:
     rotation: int = 0
     truck_cargo: str | None = None   # Cargo Truck: SetTruckCargo(truck_cargo, truck_amount)
                                      # Cargo Truck: SetTruckCargo(truck_cargo, truck_amount)
-    truck_amount: int = 1000
+    # int = Stueckzahl; str = Raumschiffteil-Subtyp-Ausdruck (truckSpaceport/
+    # truckGarbage, z.B. "mapEDWARDSatellite" -- siehe SetTruckCargo/UnitEx.GetCargoAmount).
+    # int = quantity; str = starship-part subtype expression (truckSpaceport/
+    # truckGarbage, e.g. "mapEDWARDSatellite" -- see SetTruckCargo/UnitEx.GetCargoAmount).
+    truck_amount: int | str = 1000
     convec_kit: str | None = None    # ConVec: SetCargo(convec_kit, mapNone) -- Gebaeude-Bausatz
                                      # ConVec: SetCargo(convec_kit, mapNone) -- building kit
     uid: str = ""                    # Editor-interne ID fuer Gruppenreferenzen
@@ -460,6 +464,15 @@ class TriggerAction:
     repair_zones: list = field(default_factory=list)   # [{"x","y","x2","y2"}]
     repair_thresholds: list = field(
         default_factory=lambda: [{"building_type": "mapTokamak", "damage": 200}])
+    # addVictory/addDefeat: die zur Laufzeit hinzuzufuegende Sieg-/Niederlage-
+    # Bedingung als Condition-Dict (asdict(Condition)); der Codegen baut daraus
+    # denselben CreateVictory-/FailureCondition-Aufruf wie in InitProc und
+    # sichert ihn ueber ein g_save-Flag gegen Mehrfachausfuehrung ab.
+    # addVictory/addDefeat: the victory/defeat condition to add at runtime as
+    # a Condition dict (asdict(Condition)); codegen emits the same
+    # CreateVictory-/FailureCondition call as in InitProc, guarded by a
+    # g_save flag against repeat execution.
+    condition_spec: dict | None = None
 
 
 @dataclass
@@ -496,8 +509,20 @@ class TriggerDef:
       damaged       -> group_name, damage_type  (Gruppe zu X%% zerstoert, CreateDamagedTrigger)
       specialTarget -> target_unit, source_unit_type  (Einheit scannt Gebaeude, CreateSpecialTarget)
       unitDied      -> target_unit  (benannte Einheit zerstoert, IsLive-Poll)
+      vehicleCargo  -> player, unit_type, cargo, count, compare  (CreateCountTrigger)
+      onePlayerLeft -> (keine, CreateOnePlayerLeftTrigger -- Last One Standing)
+      evac          -> player  (CreateEvacTrigger -- Spacerace)
+      midas         -> marks  (CreateMidasTrigger -- Midas-Modus)
+      kit           -> player, building, count  (CreateKitTrigger, kein compare)
+      escape        -> player, x, y, width, height, unit_type, cargo, count, amount
+                        (CreateEscapeTrigger: refValue=count, cargoType/cargoAmount
+                        aus cargo/amount -- "code:teil" packt beides wie bei
+                        vehicleCargo, sonst amount separat)
 
-    A user-defined trigger: condition + actions.
+    A user-defined trigger: condition + actions. See mission_model shared kind
+    registry in codegen_triggers.py (_trigger_call) -- these kinds are shared
+    1:1 with Condition (victory/defeat), only findUnit/unitDied stay
+    trigger-only (they are emulated via polling, not a native Trigger).
     """
     name: str
     enabled_at_start: bool = True
@@ -533,6 +558,12 @@ class TriggerDef:
     # specialTarget: Einheitentyp, der das Ziel "scannen" muss (klassisch mapScout)
     # specialTarget: unit type that must "scan" the target (classically mapScout)
     source_unit_type: str = "mapScout"
+    # vehicleCargo/escape: Fahrzeugtyp (map_id) + Ladung (Truck_Cargo-Name,
+    # "mapAny"/"mapNone", oder "code:teil" fuer Spaceport/Schrott-Subtyp).
+    # vehicleCargo/escape: vehicle type (map_id) + cargo (Truck_Cargo name,
+    # "mapAny"/"mapNone", or "code:part" for Spaceport/Garbage subtype).
+    unit_type: str = "mapCargoTruck"
+    cargo: str = "mapAny"
 
 
 @dataclass
@@ -556,9 +587,27 @@ class Condition:
       noCC          -> player (Helper, Niederlage)
       buildingCount -> player, count, compare, objective
       vehicleCount  -> player, count, compare, objective
+      vehicleCargo  -> player, unit_type, cargo, count, compare, objective
       research      -> player, tech_id, objective
       resource      -> player, resource, amount, compare, objective
       operational   -> player, building, count, compare, objective
+      point         -> player, x, y, objective
+      rect          -> player, x, y, width, height, objective
+      attacked      -> group_name, objective
+      damaged       -> group_name, damage_type, objective
+      specialTarget -> target_unit, source_unit_type, objective
+      onePlayerLeft -> objective  (CreateOnePlayerLeftTrigger, engine-natives LOS)
+      evac          -> player, objective  (CreateEvacTrigger, Spacerace)
+      midas         -> marks, objective  (CreateMidasTrigger, Midas-Modus)
+      kit           -> player, building, count, objective  (CreateKitTrigger)
+      escape        -> player, x, y, width, height, unit_type, cargo, count,
+                        amount, objective  (CreateEscapeTrigger)
+
+    Diese Kinds (ausser lastStanding/starship/noCC, die OP2Helper-Mehrfach-
+    Aufrufe sind) teilen sich die Trigger-Erzeugung 1:1 mit TriggerDef.condition
+    -- siehe codegen_triggers._trigger_call (EIN Ort fuer "kind -> CreateXTrigger
+    (...)", nicht zwei getrennte Listen). findUnit/unitDied bleiben
+    trigger-only (Polling-Emulation, kein natives Trigger-Objekt).
 
     A victory or defeat condition.
 
@@ -570,9 +619,27 @@ class Condition:
       noCC          -> player (helper, defeat)
       buildingCount -> player, count, compare, objective
       vehicleCount  -> player, count, compare, objective
+      vehicleCargo  -> player, unit_type, cargo, count, compare, objective
       research      -> player, tech_id, objective
       resource      -> player, resource, amount, compare, objective
       operational   -> player, building, count, compare, objective
+      point         -> player, x, y, objective
+      rect          -> player, x, y, width, height, objective
+      attacked      -> group_name, objective
+      damaged       -> group_name, damage_type, objective
+      specialTarget -> target_unit, source_unit_type, objective
+      onePlayerLeft -> objective  (CreateOnePlayerLeftTrigger, engine-native LOS)
+      evac          -> player, objective  (CreateEvacTrigger, Spacerace)
+      midas         -> marks, objective  (CreateMidasTrigger, Midas mode)
+      kit           -> player, building, count, objective  (CreateKitTrigger)
+      escape        -> player, x, y, width, height, unit_type, cargo, count,
+                        amount, objective  (CreateEscapeTrigger)
+
+    These kinds (except lastStanding/starship/noCC, which are multi-call
+    OP2Helper conveniences) share their trigger creation 1:1 with
+    TriggerDef.condition -- see codegen_triggers._trigger_call (ONE place for
+    "kind -> CreateXTrigger(...)", not two parallel lists). findUnit/unitDied
+    stay trigger-only (polling emulation, no native Trigger object).
     """
     kind: str
     objective: str = ""
@@ -584,6 +651,30 @@ class Condition:
     resource: str = "resCommonOre"
     amount: int = 1000
     building: str = "mapCommandCenter"
+    # vehicleCargo/escape: Fahrzeugtyp (map_id) + Ladung (Truck_Cargo-Name,
+    # "mapAny"/"mapNone", oder "code:teil" fuer Spaceport/Schrott-Subtyp).
+    # vehicleCargo/escape: vehicle type (map_id) + cargo (Truck_Cargo name,
+    # "mapAny"/"mapNone", or "code:part" for Spaceport/Garbage subtype).
+    unit_type: str = "mapCargoTruck"
+    cargo: str = "mapAny"
+    # point/rect/escape: Position/Rechteck (Editor-Kacheln, 0-basiert).
+    # point/rect/escape: position/rectangle (editor tiles, 0-based).
+    x: int = 0
+    y: int = 0
+    width: int = 1
+    height: int = 1
+    # attacked/damaged: Name der ueberwachten Gruppe (Gruppen-Panel).
+    # attacked/damaged: name of the watched group (Groups panel).
+    group_name: str = ""
+    # damaged: Anteil der zerstoerten Gruppe (DamageType-Enum: 1=100%, 2=75%, 3=50%).
+    # damaged: fraction of the group destroyed (DamageType enum: 1=100%, 2=75%, 3=50%).
+    damage_type: int = 3
+    # specialTarget: Name einer benannten platzierten Einheit.
+    # specialTarget: name of a named placed unit.
+    target_unit: str = ""
+    # specialTarget: Einheitentyp, der das Ziel "scannen" muss (klassisch mapScout).
+    # specialTarget: unit type that must "scan" the target (classically mapScout).
+    source_unit_type: str = "mapScout"
 
 
 @dataclass
@@ -636,6 +727,16 @@ class Mission:
     # Briefing text: shown as a dialog box shortly after game start
     # (OP2 has no dedicated briefing screen for custom missions).
     briefing: str = ""
+
+    # Kacheln, auf denen Lava ueberhaupt fliessen darf
+    # (GameMap::SetLavaPossible im InitProc). Bewusst unabhaengig von jedem
+    # Ausbruch: WANN ein Vulkan ausbricht, entscheiden eigene Trigger -- die
+    # Karte legt nur fest, WO die Lava hinkommt.
+    # Tiles on which lava may flow at all (GameMap::SetLavaPossible in
+    # InitProc). Deliberately independent of any eruption: WHEN a volcano
+    # erupts is up to your own triggers -- the map only defines WHERE lava
+    # can go.
+    lava_fields: list = field(default_factory=list)   # [[x, y], ...]
 
     players: list[PlayerSpec] = field(default_factory=lambda: [PlayerSpec()])
     units: list[UnitSpec] = field(default_factory=list)

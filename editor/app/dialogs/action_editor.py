@@ -302,6 +302,8 @@ class ActionInlineForm(QWidget):
         "setMusic": ["songs_editor", "repeat_start"],
         "lavaFlowAni": ["flow_dir", "flow_freeze", "x", "y"],
         "modUnitStats": ["stats_unit", "player", "stats_editor"],
+        "addVictory": ["cond_editor"],
+        "addDefeat": ["cond_editor"],
     }
 
     _LABEL_OVERRIDES = {
@@ -944,6 +946,22 @@ class ActionInlineForm(QWidget):
         rth_lay.addWidget(self.repair_thresholds_tree)
         rth_lay.addLayout(rth_row)
 
+        # --- addVictory/addDefeat: eingebettetes Bedingungsformular ---
+        # (dasselbe Formular wie im Sieg&Niederlage-Panel; Karten-Pick-Buttons
+        # aus, weil die Aktion in einer Karte steckt, die sich beim Pick neu
+        # aufbauen wuerde)
+        # --- addVictory/addDefeat: embedded condition form (same form as the
+        # victory&defeat panel; map-pick buttons off because the action lives
+        # in a card that would rebuild during the pick) ---
+        from ..condition_form import ConditionFormWidget
+        self.cond_editor = ConditionFormWidget(
+            diff_values=diff_values, show_pick_buttons=False)
+        cond_groups = [name for name, _t in
+                       (ctx.get("all_command_groups") or [] if isinstance(ctx, dict) else [])]
+        cond_units = list(ctx.get("named_units") or [] if isinstance(ctx, dict) else [])
+        self.cond_editor.set_context(cond_groups, cond_units)
+        self.cond_editor.changed.connect(self._save)
+
         # Immer sichtbares, optionales Kommentarfeld (nicht in _rows, damit
         # _update es nie ausblendet).
         # Always-visible optional comment field (not in _rows, so _update
@@ -999,6 +1017,7 @@ class ActionInlineForm(QWidget):
             "songs_editor": self.songs_editor, "repeat_start": self.repeat_start,
             "flow_dir": self.flow_dir, "flow_freeze": self.flow_freeze,
             "stats_unit": self.stats_unit, "stats_editor": self.stats_editor,
+            "cond_editor": self.cond_editor,
         }
         labels = {
             "text": tr("action_editor.lbl_text"), "unit": tr("action_editor.lbl_unit"),
@@ -1064,6 +1083,7 @@ class ActionInlineForm(QWidget):
             "flow_freeze": "",
             "stats_unit": tr("action_editor.lbl_unit"),
             "stats_editor": tr("action_editor.lbl_stats"),
+            "cond_editor": tr("action_editor.lbl_condition"),
         }
         for k, w in self._rows.items():
             self.form.addRow(labels[k], w)
@@ -1953,6 +1973,15 @@ class ActionInlineForm(QWidget):
         self._stats_list_load(getattr(a, "stat_mods", None))
         self._rz_load(getattr(a, "repair_zones", None))
         self._rth_load(getattr(a, "repair_thresholds", None))
+        # addVictory/addDefeat: eingebettetes Bedingungsformular befuellen.
+        # addVictory/addDefeat: populate the embedded condition form.
+        spec = dict(getattr(a, "condition_spec", None) or {})
+        spec.setdefault("kind", "time")
+        try:
+            self.cond_editor.load(Condition(**spec))
+        except TypeError:
+            self.cond_editor.load(Condition(kind=spec.get("kind", "time")))
+        self.cond_editor.set_objective_visible(a.kind != "addDefeat")
         self._loading = False
         self._update()
 
@@ -2100,6 +2129,9 @@ class ActionInlineForm(QWidget):
         elif k == "repairBuildings":
             a.repair_zones = self._rz_from_tree()
             a.repair_thresholds = self._rth_from_tree()
+        elif k in ("addVictory", "addDefeat"):
+            self.cond_editor.set_objective_visible(k == "addVictory")
+            a.condition_spec = asdict(self.cond_editor.make())
         if k in ("unitCmd", "fightGroupCmd"):
             a.patrol_points = self._patrol_points()
         a.var_name = self.var_name.currentData() or ""

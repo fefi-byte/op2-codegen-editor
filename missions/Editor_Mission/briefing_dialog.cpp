@@ -1,0 +1,89 @@
+// Vor-Spielstart-Briefing: modaler Dialog waehrend der Missions-
+// Initialisierung; der Text steckt als TEXT-Ressource in der DLL.
+// Nach der bewaehrten Technik aus "Rising From The Ashes" (OPU).
+// Pre-game briefing: modal dialog during mission initialization; the text
+// ships as a TEXT resource inside the DLL. Based on the proven technique
+// from "Rising From The Ashes" (OPU).
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <richedit.h>
+#include "resource.h"
+#include <odasl/odasl.h>
+
+// Wird in DllMain (mission.cpp) gesetzt / set in DllMain (mission.cpp)
+void* g_briefing_hinst = 0;
+
+static LRESULT CALLBACK BriefingDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg)
+    {
+    case WM_INITDIALOG:
+    {
+        HINSTANCE hInst = (HINSTANCE)g_briefing_hinst;
+        HWND richEdit = GetDlgItem(hWnd, IDC_TEXTAREA);
+        // Schwarzer Hintergrund im Textfeld / black background in the text area
+        SendMessage(richEdit, EM_SETBKGNDCOLOR, 0, 0);
+        HRSRC txtRes = FindResource(hInst, MAKEINTRESOURCE(IDR_MISSIONTEXT), "TEXT");
+        if (txtRes)
+        {
+            HGLOBAL resHdl = LoadResource(hInst, txtRes);
+            DWORD size = SizeofResource(hInst, txtRes);
+            if (resHdl && size > 0)
+            {
+                // Ressourcendaten sind NICHT nullterminiert -> kopieren.
+                // Resource data is NOT null-terminated -> copy it.
+                const char* raw = (const char*)LockResource(resHdl);
+                char* buf = (char*)LocalAlloc(LMEM_FIXED, size + 1);
+                if (raw && buf)
+                {
+                    CopyMemory(buf, raw, size);
+                    buf[size] = 0;
+                    SetDlgItemTextA(hWnd, IDC_TEXTAREA, buf);
+                    LocalFree(buf);
+                    // Klartext hat die Standard-Textfarbe Schwarz -- auf dem
+                    // schwarzen Hintergrund unsichtbar. OP2-Menuegruen setzen
+                    // (RGB(0,255,0), wie HFL COLORGREEN; die Referenz-Mission
+                    // loeste das ueber RTF-Farbcodes).
+                    // Plain text uses the default black text colour --
+                    // invisible on the black background. Use OP2 menu green
+                    // (RGB(0,255,0), like HFL COLORGREEN; the reference
+                    // mission solved this via RTF colours).
+                    CHARFORMATA cf;
+                    ZeroMemory(&cf, sizeof(cf));
+                    cf.cbSize = sizeof(cf);
+                    cf.dwMask = CFM_COLOR;
+                    cf.crTextColor = RGB(0, 255, 0);
+                    SendMessage(richEdit, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
+                    return TRUE;
+                }
+                if (buf) LocalFree(buf);
+            }
+        }
+        SetDlgItemTextA(hWnd, IDC_TEXTAREA, "Error: mission briefing could not be loaded.");
+        return TRUE;
+    }
+    case WM_COMMAND:
+        if (wParam == IDOK)
+        {
+            EndDialog(hWnd, IDOK);
+            return TRUE;
+        }
+        return FALSE;
+    }
+    return FALSE;
+}
+
+void ShowBriefing()
+{
+    // RICHEDIT-Fensterklasse sicherstellen / make sure the RICHEDIT class exists
+    LoadLibraryA("Riched32.dll");
+    // OP2 schaltet das Skinning vor dem Laden ab -- fuer die Briefing-Box
+    // reaktivieren, sonst sieht sie haesslich aus.
+    // OP2 turns skinning off before loading -- re-enable it for the briefing
+    // box, otherwise it looks ugly.
+    wplEnable();
+    HWND shellWnd = FindWindowA("Outpost2Shell", NULL);
+    DialogBoxParamA((HINSTANCE)g_briefing_hinst, MAKEINTRESOURCE(IDD_MISSIONINFO),
+                    shellWnd, (DLGPROC)BriefingDlgProc, 0);
+    wplDisable();
+}

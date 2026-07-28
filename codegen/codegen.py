@@ -112,6 +112,10 @@ def _build_codegen_context(mission: Mission) -> dict:
     ctx["assign_action_vars"] = {}
     ctx["assign_actions"] = []
     ctx["mission_name"] = mission.name
+    # Fuer addVictory/addDefeat (lastStanding braucht die Spielerliste).
+    # For addVictory/addDefeat (lastStanding needs the player list).
+    ctx["mission"] = mission
+    ctx["addcond_action_vars"] = {}
     ctx["custom_actions"] = list(getattr(mission, "custom_actions", None) or [])
     ctx["var_names"] = {v.name for v in (getattr(mission, "variables", None) or [])}
     ctx["wave_action_vars"] = {}
@@ -122,6 +126,7 @@ def _build_codegen_context(mission: Mission) -> dict:
     assign_idx = 0
     wave_idx = 0
     repair_idx = 0
+    addcond_idx = 0
     for t in (mission.triggers or []):
         for a in _walk_actions(t.actions):
             if a.kind == "startMining":
@@ -144,6 +149,13 @@ def _build_codegen_context(mission: Mission) -> dict:
                 ctx["repair_action_vars"][id(a)] = armed_var
                 ctx["repair_actions"].append((a, armed_var))
                 repair_idx += 1
+            elif a.kind in ("addVictory", "addDefeat"):
+                # Ein-Schuss-Schutz: auch bei wiederholenden Triggern wird
+                # dieselbe Bedingung nur EINMAL zur Engine hinzugefuegt.
+                # One-shot guard: even under repeating triggers the same
+                # condition is only added to the engine ONCE.
+                ctx["addcond_action_vars"][id(a)] = f"_addcond_done_{addcond_idx}"
+                addcond_idx += 1
             elif a.kind == "sendAttackWave":
                 mode = getattr(a, "spawn_mode", "spawn") or "spawn"
                 if mode == "spawn":
@@ -369,6 +381,8 @@ def generate_levelmain(mission: Mission) -> str:
         add(f"    bool {armed_var} = false;")
     for armed_var in ctx.get("repair_action_vars", {}).values():
         add(f"    bool {armed_var} = false;")
+    for done_var in ctx.get("addcond_action_vars", {}).values():
+        add(f"    bool {done_var} = false;")
     for (_a, armed_var, launched_var) in ctx.get("wave_actions", []):
         add(f"    bool {armed_var} = false;")
         add(f"    bool {launched_var} = false;")
@@ -399,6 +413,8 @@ def generate_levelmain(mission: Mission) -> str:
         add(f"static bool& {armed_var} = g_save.{armed_var};")
     for armed_var in ctx.get("repair_action_vars", {}).values():
         add(f"static bool& {armed_var} = g_save.{armed_var};")
+    for done_var in ctx.get("addcond_action_vars", {}).values():
+        add(f"static bool& {done_var} = g_save.{done_var};")
     for (_a, armed_var, launched_var) in ctx.get("wave_actions", []):
         add(f"static bool& {armed_var} = g_save.{armed_var};")
         add(f"static bool& {launched_var} = g_save.{launched_var};")
