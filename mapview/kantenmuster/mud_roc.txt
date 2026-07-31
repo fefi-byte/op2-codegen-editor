@@ -1,0 +1,59 @@
+# Kantenmuster fuer die Uebergangskacheln mud | roc
+#
+# Trage hinter '->' ein, welche Kanten der Kachel zu 'roc' gehoeren.
+# Erlaubt: N O S W und Kombinationen mit +, oder - fuer keine Kante.
+#   N = oben, O = rechts, S = unten, W = links
+#   Beispiele:   N        N+O        O+S+W        -
+# 'auto' ist meine automatische Zuordnung aus den Pixeln,
+# nur als Vorschlag -- ueberschreib sie einfach.
+#
+# Nr | Kachel | Gruppe      | auto      -> deine Zuordnung
+# ---+--------+-------------+-----------+-----------------
+   1 |    951 | roctomud    | N+W       -> N+W
+   2 |    952 | roctomud    | N+O       -> N+O
+   3 |    953 | roctomud    | S         -> S
+   4 |    954 | roctomud    | S         -> S
+   5 |    955 | roctomud    | N+W       -> N+W
+   6 |    956 | roctomud    | N+O       -> N+O
+   7 |    957 | roctomud    | S+W       -> S+W
+   8 |    958 | roctomud    | O+S       -> O+S
+   9 |    959 | roctomud    | N         -> N
+  10 |    960 | roctomud    | N         -> N
+  11 |    961 | roctomud    | N+W       -> N+W
+  12 |    962 | roctomud    | O         -> O
+  13 |    963 | roctomud    | S         -> S
+  14 |    964 | roctomud    | N+O+W     -> N+O+W
+  15 |    965 | roctomud    | O+S+W     -> O+S+W
+  16 |    966 | roctomud    | N         -> N
+  17 |    967 | roctomud    | -         -> -
+  18 |    968 | roctomud    | -         -> -
+  19 |    969 | roctomud    | O+S       -> O+S
+  20 |    970 | roctomud    | S+W       -> S+W
+  21 |    971 | roctomud    | N+W       -> N+W
+  22 |    972 | roctomud    | N         -> N
+  23 |    973 | roctomud    | N+O+S+W   -> N+O+S+W
+  24 |    974 | roctomud    | N+W       -> N+W
+  25 |    975 | roctomud    | O+S       -> O+S
+  26 |    976 | roctomud    | S+W       -> S+W
+  27 |    977 | roctomud    | W         -> W
+  28 |    978 | roctomud    | -         -> -
+  29 |    979 | roctomud    | S         -> S
+  30 |    980 | roctomud    | N+O       -> N+O
+  31 |    981 | roctomud    | O+S+W     -> O+S+W
+  32 |    982 | roctomud    | N         -> N
+  33 |    983 | roctomud    | N         -> N
+  34 |    984 | roctomud    | O+S       -> O+S
+  35 |    985 | roctomud    | -         -> -
+  36 |    986 | roctomud    | N+W       -> N+W
+  37 |    987 | roctomud    | -         -> -
+  38 |    988 | roctomud    | -         -> -
+  39 |    989 | roctomud    | W         -> W
+  40 |    990 | roctomud    | N+O       -> N+O
+  41 |    991 | roctomud    | S         -> S
+  42 |    992 | roctomud    | N         -> N
+  43 |    993 | roctomud    | S+W       -> S+W
+  44 |    994 | roctomud    | O+S+W     -> O+S+W
+  45 |    995 | roctomud    | N+W       -> N+W
+  46 |    996 | roctomud    | N+O       -> N+O
+  47 |    997 | roctomud    | O+S       -> O+S
+  48 |    998 | roctomud    | S+W       -> S+W

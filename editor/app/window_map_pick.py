@@ -82,6 +82,7 @@ class _MapPickMixin:
 
     def _rect_drag_start(self, tx, ty):
         if getattr(self, "_terrain_active", False):
+            self._terrain_strich_beginnen()
             self._terrain_stamp(tx, ty)
             return
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
@@ -174,6 +175,7 @@ class _MapPickMixin:
         # cleanup below, which switches `rect_select_enabled` off: painting
         # would die after the first stroke until the tab is reopened.
         if getattr(self, "_terrain_active", False):
+            self._terrain_strich_abschliessen()
             return
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
             self._lava_stamp(tx, ty, add=True)

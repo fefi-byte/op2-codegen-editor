@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Cliffs are drawn as an **edge**, not painted as an area. Everything the
+generator places is taken from the original maps rather than guessed: the
+blocks are the tile groups the developers themselves painted with, and which
+block may follow which — with what offset — is counted across 107 stock maps.
+
+### Added
+- **Cliff brush**: each click sets a point of the edge, then you choose which
+  side is high and place it. Runs, corners and end pieces are assembled from
+  whole tile groups; a corner is picked by the sides its wall has to show *and*
+  by where the highland lies, so it can no longer end up rotated.
+- **Continuing a cliff**: start or end a line at an existing one. Blue rings
+  mark open ends and every click snaps to them within five tiles. Meeting a
+  wall halfway works too — a dashed ring under the cursor shows where the click
+  will land, and the cross wall stays intact.
+- **Erasing cliffs**: the *Lowland* brush lowers the ground again and takes the
+  cliff with it.
+- **Map generator**: terrain templates, features (mountain, valley, narrows,
+  clearing), symmetry, spawn points, volcanoes with lava zones — and the result
+  is written back as a playable `.map`.
+- **Terrain painting**: ground families, lava, building ground and volcanoes
+  are painted as intent into layers; the tiles are derived from them, including
+  the transitions between grounds.
+
+### Changed
+- **The highland brush is gone.** Deriving a cliff from a painted area was the
+  path that failed: area → height field → cell-type band → tile, and after three
+  derivations it was no longer known where the wall was meant to be. Highland
+  now appears where a drawn cliff puts it. *Lowland* stays as the eraser.
+- The terrain tab preselects *Dirt* instead of *Highland*, so the first click
+  cannot take anything away.
+- The eyedropper picks the ground even on highland.
+
 ## [0.4.0-alpha] - 2026-07-20
 
 The editor now generates missions on top of the classic **Outpost 2 Mission

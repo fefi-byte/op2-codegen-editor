@@ -16,13 +16,14 @@ from __future__ import annotations
 import numpy as np
 
 from .common import *
+from PySide6.QtWidgets import QGraphicsLineItem, QGraphicsEllipseItem
 from celltypes import (
     CLIFF, EDITABLE_CELL_TYPES, FAST, IMPASSABLE, MEDIUM, SLOW, SPECIAL,
     default_cell_type, speed_class,
 )
 from tileset import TILE, load_tileset
 import mapgen
-from .paint_layers import PaintLayers, B_HOCH, B_ERDE, B_VULKAN
+from .paint_layers import PaintLayers, B_ERDE, B_VULKAN, B_KLIPPE
 from .panels.terrain_panel import PUNKT_PINSEL
 
 # Farben des Befahrbarkeits-Overlays je Geschwindigkeitsklasse.
@@ -41,6 +42,10 @@ OVERLAY_ALPHA = 110
 # ab der sie in die Karte eingebacken werden.
 # Size of the repaint chunks (in tiles resp. pixels) and the limit at which
 # they get baked into the map.
+# Bis zu dieser Pinselgroesse wird waehrend des Ziehens live gerechnet.
+# Up to this brush size the tiles are computed live while dragging.
+LIVE_GRENZE = 21
+
 CHUNK_TILES = 8
 CHUNK_PX = CHUNK_TILES * TILE
 MAX_PATCH_CHUNKS = 96
@@ -87,6 +92,11 @@ class _TerrainMixin:
 
     def _init_terrain(self):
         self._terrain_active = False
+        self._strich_rechteck = None
+        self._strich_offen = False
+        self._klippen_punkte = []
+        self._klippen_items = []
+        self._klick_neu = False
         self._terrain_brush = 1
         self._overlay_enabled = True
         self._overlay_mode = "speed"
@@ -184,10 +194,23 @@ class _TerrainMixin:
         """Malebenen der geladenen Karte, bei Bedarf aufgebaut."""
         if self.map is None:
             return None
+        # Nicht nur auf ein anderes Kartenobjekt pruefen, sondern auf einen
+        # anderen INHALT. "Neue Karte" schreibt in dasselbe Op2Map-Objekt --
+        # die Pruefung auf Objektgleichheit ging deshalb gut, und der Pinsel
+        # arbeitete anschliessend mit den Hoehen- und Biomebenen der ALTEN
+        # Karte. Beim Malen kam dadurch voelliger Unsinn heraus.
+        # Do not only check for a different map object but for different
+        # CONTENT. "New map" writes into the same Op2Map object, so the identity
+        # check passed and the brush then worked with the height and biome
+        # layers of the OLD map, producing complete nonsense while painting.
+        marke = (id(self.map), len(self.map.tiles),
+                 int(sum(self.map.tiles[::97])))
         ebenen = getattr(self, "_layers", None)
-        if ebenen is None or ebenen.map is not self.map:
+        if (ebenen is None or ebenen.map is not self.map
+                or getattr(self, "_layers_marke", None) != marke):
             ebenen = PaintLayers(self.map)
             self._layers = ebenen
+            self._layers_marke = marke
         return ebenen
 
     def _terrain_cells(self, tx: int, ty: int) -> list[tuple[int, int]]:
@@ -216,6 +239,136 @@ class _TerrainMixin:
                     zellen.append((x, y))
         return zellen or [(tx, ty)]
 
+    def _terrain_strich_beginnen(self):
+        """Anfang eines Pinselstrichs."""
+        self._strich_rechteck = None
+        self._strich_rueck = []
+        self._strich_offen = True
+        # Nur der erste Aufruf eines Strichs zaehlt als Klick. Der
+        # Klippenpinsel setzt sonst bei jeder Mausbewegung einen Punkt.
+        # Only a stroke's first call counts as a click, otherwise the cliff
+        # brush would add a point on every mouse move.
+        self._klick_neu = True
+
+    def _terrain_strich_abschliessen(self):
+        """Ende des Strichs: einmal rechnen und alles auf einmal setzen."""
+        rechteck = getattr(self, "_strich_rechteck", None)
+        gesammelt = getattr(self, "_strich_rueck", [])
+        self._strich_rechteck = None
+        self._strich_rueck = []
+        self._strich_offen = False
+        ebenen = self._paint_layers()
+        if rechteck is None:
+            # Live gerechnet -- nur noch den gesammelten Strich in die
+            # Rueckgaengig-Kette legen.
+            # Computed live -- only the collected stroke still goes into the
+            # undo chain.
+            if ebenen is not None:
+                gesammelt = self._rand_nachziehen(ebenen, gesammelt)
+            if gesammelt:
+                self._push_undo("terrain", TerrainEdit(gesammelt))
+            return
+        if ebenen is None:
+            return
+        from PySide6.QtWidgets import QApplication
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            aenderungen = ebenen.synth_region(rechteck)
+            self._terrain_uebernehmen(aenderungen, tr("terrain.brush_"
+                                                      + self.terrain_panel.selected_brush()))
+        finally:
+            QApplication.restoreOverrideCursor()
+            # Schutz nur fuer die Dauer des Strichs -- sonst blieben alle je
+            # gemalten Zellen fuer immer von der Mischzone ausgenommen. Danach
+            # den Bereich einmal ohne Schutz nachrechnen, damit die Grenze auch
+            # auf der Innenseite eine Uebergangskachel bekommt.
+            # Protection only for the duration of the stroke, otherwise every
+            # cell ever painted would stay excluded from the blend zone.
+            # Afterwards recompute the area once without protection so the
+            # border gets a transition tile on its inner side as well.
+            self._rand_nachziehen(ebenen, [])
+
+    def _rand_nachziehen(self, ebenen, gesammelt):
+        """Nach dem Strich einmal ohne Schutz rechnen -- fuer die Innenkante."""
+        bereich = ebenen.strich_beenden()
+        if bereich is None:
+            return gesammelt
+        aenderungen = ebenen.synth_region(bereich)
+        if not aenderungen:
+            return gesammelt
+        for x, y, kachel, zelltyp in aenderungen:
+            i = self.map.tile_index(x, y)
+            alt = self.map.tiles[i]
+            self.map.set_tile(x, y, kachel, zelltyp)
+            if self.map.tiles[i] != alt:
+                gesammelt = list(gesammelt) + [(i, alt, self.map.tiles[i])]
+        coords = [(x, y) for x, y, _, _ in aenderungen]
+        self._repaint_tiles(coords)
+        self._patch_cells(coords)
+        self._refresh_terrain_overlay()
+        return gesammelt
+
+    def _uebergaenge_aufraeumen(self):
+        """Alle Uebergangskacheln der Karte neu bestimmen.
+
+        Nuetzlich nach dem Laden einer fremden Karte oder nach vielen
+        Einzelstrichen: der Aufruf leitet jede Uebergangskachel aus dem
+        Familienfeld ab und ersetzt die, an deren Stelle gar keine Grenze
+        liegt, durch reinen Boden.
+
+        Recompute every transition tile of the map. Useful after loading a
+        foreign map or after many individual strokes: derives each transition
+        tile from the family field and replaces those sitting where there is no
+        border at all with pure ground.
+        """
+        import celltypes as _ct
+        ebenen = self._paint_layers()
+        if ebenen is None:
+            return
+        h, w = self.map.height, self.map.width
+        gitter = np.array([[self.map.tile_mapping_index(x, y) for x in range(w)]
+                           for y in range(h)], dtype=np.int32)
+        vorher = gitter.copy()
+        anzahl = mapgen.nachbearbeite_uebergaenge(
+            gitter, ebenen.familie, ebenen.tm, ebenen.rng)
+        ys, xs = np.nonzero(gitter != vorher)
+        aenderungen = [(int(x), int(y), int(gitter[y, x]),
+                        int(_ct.default_cell_type(int(gitter[y, x]))))
+                       for y, x in zip(ys.tolist(), xs.tolist())]
+        self._terrain_uebernehmen(aenderungen, tr("terrain.btn_aufraeumen"))
+        self.statusBar().showMessage(
+            tr("terrain.aufgeraeumt", n=len(aenderungen)), 4000)
+
+    def _terrain_uebernehmen(self, aenderungen, was: str, sammeln: bool = False):
+        """Berechnete Kacheln setzen, zeichnen und in die Rueckgaengig-Kette."""
+        if not aenderungen:
+            self._refresh_terrain_overlay()
+            return
+        rueck: list[tuple[int, int, int]] = []
+        for x, y, kachel, zelltyp in aenderungen:
+            i = self.map.tile_index(x, y)
+            alt = self.map.tiles[i]
+            self.map.set_tile(x, y, kachel, zelltyp)
+            if self.map.tiles[i] != alt:
+                rueck.append((i, alt, self.map.tiles[i]))
+        coords = [(x, y) for x, y, _, _ in aenderungen]
+        self._repaint_tiles(coords)
+        self._patch_cells(coords)
+        if not rueck:
+            return
+        self._mark_map_edited()
+        if sammeln:
+            # Waehrend eines Strichs sammeln -- sonst entstuende je
+            # Mausschritt ein eigener Rueckgaengig-Eintrag.
+            # Collect during a stroke, otherwise every mouse step would produce
+            # its own undo entry.
+            self._strich_rueck = getattr(self, "_strich_rueck", []) + rueck
+        else:
+            self._push_undo("terrain", TerrainEdit(rueck))
+        self._refresh_terrain_overlay()
+        self.statusBar().showMessage(
+            tr("terrain.status_painted", brush=was, n=len(rueck)))
+
     def _terrain_stamp(self, tx: int, ty: int):
         """Pinselstrich: Absicht in die Ebenen malen, Kacheln neu ableiten.
 
@@ -234,12 +387,47 @@ class _TerrainMixin:
         if not zellen:
             return
         brush = self.terrain_panel.selected_brush()
+        if brush == B_KLIPPE:
+            self._klippe_punkt(tx, ty)
+            return
         rechteck = ebenen.male(brush, zellen)
         if rechteck is None:
             return
         if brush == B_VULKAN:
             self._stempel_vulkan(rechteck, ebenen)
+
+        # Waehrend des Ziehens nur die Ebenen malen und den Bereich merken.
+        # Das Ableiten der Kacheln dauert bei grossem Pinsel ueber eine
+        # Sekunde -- bei jeder Mausbewegung waere das unbenutzbar. Gerechnet
+        # wird einmal beim Loslassen.
+        # While dragging, only paint the layers and remember the region.
+        # Deriving the tiles takes over a second with a large brush -- doing
+        # that on every mouse move would be unusable. It is computed once on
+        # release.
+        if getattr(self, "_strich_offen", False):
+            # Kleiner Pinsel rechnet live mit, grosser sammelt. Gemessen
+            # braucht ein Strich beim Ziehen 51 ms bei Pinsel 11 und 114 ms
+            # bei 21 -- darueber ruckelt es sichtbar, also wird dann erst beim
+            # Loslassen gerechnet.
+            # A small brush computes live, a large one collects. Measured, a
+            # drag step takes 51 ms at brush 11 and 114 ms at 21 -- above that
+            # it stutters visibly, so it is computed on release instead.
+            if self.terrain_panel.brush_radius() > LIVE_GRENZE:
+                vorher = getattr(self, "_strich_rechteck", None)
+                if vorher is None:
+                    self._strich_rechteck = tuple(rechteck)
+                else:
+                    a, b, c, d = vorher
+                    self._strich_rechteck = (min(a, rechteck[0]), min(b, rechteck[1]),
+                                             max(c, rechteck[2]), max(d, rechteck[3]))
+                self._update_terrain_preview(tx, ty)
+                return
+            self._terrain_uebernehmen(ebenen.synth_region(rechteck),
+                                      tr(f"terrain.brush_{brush}"), sammeln=True)
+            self._update_terrain_preview(tx, ty)
+            return
         aenderungen = ebenen.synth_region(rechteck)
+        ebenen.strich_beenden()
         if not aenderungen:
             self._refresh_terrain_overlay()
             return
@@ -262,6 +450,153 @@ class _TerrainMixin:
             tr("terrain.status_painted", brush=tr(f"terrain.brush_{brush}"),
                n=len(rueck)))
 
+    # ------------------------------------------------------------------
+    # Klippenlinie / cliff line
+
+    def _klippe_punkt(self, tx: int, ty: int):
+        """Einen Stuetzpunkt der Klippenlinie setzen.
+
+        Beim Klippenpinsel wird nicht gemalt, sondern die Kante gezeichnet:
+        jeder Klick setzt einen Punkt, der Knopf "Setzen" legt die Bloecke.
+        Waehrend des Ziehens darf nur der erste Aufruf zaehlen -- sonst
+        entstuenden bei jeder Mausbewegung neue Punkte.
+
+        A cliff brush click sets a point of the edge instead of painting. Only
+        the first call of a drag counts, otherwise every mouse move would add
+        another point.
+        """
+        if not getattr(self, "_klick_neu", False):
+            return
+        self._klick_neu = False
+        if not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
+            return
+        punkte = getattr(self, "_klippen_punkte", None)
+        if punkte is None:
+            punkte = self._klippen_punkte = []
+        # Auf ein offenes Klippenende einrasten. Damit muss man beim
+        # Weiterzeichnen nicht kachelgenau treffen -- und die Fortsetzung
+        # setzt garantiert am richtigen Block an.
+        #
+        # Fuer JEDEN Punkt, nicht nur den ersten: eine Linie kann genauso gut auf
+        # eine vorhandene Klippe zulaufen wie von einer wegfuehren, und dann muss
+        # ihr Ende einrasten. Schon gesetzte Punkte sind ausgenommen, sonst
+        # zoege es einen kurzen zweiten Klick auf den ersten zurueck.
+        # For EVERY point, not only the first: a line can run into an existing
+        # cliff as well as away from one, and then its end has to snap. Points
+        # already placed are excluded, otherwise a short second click would be
+        # pulled back onto the first.
+        ebenen = self._paint_layers()
+        if ebenen is not None:
+            anker = ebenen.klippen_anker(tx, ty, ausser=punkte)
+            if anker is not None:
+                tx, ty = anker
+                self.statusBar().showMessage(tr("terrain.klippe_eingerastet"))
+        # Auf denselben Punkt noch einmal zu klicken schliesst die Figur.
+        # Clicking the same point again closes the figure.
+        punkte.append((int(tx), int(ty)))
+        self._klippen_vorschau()
+        self.terrain_panel.klippen_punkte_geaendert(len(punkte))
+
+    def klippen_anker_auffrischen(self):
+        """Die Ankerringe neu zeichnen -- nach jeder Kartenaenderung.
+
+        Sie kommen aus den Zelltypen der Karte, also stimmen sie nach einem
+        Rueckgaengig von selbst wieder; sie muessen nur neu gezeichnet werden.
+        Redraw the anchor rings after any map change: they come from the map's
+        cell types, so an undo fixes them by itself -- they only need redrawing.
+        """
+        if getattr(self, "_terrain_active", False) and hasattr(self, "terrain_panel"):
+            self._klippen_vorschau()
+
+    def _klippen_verwerfen(self):
+        """Gesetzte Stuetzpunkte wegwerfen, ohne etwas zu zeichnen."""
+        self._klippen_punkte = []
+        self._klippen_vorschau()
+        self.terrain_panel.klippen_punkte_geaendert(0)
+        self.statusBar().showMessage(tr("terrain.klippe_verworfen"))
+
+    def _klippe_setzen(self):
+        """Aus den Stuetzpunkten eine Klippe machen."""
+        ebenen = self._paint_layers()
+        punkte = getattr(self, "_klippen_punkte", []) or []
+        if ebenen is None or len(punkte) < 2:
+            self.statusBar().showMessage(tr("terrain.klippe_zu_kurz"))
+            return
+        seite = self.terrain_panel.klippen_seite()
+        aenderungen = ebenen.klippe_zeichnen(punkte, seite)
+        self._klippen_punkte = []
+        self.terrain_panel.klippen_punkte_geaendert(0)
+        if not aenderungen:
+            self._klippen_vorschau()
+            self.statusBar().showMessage(tr("terrain.klippe_leer"))
+            return
+        rueck: list[tuple[int, int, int]] = []
+        for x, y, kachel, zelltyp in aenderungen:
+            i = self.map.tile_index(x, y)
+            alt = self.map.tiles[i]
+            self.map.set_tile(x, y, kachel, zelltyp)
+            if self.map.tiles[i] != alt:
+                rueck.append((i, alt, self.map.tiles[i]))
+        coords = [(x, y) for x, y, _, _ in aenderungen]
+        self._repaint_tiles(coords)
+        self._patch_cells(coords)
+        # Die Vorschau ERST jetzt neu zeichnen, mit der fertig geschriebenen
+        # Karte. Sie fragt `offene_enden`, und das wirft gemerkte Enden weg, an
+        # denen keine Klippe steht -- lief sie vor dem Schreiben, verwarf sie
+        # genau die Enden, die dieser Zug eben erst gemerkt hatte.
+        # Redraw the preview only now, with the map fully written: it asks
+        # `offene_enden`, which discards remembered ends with no cliff at them --
+        # run before the write it discarded exactly the ends this stroke had just
+        # remembered.
+        self._klippen_vorschau()
+        if not rueck:
+            return
+        self._mark_map_edited()
+        self._push_undo("terrain", TerrainEdit(rueck))
+        self._refresh_terrain_overlay()
+        self.statusBar().showMessage(tr("terrain.klippe_gesetzt", n=len(rueck)))
+
+    def _klippen_vorschau(self):
+        """Die gesetzten Stuetzpunkte als Linie in der Szene zeigen."""
+        for item in getattr(self, "_klippen_items", []):
+            if item.scene() is self.scene:
+                self.scene.removeItem(item)
+        self._klippen_items = []
+        # Offene Enden als Anker zeigen, auch wenn gerade nichts gezeichnet
+        # wird -- man muss sehen, wo man ansetzen kann.
+        # Show open ends as anchors even when nothing is being drawn.
+        ebenen = self._paint_layers()
+        if ebenen is not None and self.terrain_panel.selected_brush() == B_KLIPPE:
+            for ax, ay in ebenen.offene_enden():
+                ring = QGraphicsEllipseItem((ax - 0.6) * SCENE_TILE,
+                                            (ay - 0.6) * SCENE_TILE,
+                                            2.2 * SCENE_TILE, 2.2 * SCENE_TILE)
+                ring.setPen(QPen(QColor(120, 220, 255), 2))
+                ring.setZValue(1000)
+                self.scene.addItem(ring)
+                self._klippen_items.append(ring)
+        punkte = getattr(self, "_klippen_punkte", []) or []
+        if not punkte:
+            return
+        farbe = QColor(255, 210, 90)
+        for i, (x, y) in enumerate(punkte):
+            marke = QGraphicsRectItem((x - 0.5) * SCENE_TILE,
+                                      (y - 0.5) * SCENE_TILE,
+                                      2 * SCENE_TILE, 2 * SCENE_TILE)
+            marke.setPen(QPen(farbe, 3))
+            marke.setZValue(1002)
+            self.scene.addItem(marke)
+            self._klippen_items.append(marke)
+            if i:
+                x0, y0 = punkte[i - 1]
+                strich = QGraphicsLineItem(
+                    (x0 + 0.5) * SCENE_TILE, (y0 + 0.5) * SCENE_TILE,
+                    (x + 0.5) * SCENE_TILE, (y + 0.5) * SCENE_TILE)
+                strich.setPen(QPen(farbe, 4))
+                strich.setZValue(1001)
+                self.scene.addItem(strich)
+                self._klippen_items.append(strich)
+
     def _stempel_vulkan(self, rechteck, ebenen):
         """Vulkanstempel setzen -- der ist ein festes Bauteil, keine Flaeche."""
         import numpy as np
@@ -283,12 +618,14 @@ class _TerrainMixin:
         ebenen = self._paint_layers()
         if ebenen is None or not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
             return
-        if ebenen.hoehe[ty, tx]:
-            brush = B_HOCH
-        else:
-            fam = int(ebenen.familie[ty, tx])
-            namen = ebenen.tm.families
-            brush = namen[fam] if 0 <= fam < len(namen) else B_ERDE
+        # Auch auf Hochland wird der BODEN aufgenommen. Frueher schaltete es
+        # dort auf den Hochland-Pinsel um -- den gibt es nicht mehr, und die
+        # Hoehe ist ohnehin nichts, was man aufnehmen und weitermalen koennte.
+        # On highland the GROUND is picked too: it used to switch to the
+        # highland brush, which no longer exists.
+        fam = int(ebenen.familie[ty, tx])
+        namen = ebenen.tm.families
+        brush = namen[fam] if 0 <= fam < len(namen) else B_ERDE
         self.terrain_panel.set_brush(brush)
         self.statusBar().showMessage(
             tr("terrain.status_picked_brush", brush=tr(f"terrain.brush_{brush}")))
@@ -482,6 +819,9 @@ class _TerrainMixin:
 
     def _update_terrain_preview(self, tx: int, ty: int):
         self._clear_terrain_preview()
+        if self.terrain_panel.selected_brush() == B_KLIPPE:
+            self._klippen_zielring(tx, ty)
+            return
         cells = self._terrain_cells(tx, ty)
         if not cells:
             return
@@ -494,6 +834,36 @@ class _TerrainMixin:
         rect.setZValue(1000)
         self.scene.addItem(rect)
         self._terrain_preview_item = rect
+
+    def _klippen_zielring(self, tx: int, ty: int):
+        """Ein Ring unter dem Zeiger: dorthin wuerde der Klick einrasten.
+
+        Die offenen Enden tragen ihren eigenen, dauerhaften Ring. Fuer die
+        Wandmitte geht das nicht -- ein Ring je Wandstueck waeren auf `cm04`
+        1017 statt 51 und auf `cm02` 804 statt 34, Faktor 16 bis 24. Also einer,
+        der mitgeht, und nur dort, wo wirklich eingerastet wird.
+
+        One ring under the cursor showing where the click would snap. Open ends
+        carry their own permanent ring; for the middle of a wall that does not
+        scale -- one ring per wall segment would be 1017 instead of 51 on `cm04`.
+        So one that follows along, and only where snapping really happens.
+        """
+        ebenen = self._paint_layers()
+        if ebenen is None or self.map is None:
+            return
+        if not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
+            return
+        punkte = getattr(self, "_klippen_punkte", None) or []
+        ziel = ebenen.klippen_anker(tx, ty, ausser=punkte)
+        if ziel is None or ziel in ebenen.offene_enden():
+            return          # dort steht schon ein dauerhafter Ring
+        ring = QGraphicsEllipseItem((ziel[0] - 0.6) * SCENE_TILE,
+                                    (ziel[1] - 0.6) * SCENE_TILE,
+                                    2.2 * SCENE_TILE, 2.2 * SCENE_TILE)
+        ring.setPen(QPen(QColor(120, 220, 255), 2, Qt.DashLine))
+        ring.setZValue(1000)
+        self.scene.addItem(ring)
+        self._terrain_preview_item = ring
 
     def _clear_terrain_preview(self):
         item = getattr(self, "_terrain_preview_item", None)

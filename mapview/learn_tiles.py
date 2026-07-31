@@ -26,7 +26,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from op2map import Op2Map  # noqa: E402
+from op2map import Op2Map, CELL_TYPE_BITS, MAPPING_INDEX_MASK  # noqa: E402
 import celltypes  # noqa: E402
 
 DEFAULT_GAME_DIR = Path(r"C:\Program Files (x86)\GOG Galaxy\Games\Outpost 2")
@@ -54,7 +54,13 @@ CLIFF_MARKER = "mes"
 # INNERHALB einer Flaeche -- im Original decken sie rund 3 % der Karte ab.
 # Scatter: stones, cracks, craters. Not building blocks but details WITHIN an
 # area -- in the originals they cover about 3 % of the map.
-DETAIL_MARKERS = ("rock", "rok", "crk", "crac", "crat")
+# `wrk` sind Wrackteile -- Verzierung wie Brocken und Risse, kein Boden.
+# Sie fehlten hier, und 13 `mudwrk*` plus 2 `sanwrk*` wurden deshalb als
+# Grundkacheln frei gesetzt: 18 von 50 Erdkacheln waren gar keine Erde.
+# `wrk` are wreck pieces -- decoration like boulders and cracks, not
+# ground. They were missing here, so 13 `mudwrk*` plus 2 `sanwrk*` were
+# placed freely as base tiles: 18 of 50 dirt tiles were not dirt at all.
+DETAIL_MARKERS = ("rock", "rok", "crk", "crac", "crat", "wrk")
 
 # Namenspraefixe der TileGroups -> Gelaendefamilie.
 # Tile group name prefixes -> terrain family.
@@ -147,6 +153,296 @@ ROLLE_NORD, ROLLE_HOCHSEITE, ROLLE_TIEFSEITE = 2, 3, 4
 
 CLIFF_CELLS = (celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
                celltypes.CLIFFS_LOW_SIDE)
+
+
+# Bodenarten, wie sie in Gruppennamen vorkommen, samt Schreibvarianten.
+# Ground types as they appear in group names, with spelling variants.
+BODEN_NAMEN = ("mud", "roc", "san", "sno", "lav")
+BODEN_ALIAS = {"snow": "sno", "snw": "sno", "rock": "roc", "sand": "san",
+               "dirt": "mud",
+               # `roctola3` heisst "rock to lava", kuerzt Lava aber auf "la"
+               # ab. Ohne diesen Eintrag galten seine 48 Kacheln als reiner
+               # Fels und wurden mitten in Felsflaechen gestreut -- Lavaboden,
+               # wo keine Lava ist.
+               # `roctola3` means "rock to lava" but abbreviates lava as "la".
+               # Without this entry its 48 tiles counted as pure rock and were
+               # scattered in the middle of rock areas -- lava ground where
+               # there is no lava.
+               "tola": "lav"}
+
+
+def familien_im_namen(low: str) -> list[str]:
+    """Welche Bodenarten nennt ein Gruppenname?
+
+    Nennt er zwei, ist es ein Uebergangssatz: `roctomud` ist Fels ZU Erde,
+    `santoroc` Sand zu Fels. Die Entwickler haben ihre Uebergaenge selbst so
+    benannt -- die verlaesslichste Quelle, die es dafuer gibt.
+
+    Which ground types does a group name mention? If it names two, it is a
+    transition set: `roctomud` is rock TO dirt. The developers named their
+    transitions themselves, the most reliable source there is.
+    """
+    gefunden = []
+    for f in BODEN_NAMEN:
+        if f in low and f not in gefunden:
+            gefunden.append(f)
+    for alias, f in BODEN_ALIAS.items():
+        if alias in low and f not in gefunden:
+            gefunden.append(f)
+    return gefunden
+
+
+# Wie fein die Kante einer Kachel beschrieben wird: Mittelwerte ueber so
+# viele Abschnitte je Seite. Gemessen deckt 8 noch 98,6 % der Nachbarschaften
+# aus den Originalkarten ab und laesst 542 statt 21 Kacheln als Nachbarn zu --
+# genau der Spielraum, der dem Loeser bisher fehlte. Feiner (32) waere
+# strenger, wuerde aber 4 % der Kombinationen ausschliessen, die die
+# Entwickler selbst benutzt haben.
+# How finely a tile edge is described: means over this many segments per side.
+# Measured, 8 still covers 98.6 % of the adjacencies in the original maps and
+# admits 542 instead of 21 tiles as neighbours -- exactly the room the solver
+# was missing. Finer (32) would be stricter but would rule out 4 % of the
+# combinations the developers used themselves.
+KANTEN_SEGMENTE = 8
+
+
+def gruppe_je_kachel(m: Op2Map, n: int) -> np.ndarray:
+    """Zu welcher TileGroup gehoert jede Kachel? (-1 = keiner)
+
+    Die Gruppen sind die Pinsel des Originaleditors. Gemessen an cm03/cm04
+    stammen 60-65 % aller benachbarten Klippenkacheln aus derselben Gruppe --
+    die Entwickler haben Klippen als Zug gezogen, nicht Zelle fuer Zelle
+    zusammengesucht.
+
+    Which TileGroup does each tile belong to? (-1 = none). The groups are the
+    original editor's brushes. Measured on cm03/cm04, 60-65 % of all adjacent
+    cliff tiles come from the same group -- the developers drew cliffs as a run
+    rather than assembling them cell by cell.
+    """
+    aus = np.full(n, -1, dtype=np.int16)
+    for gi, g in enumerate(m.tile_groups):
+        for t in np.asarray(g.mapping_indices).ravel():
+            if 0 <= int(t) < n:
+                aus[int(t)] = gi
+    return aus
+
+
+def kantensignatur(px: np.ndarray, segmente: int = KANTEN_SEGMENTE) -> np.ndarray:
+    """Die vier Raender einer Kachel als Farbmittel je Abschnitt.
+
+    Reihenfolge: Ost, West, Sued, Nord -- jeweils von oben bzw. links gelesen.
+
+    The four borders of a tile as colour means per segment; order east, west,
+    south, north, each read from top respectively left.
+    """
+    def teile(reihe):
+        return reihe.reshape(segmente, -1, 3).mean(axis=1)
+    return np.stack([teile(px[:, -1]), teile(px[:, 0]),
+                     teile(px[-1, :]), teile(px[0, :])])
+
+
+# Wie viele Pixelreihen tief eine Kante gelesen wird. Eine einzige Reihe ist
+# zu wackelig: an einer gesprenkelten Grenze kippt ein Abschnitt schon durch
+# ein paar Pixel. Gemessen an den 144 Uebergangskacheln sinken die unmoeglichen
+# Muster (mehr als ein Wechsel je Kante) von 9 auf 3 von 576, wenn zwei Reihen
+# gelesen werden. Tiefer wird es wieder schlechter, weil der Streifen dann ins
+# Kachelinnere greift, wo der andere Boden schon anfaengt.
+# How many pixel rows deep an edge is read. A single row is too shaky: on a
+# dithered border a segment flips on a few pixels. Measured across the 144
+# transition tiles, impossible patterns (more than one change per edge) drop
+# from 9 to 3 of 576 when two rows are read. Deeper gets worse again because the
+# strip then reaches into the tile interior where the other ground already
+# begins.
+KANTEN_TIEFE = 2
+
+# In wie viele Abschnitte eine Seite zerlegt wird.
+# Into how many segments a side is split.
+MUSTER_ABSCHNITTE = 4
+
+
+def _laeufe(n: int = MUSTER_ABSCHNITTE):
+    """Alle Muster mit hoechstens EINEM Wechsel, als Wahrheitswerte."""
+    aus = []
+    for k in range(n + 1):
+        aus.append([False] * k + [True] * (n - k))
+        aus.append([True] * k + [False] * (n - k))
+    return [tuple(x) for x in {tuple(a) for a in aus}]
+
+
+def kantenmuster(px: np.ndarray, farbe_a: np.ndarray, farbe_b: np.ndarray,
+                 tiefe: int = KANTEN_TIEFE,
+                 abschnitte: int = MUSTER_ABSCHNITTE) -> np.ndarray:
+    """Je Seite und Abschnitt: gehoert er zu Boden A oder B?
+
+    Reihenfolge der Seiten wie bei `kantensignatur`: Ost, West, Sued, Nord.
+    Jede Seite wird von links bzw. oben gelesen, damit zusammengehoerige Kanten
+    dieselbe Reihenfolge haben.
+
+    Zwei Schritte:
+      1. Jeden Pixel des Randstreifens dem naeheren Boden zuordnen und je
+         Abschnitt die Mehrheit nehmen. Den Streifen zu mitteln geht bei
+         gesprenkelten Kacheln schief, weil der Mittelwert immer zwischen
+         beiden Boeden landet.
+      2. Auf ein Muster mit hoechstens EINEM Wechsel zurechtruecken. Eine
+         Bodengrenze laeuft an einer Kante von einem Boden zum anderen, mehr
+         nicht -- ein Muster wie MMSM kann es nicht geben und ist immer ein
+         Messfehler.
+
+    Per side and segment: does it belong to ground A or B? Side order as in
+    `kantensignatur`: east, west, south, north, each read from the left resp.
+    top so that matching edges share the same order.
+
+    Two steps: (1) assign every pixel of the border strip to the nearer ground
+    and take the majority per segment -- averaging the strip fails on dithered
+    tiles because the mean always lands between the two grounds; (2) snap to a
+    pattern with at most ONE change. A ground border runs from one ground to the
+    other along an edge, no more -- a pattern like MMSM cannot exist and is
+    always a measurement error.
+    """
+    seiten = (px[:, -tiefe:][:, ::-1], px[:, :tiefe],
+              np.swapaxes(px[-tiefe:, :], 0, 1)[:, ::-1],
+              np.swapaxes(px[:tiefe, :], 0, 1))
+    gueltig = _laeufe(abschnitte)
+    aus = np.zeros((4, abschnitte), dtype=bool)
+    for i, feld in enumerate(seiten):
+        anteil = np.array([
+            float((np.linalg.norm(teil - farbe_b, axis=2)
+                   < np.linalg.norm(teil - farbe_a, axis=2)).mean())
+            for teil in np.array_split(feld, abschnitte, axis=0)])
+        beste = min(gueltig, key=lambda lauf: float(np.abs(
+            anteil - np.asarray(lauf, dtype=float)).sum()))
+        aus[i] = beste
+    return aus
+
+
+def sammle_muster(m: Op2Map, vol, uebergang: dict, fam_of: dict,
+                  n: int) -> np.ndarray:
+    """Kantenmuster fuer alle Uebergangskacheln aus den Kachelbildern.
+
+    Reine Kacheln bekommen durchgehend ihre eigene Familie: dort gibt es kein
+    Muster zu erkennen, nur Verzierung. Gemessen wuerden sonst 41 von 145
+    Sandkacheln erfundene Fels-Abschnitte bekommen, weil ein Kraterschatten
+    farblich naeher an Fels liegt als an Sand.
+
+    Edge patterns for all transition tiles, from the tile graphics. Pure tiles
+    get their own family throughout: there is no pattern to detect there, only
+    decoration. Measured, 41 of 145 sand tiles would otherwise get invented rock
+    segments because a crater shadow is closer to rock than to sand in colour.
+    """
+    import tileset
+    saetze = {}
+    for src in m.tileset_sources:
+        if not src.filename:
+            continue
+        try:
+            saetze[src.filename] = tileset.load_tileset(
+                vol.read_file(src.filename + ".bmp"))
+        except Exception:
+            pass
+
+    def bild(t):
+        mp = m.tile_mappings[t]
+        if mp.tileset_index >= len(m.tileset_sources):
+            return None
+        satz = saetze.get(m.tileset_sources[mp.tileset_index].filename)
+        if satz is None:
+            return None
+        px = tileset.get_tile_rgb(satz, mp.tile_graphic_index)
+        return None if px is None else px.astype(np.float64)
+
+    # Bodenfarbe je Familie aus GANZEN reinen Kacheln, nicht nur aus deren
+    # Raendern -- Raender sind eine schiefe Stichprobe.
+    # Ground colour per family from WHOLE pure tiles, not just their borders --
+    # borders are a biased sample.
+    farbe: dict[str, np.ndarray] = {}
+    for fam in set(fam_of.values()):
+        werte = []
+        for t, f in fam_of.items():
+            if f != fam or t in uebergang or not (0 <= t < n):
+                continue
+            px = bild(t)
+            if px is not None:
+                werte.append(px.reshape(-1, 3))
+            if len(werte) >= 30:
+                break
+        if len(werte) >= 3:
+            farbe[fam] = np.concatenate(werte).mean(axis=0)
+
+    # Boeden ohne reine Kachel -- Lava kommt in den Karten nur als Uebergang
+    # vor, es gibt keine reine Lavaflaeche. Die Farbe steckt aber in den
+    # Uebergangskacheln selbst: was dort nicht der bekannte Boden ist, ist der
+    # gesuchte. Ohne diesen Schritt blieben die 48 Kacheln von `roctola3` ganz
+    # ohne Muster.
+    # Grounds without a pure tile -- lava occurs in the maps only as a
+    # transition, there is no pure lava area. Its colour is in the transition
+    # tiles themselves: whatever is not the known ground there is the one we are
+    # looking for. Without this step the 48 tiles of `roctola3` stayed without
+    # any pattern.
+    nach_paar: dict[tuple[str, str], list[int]] = {}
+    for t, paar in uebergang.items():
+        if 0 <= t < n:
+            nach_paar.setdefault(paar, []).append(t)
+    for (fa, fb), tiles in nach_paar.items():
+        for bekannt, fehlt in ((fa, fb), (fb, fa)):
+            if bekannt not in farbe or fehlt in farbe:
+                continue
+            werte = [bild(t).reshape(-1, 3) for t in tiles[:20]
+                     if bild(t) is not None]
+            if not werte:
+                continue
+            alle = np.concatenate(werte)
+            d = np.linalg.norm(alle - farbe[bekannt], axis=1)
+            # Das aeussere Drittel -- weit genug weg vom bekannten Boden, um
+            # den anderen zu treffen, aber kein Einzelausreisser.
+            # The outer third -- far enough from the known ground to hit the
+            # other one, but not a single outlier.
+            fern = alle[d >= np.quantile(d, 2 / 3)]
+            if len(fern) >= 50:
+                farbe[fehlt] = fern.mean(axis=0)
+
+    aus = np.full((n, 4, MUSTER_ABSCHNITTE), -1, dtype=np.int16)
+    familien = sorted(set(fam_of.values())
+                      | {f for paar in uebergang.values() for f in paar})
+    nummer = {f: i for i, f in enumerate(familien)}
+    for t in range(n):
+        paar = uebergang.get(t)
+        if paar and paar[0] in farbe and paar[1] in farbe:
+            px = bild(t)
+            if px is None:
+                continue
+            maske = kantenmuster(px, farbe[paar[0]], farbe[paar[1]])
+            aus[t] = np.where(maske, nummer[paar[1]], nummer[paar[0]])
+        elif t in fam_of:
+            aus[t] = nummer[fam_of[t]]
+    return aus
+
+
+def sammle_kanten(m: Op2Map, vol, segmente: int = KANTEN_SEGMENTE) -> np.ndarray:
+    """Kantensignaturen aller Kacheln einer Karte."""
+    import tileset
+    saetze = {}
+    for src in m.tileset_sources:
+        if not src.filename:
+            continue
+        try:
+            saetze[src.filename] = tileset.load_tileset(
+                vol.read_file(src.filename + ".bmp"))
+        except Exception:
+            pass
+    n = len(m.tile_mappings)
+    aus = np.zeros((n, 4, segmente, 3), dtype=np.uint8)
+    for t in range(n):
+        mp = m.tile_mappings[t]
+        if mp.tileset_index >= len(m.tileset_sources):
+            continue
+        satz = saetze.get(m.tileset_sources[mp.tileset_index].filename)
+        if satz is None:
+            continue
+        px = tileset.get_tile_rgb(satz, mp.tile_graphic_index)
+        if px is None or px.shape[0] % segmente:
+            continue
+        aus[t] = kantensignatur(px.astype(np.float64), segmente).round()
+    return aus
 
 
 def height_field(ct: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -447,6 +743,21 @@ def extract_formations(m: Op2Map, grid: np.ndarray, fam_of: dict,
     return out
 
 
+def kachelfeld(m: Op2Map) -> np.ndarray:
+    """Die Kachelindizes einer Karte als Feld (Hoehe x Breite).
+
+    OP2 legt die Kacheln in senkrechten 32er-Streifen ab; ausgerollt ergibt
+    das [Streifen, y, x-innerhalb] und damit nach einem Tausch das Feld.
+
+    A map's tile indices as an array. OP2 stores tiles in vertical 32-column
+    strips; unrolled that is [strip, y, x-within], one transpose from the field.
+    """
+    streifen = np.asarray(m.tiles).reshape(-1, m.height, 32)
+    feld = streifen.transpose(1, 0, 2).reshape(m.height, -1)
+    return ((feld[:, :m.width] >> CELL_TYPE_BITS)
+            & MAPPING_INDEX_MASK).astype(np.int32)
+
+
 def training_maps(game_dir: Path, campaign_only: bool = True) -> list[Path]:
     """Karten fuers Anlernen auswaehlen (ohne Altkopien, optional nur Kampagne)."""
     maps = [p for p in sorted(set(game_dir.rglob("*.map")))
@@ -456,8 +767,155 @@ def training_maps(game_dir: Path, campaign_only: bool = True) -> list[Path]:
     return maps
 
 
+def _packe_randkacheln(tab: dict) -> dict:
+    """(Paar, Richtung) -> die richtungstypischen Kacheln, als flache Felder."""
+    paare = sorted({paar for paar, _ in tab})
+    # Eine Kachel bleibt in JEDER Richtung, in der sie vorkam. Zwei Versuche,
+    # das zu schaerfen -- die untypischen aussortieren, dann sie nur schwaecher
+    # gewichten -- haben die Fehlpaare von 3,88 auf 6,24 bzw. 5,98 % erhoeht.
+    # Die Entwickler benutzen dieselbe Kachel tatsaechlich in mehreren
+    # Richtungen; wer das wegfiltert, nimmt der Nachbarschaftsloesung die Luft.
+    # A tile stays in EVERY direction it appeared in. Two attempts to sharpen
+    # this -- dropping the untypical ones, then merely down-weighting them --
+    # raised bad pairs from 3.88 to 6.24 and 5.98 % respectively. The
+    # developers really do use the same tile in several directions; filtering
+    # that away starves the adjacency solve.
+    faelle = []
+    for i, paar in enumerate(paare):
+        for r in range(8):
+            eintrag = tab.get((paar, r))
+            if not eintrag:
+                continue
+            faelle.append((i * 8 + r,
+                           eintrag.most_common(RAND_KACHELN_JE_FALL)))
+    faelle.sort(key=lambda t: t[0])
+    schluessel, tiles, counts, offsets = [], [], [], []
+    for schl, eintraege in faelle:
+        schluessel.append(schl)
+        offsets.append(len(tiles))
+        for kachel, n in eintraege:
+            tiles.append(kachel)
+            counts.append(n)
+    offsets.append(len(tiles))
+    return {
+        "border_pairs": np.array([f"{a}|{b}" for a, b in paare] or [""], dtype="<U8"),
+        "border_keys": np.array(schluessel or [0], dtype=np.int64),
+        "border_offsets": np.array(offsets if schluessel else [0, 0], dtype=np.int32),
+        "border_tiles": np.array(tiles or [0], dtype=np.int32),
+        "border_counts": np.array(counts or [0], dtype=np.int32),
+    }
+
+
+def _mischgrad_quantile(uebergang: dict, summe: dict, usage) -> np.ndarray:
+    """Verteilung der tatsaechlich benutzten Mischgrade, als 33 Quantile."""
+    werte, gewichte = [], []
+    for tile in sorted(uebergang):
+        if tile not in summe or not summe[tile][1]:
+            continue
+        werte.append(summe[tile][0] / summe[tile][1])
+        gewichte.append(int(usage.get(tile, 0)))
+    if not werte or not sum(gewichte):
+        return np.linspace(0.0, 1.0, 33).astype(np.float32)
+    ordnung = np.argsort(werte)
+    w = np.array(werte, dtype=np.float64)[ordnung]
+    g = np.array(gewichte, dtype=np.float64)[ordnung]
+    kumuliert = np.cumsum(g) / g.sum()
+    ziel = np.linspace(0.0, 1.0, 33)
+    return np.interp(ziel, kumuliert, w).astype(np.float32)
+
+
+def lerne_mischgrad(grid: np.ndarray, uebergang: dict, fam_of: dict,
+                    summe: dict) -> None:
+    """Wie weit "drueben" liegt eine Uebergangskachel?
+
+    Eine Uebergangstafel ist ein Verlauf: oben fast nur Bodenart A, unten fast
+    nur B. Welche Kachel welchem Mischgrad entspricht, steht nirgends -- also
+    wird es aus den Karten abgelesen: der Anteil von B in der Nachbarschaft,
+    ueber alle Vorkommen gemittelt.
+
+    How far "across" is a transition tile? A transition palette is a ramp --
+    mostly ground A at the top, mostly B at the bottom. Which tile matches
+    which blend level is written down nowhere, so it is read off the maps: the
+    share of B in the neighbourhood, averaged over all occurrences.
+    """
+    h, w = grid.shape
+    for y in range(2, h - 2):
+        for x in range(2, w - 2):
+            paar = uebergang.get(int(grid[y, x]))
+            if paar is None:
+                continue
+            a = b = 0
+            for dy in range(-2, 3):
+                for dx in range(-2, 3):
+                    f = fam_of.get(int(grid[y + dy, x + dx]))
+                    if f == paar[0]:
+                        a += 1
+                    elif f == paar[1]:
+                        b += 1
+            if a + b:
+                eintrag = summe.setdefault(int(grid[y, x]), [0.0, 0])
+                eintrag[0] += b / (a + b)
+                eintrag[1] += 1
+
+
+# Wie viele Kacheln je Fall (Bodenpaar x Richtung) vorgehalten werden.
+# Weniger Auswahl heisst gleichmaessigere Kante: bei 16 (87 % Abdeckung im
+# Original) wirkte die Grenze noch unruhig, bei 6 greifen benachbarte Zellen
+# oefter zur selben Kachel und die Kante liest sich als Linie.
+# How many tiles are kept per case (ground pair x direction). Less choice
+# means a more even edge: at 16 (87 % coverage in the originals) the border
+# still looked restless; at 6 neighbouring cells reach for the same tile more
+# often and the edge reads as a line.
+RAND_KACHELN_JE_FALL = 40
+
+
+def grenz_richtung(ist_a: np.ndarray, y: int, x: int) -> int | None:
+    """In welche Richtung faellt der Anteil von Boden A ab?
+
+    Der entscheidende Hinweis, welche Uebergangskachel hingehoert: eine
+    Nordkante sieht anders aus als eine Ostkante. Ohne die Richtung bleiben
+    je Bodenpaar hunderte Kacheln zur Auswahl und die Grenze wird zu Rauschen;
+    mit ihr sind es 33, von denen 16 reichen.
+
+    In which direction does the share of ground A fall off? The decisive hint
+    for which transition tile belongs here: a north edge looks different from
+    an east edge. Without the direction hundreds of tiles remain per ground
+    pair and the border turns into noise; with it there are 33, of which 16
+    suffice.
+    """
+    f = ist_a[y - 2:y + 3, x - 2:x + 3].astype(np.float64)
+    if f.shape != (5, 5):
+        return None
+    gy = float(f[3:, :].sum() - f[:2, :].sum())
+    gx = float(f[:, 3:].sum() - f[:, :2].sum())
+    if gx == 0.0 and gy == 0.0:
+        return None
+    winkel = np.degrees(np.arctan2(gy, gx)) % 360.0
+    return int((winkel + 22.5) // 45) % 8
+
+
+def lerne_randkacheln(grid: np.ndarray, uebergang: dict, fam_of: dict,
+                      tab: dict) -> None:
+    """Welche Kachel benutzt das Original an einer Grenze dieser Richtung?"""
+    h, w = grid.shape
+    familien = {}
+    for f in set(fam_of.values()):
+        familien[f] = np.array([[fam_of.get(int(t), "") == f for t in reihe]
+                                for reihe in grid], dtype=bool)
+    for y in range(3, h - 3):
+        for x in range(3, w - 3):
+            paar = uebergang.get(int(grid[y, x]))
+            if paar is None or paar[0] not in familien:
+                continue
+            r = grenz_richtung(familien[paar[0]], y, x)
+            if r is None:
+                continue
+            tab.setdefault((paar, r), Counter())[int(grid[y, x])] += 1
+
+
 def learn_shapes(grid: np.ndarray, fam_of: dict, zelltyp_tab: dict,
-                 kachel_tab: dict, grob_tab: dict) -> None:
+                 kachel_tab: dict, grob_tab: dict,
+                 kachel_tab5: dict | None = None) -> None:
     """Aus einer Originalkarte lernen, wie Form zu Kacheln wird.
 
     Zwei Tabellen: welchen Zelltyp bekommt eine Stelle bei gegebener Form
@@ -497,6 +955,18 @@ def learn_shapes(grid: np.ndarray, fam_of: dict, zelltyp_tab: dict,
                 # hole remains in the wall.
                 grob_tab.setdefault(int(ct[y, x]) * 8 + fam,
                                     Counter())[int(grid[y, x])] += 1
+                # Zusaetzlich ein 5x5-Fenster. An vier zurueckgehaltenen
+                # Karten gemessen trifft die Kette 5x5 -> 3x3 die
+                # Originalkachel 7,6 Punkte haeufiger als 3x3 allein. 7x7
+                # bringt nur noch 0,5 Punkte bei doppelt so vielen Mustern --
+                # deshalb ist bei 5x5 Schluss.
+                # Additionally a 5x5 window. Measured on four held-out maps,
+                # the chain 5x5 -> 3x3 hits the original tile 7.6 points more
+                # often than 3x3 alone; 7x7 adds only 0.5 points at twice the
+                # pattern count, so 5x5 is where it stops.
+                if kachel_tab5 is not None and 2 <= y < h - 2 and 2 <= x < w - 2:
+                    schl5 = context_key(rolle[y - 2:y + 3, x - 2:x + 3], fam)
+                    kachel_tab5.setdefault(schl5, Counter())[int(grid[y, x])] += 1
 
 
 def learn(game_dir: Path, campaign_only: bool = True) -> dict:
@@ -506,6 +976,7 @@ def learn(game_dir: Path, campaign_only: bool = True) -> dict:
     fam_of: dict[int, str] = {}
     base_tiles: set[int] = set()
     structure_tiles: set[int] = set()
+    deko_tiles: set[int] = set()
     lava_tiles: set[int] = set()
     volcanoes: dict[str, tuple[int, int, list[int]]] = {}
     formations: list = []
@@ -513,25 +984,99 @@ def learn(game_dir: Path, campaign_only: bool = True) -> dict:
     valleys: list = []
     form_zelltyp: dict = {}      # 5x5-Hoehenmuster -> Zelltyp
     form_kachel: dict = {}       # 3x3-Rollenmuster+Familie -> Kacheln
+    form_kachel5: dict = {}      # dasselbe mit 5x5-Fenster
+    uebergang: dict[int, tuple[str, str]] = {}   # Kachel -> Paar
+    randkacheln: dict = {}       # (Paar, Richtung) -> Kacheln
+    misch_summe: dict[int, list] = {}            # Kachel -> [Summe, Anzahl]
     grob_kachel: dict = {}       # Rueckfall: Zelltyp+Familie -> Kacheln
     cliffs: dict[str, tuple[int, int, list[int]]] = {}
     details: dict[str, tuple[int, int, list[int], str]] = {}
 
     maps = training_maps(game_dir, campaign_only)
     used = 0
+    kanten = None
+    gruppen = None
+    muster = None
     for path in maps:
         try:
             m = Op2Map(path.read_bytes())
         except Exception:
             continue
         used += 1
+        if gruppen is None:
+            gruppen = gruppe_je_kachel(m, len(m.tile_mappings))
+        if muster is None and uebergang and fam_of:
+            # Nach dem Durchlauf der Gruppen: erst dann stehen Uebergaenge und
+            # Familien dieser Karte fest.
+            # After the group loop: only then are this map's transitions and
+            # families known.
+            try:
+                from vol import VolFile
+                muster = sammle_muster(
+                    m, VolFile(str(next(game_dir.rglob("maps.vol")))),
+                    uebergang, fam_of, len(m.tile_mappings))
+            except Exception:
+                muster = None
+        if kanten is None:
+            # Die Kantenfarben stehen im Kachelsatz, nicht in den Karten --
+            # einmal von der ersten Karte lesen genuegt.
+            # The edge colours live in the tileset, not in the maps -- reading
+            # them once from the first map is enough.
+            try:
+                from vol import VolFile
+                kanten = sammle_kanten(m, VolFile(str(next(
+                    game_dir.rglob("maps.vol")))))
+            except Exception:
+                kanten = None
         for group in m.tile_groups:
             name = group.name
             if not name.isascii():
                 continue
             low = name.lower()
             indices = [int(i) for i in group.mapping_indices]
-            if any(marker in low for marker in STRUCTURE_MARKERS):
+            # Verbundgruppe: nennt zwei Boeden, ist aber kein Uebergang. Das
+            # sind Mauern gegen Lava (`sanlavw`) und Felsbrocken auf Schnee
+            # (`snowroc1..9`) -- Bauwerk, kein Gelaende. Die Entscheidung muss
+            # VOR der Aufteilung fallen: `structure_only` zieht spaeter alles
+            # ab, was auch in einer Flaechengruppe vorkam, und dort waeren sie
+            # sonst gelandet.
+            # Compound group: names two grounds but is not a transition. Those
+            # are walls against lava (`sanlavw`) and boulders on snow
+            # (`snowroc1..9`) -- structure, not terrain. The decision has to be
+            # made BEFORE the split: `structure_only` later subtracts everything
+            # that also appeared in a surface group, which is where they would
+            # otherwise have gone.
+            # Streugut ausgenommen: `mudrock2` nennt zwei Boeden und hat kein
+            # "to", meint aber Felsbrocken AUF Erde -- die setzt das Streugut
+            # absichtlich und sie sind laengst als solches erfasst.
+            # Scatter excluded: `mudrock2` names two grounds and has no "to"
+            # but means boulders ON dirt -- placed deliberately by the scatter
+            # pass and long since recorded as such.
+            # `rocroc1..4` nennt zweimal denselben Boden: Fels AUF Fels, also
+            # Verzierung. `familien_im_namen` sieht dort nur eine Familie und
+            # liess sie deshalb als Grundboden durchgehen -- der Sampler setzte
+            # sie frei ins Gelaende, wo sie als Felsbrocken auffallen. Das
+            # Gegenstueck `mudrock*` war ueber DETAIL_MARKERS laengst erfasst.
+            # `rocroc1..4` names the same ground twice: rock ON rock, i.e.
+            # decoration. `familien_im_namen` only sees one family there and so
+            # let them pass as base ground -- the sampler placed them freely in
+            # the terrain where they stand out as boulders. Their counterpart
+            # `mudrock*` had long been covered via DETAIL_MARKERS.
+            doppelt = (len(low) >= 6 and low[:3] in FAMILY_PREFIXES
+                       and low[3:6] in FAMILY_PREFIXES
+                       and FAMILY_PREFIXES[low[:3]] == FAMILY_PREFIXES[low[3:6]])
+            # `doppelt` gehoert NICHT hierher: solche Gruppen kommen unten in
+            # den Streugut-Vorrat, und Streugut wird ohnehin nicht frei
+            # gesetzt. Zusaetzlich als Bauteil zu zaehlen waere doppelt und
+            # laesst die Pruefung "ausser den Vulkanen keine Bauteile" anschlagen.
+            # `doppelt` does NOT belong here: such groups go into the scatter
+            # pool below, and scatter is never placed freely anyway. Counting
+            # them as structure on top would be redundant and trips the check
+            # "no building blocks apart from the volcanoes".
+            ist_verbund = (len(familien_im_namen(low)) >= 2
+                           and "to" not in low
+                           and not any(k in low for k in DETAIL_MARKERS))
+            if ist_verbund or any(marker in low for marker in STRUCTURE_MARKERS):
                 structure_tiles.update(indices)
             else:
                 base_tiles.update(indices)
@@ -541,25 +1086,108 @@ def learn(game_dir: Path, campaign_only: bool = True) -> dict:
                 volcanoes[name] = (group.width, group.height, indices)
             if CLIFF_MARKER in low and name not in cliffs:
                 cliffs[name] = (group.width, group.height, indices)
-            if (any(k in low for k in DETAIL_MARKERS) and name not in details
+            if ((any(k in low for k in DETAIL_MARKERS) or doppelt)
+                    and name not in details
                     and group.width * group.height <= 20):
                 details[name] = (group.width, group.height, indices, low[:3])
-            fam = FAMILY_PREFIXES.get(low[:3])
-            if fam:
+            # Uebergangssaetze zuerst: `roctomud` faengt mit "roc" an, waere
+            # nach Praefix also reiner Fels. Genau daran sind alle 342
+            # Uebergangskacheln als normaler Boden in den Streupools gelandet
+            # -- Felsflecken mitten im Sand, und an den echten Grenzen eine
+            # harte Kante statt einer Mischzone.
+            # Transition sets first: `roctomud` starts with "roc" and would be
+            # classified as pure rock by prefix. That is exactly how all 342
+            # transition tiles ended up in the scatter pools as ordinary
+            # ground -- rock speckles in the middle of sand, and a hard edge
+            # instead of a blend at the real borders.
+            gefunden = familien_im_namen(low)
+            # Streugut ausnehmen: `mudrock2` nennt zwar zwei Boeden, meint
+            # aber Felsbrocken AUF Erde, nicht den Uebergang dorthin. Ohne
+            # diese Ausnahme landeten 8 unpassierbare Brocken im mud|roc-Satz
+            # und wurden entlang jeder Erde-Fels-Grenze gestreut.
+            # Exclude scatter: `mudrock2` does name two grounds but means
+            # boulders ON dirt, not the transition to it. Without this
+            # exception 8 impassable boulders ended up in the mud|roc set and
+            # were scattered along every dirt-rock border.
+            ist_streugut = any(k in low for k in DETAIL_MARKERS) or doppelt
+            if ist_streugut:
+                # Alle Kacheln solcher Gruppen merken, nicht nur die, die es in
+                # den Stempelvorrat schaffen. Fuenf Einzelkacheln aus
+                # `mudcrk7/9/10` und `mudrock3/4` blieben sonst frei setzbar,
+                # obwohl ihre Gruppe klar Verzierung ist -- sie kamen nie in den
+                # Vorrat, weil dort je Name nur ein Stempel landet.
+                # Remember all tiles of such groups, not only those that make it
+                # into the stamp pool. Five single tiles from `mudcrk7/9/10` and
+                # `mudrock3/4` stayed freely placeable although their group is
+                # clearly decoration -- they never entered the pool because only
+                # one stamp per name is kept there.
+                deko_tiles.update(indices)
+            # Zwei Boeden im Namen reichen NICHT. Die Entwickler schreiben
+            # einen Uebergang aus: `santoroc` heisst woertlich sand-to-rock.
+            # Ohne dieses Wort nennt ein Name zwar zwei Boeden, meint aber
+            # etwas anderes -- `sanlavw` ist eine Mauer gegen Lava (16x1, ein
+            # Mauerstreifen), `snowroc1..9` sind Felsbrocken auf Schnee.
+            #
+            # Ueber alle 33 Karten trennt das sauber: 4 Gruppen tragen `to`
+            # (roctomud, santomud, santoroc, roctola3, alle 6x8) und sind die
+            # echten Uebergaenge; 19 nennen zwei Boeden ohne `to` und sind
+            # Mauern, Brocken oder Sonstiges. Ohne die Unterscheidung landeten
+            # 214 dieser Kacheln in der Uebergangstabelle -- und die Vorlage
+            # "ice" streute daraus 1228 unpassierbare Felsbrocken je Karte als
+            # angebliche Schnee-Fels-Mischung.
+            #
+            # Two grounds in the name are NOT enough. The developers spell a
+            # transition out: `santoroc` literally means sand-to-rock. Without
+            # that word a name may mention two grounds but mean something else
+            # -- `sanlavw` is a wall against lava (16x1, a wall strip),
+            # `snowroc1..9` are boulders on snow.
+            #
+            # Across all 33 maps this separates cleanly: 4 groups carry `to`
+            # (roctomud, santomud, santoroc, roctola3, all 6x8) and are the real
+            # transitions; 19 name two grounds without `to` and are walls,
+            # boulders or other things. Without the distinction 214 of those
+            # tiles ended up in the transition table -- and the "ice" template
+            # scattered 1228 impassable boulders per map from it as a supposed
+            # snow-rock blend.
+            ist_uebergang_name = "to" in low
+            if (len(gefunden) >= 2 and group.width * group.height >= 6
+                    and not ist_streugut and ist_uebergang_name):
+                paar = tuple(sorted(gefunden[:2]))
                 for i in indices:
-                    fam_of.setdefault(i, fam)
+                    uebergang[i] = paar
+            else:
+                fam = FAMILY_PREFIXES.get(low[:3])
+                if fam:
+                    for i in indices:
+                        fam_of.setdefault(i, fam)
         g = tile_grid(m)
         for a, b in zip(g[:, :-1].ravel(), g[:, 1:].ravel()):
             right[int(a)][int(b)] += 1
         for a, b in zip(g[:-1, :].ravel(), g[1:, :].ravel()):
             down[int(a)][int(b)] += 1
         usage.update(g.ravel().tolist())
+        lerne_mischgrad(g, uebergang, fam_of, misch_summe)
+        lerne_randkacheln(g, uebergang, fam_of, randkacheln)
         formations.extend(extract_formations(m, g, fam_of))
         massifs.extend(extract_massifs(m, g, fam_of))
         valleys.extend(extract_valleys(m, g, fam_of))
-        learn_shapes(g, fam_of, form_zelltyp, form_kachel, grob_kachel)
+        learn_shapes(g, fam_of, form_zelltyp, form_kachel, grob_kachel,
+                     form_kachel5)
 
-    families = sorted(set(fam_of.values()))
+    # Uebergangskacheln gehoeren keiner reinen Familie an und duerfen nicht
+    # frei gestreut werden -- sie kommen nur an Grenzen zum Einsatz.
+    # Transition tiles belong to no pure family and must not be scattered
+    # freely; they are only used along borders.
+    for i in uebergang:
+        fam_of.pop(i, None)
+    structure_tiles.update(uebergang)
+
+    # Auch Boeden aufnehmen, die nur in Uebergaengen vorkommen: Lava hat
+    # keine reine Kachel, muss aber benennbar bleiben.
+    # Include grounds that only occur in transitions: lava has no pure
+    # tile but must stay nameable.
+    families = sorted(set(fam_of.values())
+                      | {f for paar in uebergang.values() for f in paar})
     fam_index = {name: i for i, name in enumerate(families)}
 
     def pairs(table) -> np.ndarray:
@@ -619,6 +1247,17 @@ def learn(game_dir: Path, campaign_only: bool = True) -> dict:
             ctx_counts.append(n)
     ctx_off.append(len(ctx_tiles))
     schl_ctx = np.array(schl_ctx, dtype=np.int64) if schl_ctx else np.zeros(1, np.int64)
+    schl_ctx5 = sorted(form_kachel5)
+    ctx5_tiles, ctx5_counts, ctx5_off = [], [], []
+    for k in schl_ctx5:
+        ctx5_off.append(len(ctx5_tiles))
+        for kachel, n in form_kachel5[k].most_common():
+            ctx5_tiles.append(kachel)
+            ctx5_counts.append(n)
+    ctx5_off.append(len(ctx5_tiles))
+    schl_ctx5 = (np.array(schl_ctx5, dtype=np.int64) if schl_ctx5
+                 else np.zeros(1, np.int64))
+
     schl_grob = sorted(grob_kachel)
     grob_tiles, grob_counts, grob_off = [], [], []
     for k in schl_grob:
@@ -638,6 +1277,15 @@ def learn(game_dir: Path, campaign_only: bool = True) -> dict:
     v_names, v_sizes, v_tiles, v_offsets = pack(volcanoes)
     c_names, c_sizes, c_tiles, c_offsets = pack(cliffs)
 
+    # Die Nachbarschaft der Klippengruppen steht bewusst NICHT hier, sondern in
+    # `learn_cliffs.py` mit eigener Modelldatei. Sie braucht eine andere
+    # Aufloesung -- Gruppe statt Kachel, mit Versatz -- und soll an dieser
+    # durchgemessenen Kachelstatistik nicht ruetteln koennen.
+    # The cliff group adjacency deliberately does NOT live here but in
+    # `learn_cliffs.py` with its own model file: it needs a different
+    # resolution -- group instead of tile, with offset -- and must not be able
+    # to disturb this measured tile statistic.
+
     return {
         "right": pairs(right),
         "down": pairs(down),
@@ -646,6 +1294,7 @@ def learn(game_dir: Path, campaign_only: bool = True) -> dict:
                            dtype=np.int32),
         "families": np.array(families),
         "structure": np.array(structure_only, dtype=np.int32),
+        "deko": np.array(sorted(deko_tiles), dtype=np.int32),
         "lava": np.array(sorted(lava_tiles), dtype=np.int32),
         "volcano_names": v_names, "volcano_sizes": v_sizes,
         "volcano_tiles": v_tiles, "volcano_offsets": v_offsets,
@@ -653,6 +1302,35 @@ def learn(game_dir: Path, campaign_only: bool = True) -> dict:
         "detail_offsets": d_offsets, "detail_families": d_fams,
         "shape_keys": schl_form, "shape_cells": wert_form,
         "ctx_keys": schl_ctx,
+        **_packe_randkacheln(randkacheln),
+        "gruppen": (gruppen if gruppen is not None
+                    else np.full(1, -1, dtype=np.int16)),
+        "muster": (muster if muster is not None
+                   else np.full((1, 4, MUSTER_ABSCHNITTE), -1, dtype=np.int16)),
+        "kanten": (kanten if kanten is not None
+                   else np.zeros((1, 4, KANTEN_SEGMENTE, 3), dtype=np.uint8)),
+        "trans_tiles": (np.array(sorted(uebergang), dtype=np.int32)
+                        if uebergang else np.zeros(1, np.int32)),
+        "trans_a": np.array([uebergang[i][0] for i in sorted(uebergang)]
+                            or [""], dtype="<U3"),
+        "trans_b": np.array([uebergang[i][1] for i in sorted(uebergang)]
+                            or [""], dtype="<U3"),
+        # Wie oft welcher Mischgrad im Original vorkommt, als Quantile.
+        # Ohne das greift der Generator systematisch zu den dichtesten
+        # Kacheln -- an einer Grenze ist der gemessene Anteil ja rund 0,5 --
+        # und die Uebergaenge wirken viel zu grob.
+        # How often each blend level occurs in the originals, as quantiles.
+        # Without this the generator systematically picks the densest tiles --
+        # at a border the measured share is around 0.5 -- and the transitions
+        # look far too coarse.
+        "trans_quantile": _mischgrad_quantile(uebergang, misch_summe, usage),
+        "trans_mix": np.array(
+            [(misch_summe[i][0] / misch_summe[i][1]) if i in misch_summe else 0.5
+             for i in sorted(uebergang)] or [0.5], dtype=np.float32),
+        "ctx5_keys": schl_ctx5,
+        "ctx5_offsets": np.array(ctx5_off, dtype=np.int32),
+        "ctx5_tiles": np.array(ctx5_tiles or [0], dtype=np.int32),
+        "ctx5_counts": np.array(ctx5_counts or [0], dtype=np.int32),
         "grob_keys": schl_grob,
         "grob_offsets": np.array(grob_off, dtype=np.int32),
         "grob_tiles": np.array(grob_tiles or [0], dtype=np.int32),
@@ -690,14 +1368,22 @@ def main() -> int:
     print(f"Familien: {list(model['families'])}")
     print(f"Bauteil-Kacheln (nicht zufaellig streuen): {len(model['structure'])}")
     print(f"Lava-Kacheln: {len(model['lava'])}")
+    print("Klippen-Nachbarschaft: eigenes Modell, siehe learn_cliffs.py")
     print(f"Vulkan-Stempel: {len(model['volcano_names'])}, "
           f"Klippen-Stempel: {len(model['cliff_names'])}, "
           f"Formationen: {len(model['formation_sizes'])}, "
           f"Detail-Stempel: {len(model['detail_sizes'])}")
     from collections import Counter as _C
     print("Formationen nach Bauart:", dict(_C(model["formation_class"].tolist())))
+    print(f"Kantenmuster: {int((model['muster'] >= 0).all(axis=(1,2)).sum())} Kacheln")
+    print(f"Kachelgruppen: {int((model['gruppen'] >= 0).sum())} zugeordnet")
+    print(f"Kantensignaturen: {len(model['kanten'])} Kacheln")
     print(f"Formtabelle: {len(model['shape_keys'])} Hoehenmuster, "
-          f"{len(model['ctx_keys'])} Kachelmuster")
+          f"{len(model['ctx_keys'])} Muster 3x3, "
+          f"{len(model['ctx5_keys'])} Muster 5x5")
+    from collections import Counter as _C2
+    print(f"Uebergangskacheln: {len(model['trans_tiles'])}, Paare: "
+          f"{sorted(set(zip(model['trans_a'].tolist(), model['trans_b'].tolist())))}")
     print(f"Massive: {len(model['massif_sizes'])}, "
           f"Taeler: {len(model['valley_sizes'])} "
           f"{dict(_C(model['valley_axis'].tolist()))}")

@@ -235,11 +235,32 @@ def check_groups_panel(win, app) -> None:
     check("Gruppe ueber Menue angelegt", len(gp.groups) == before + 1)
 
 
+def unbrauchbarer_boden(win) -> int:
+    """Kacheln, deren Boden der Generator nirgends setzen kann.
+
+    Schnee hat von 222 Kacheln keine einzige setzbare, Lava gar keine. Steht
+    so etwas auf der Karte, hat es kein Pinsel dorthin gemalt -- gemessen kam
+    es ueber den Klippenmaler herein, der beim Malen mit Erde ein Band von 28
+    Schneekacheln quer ueber eine Sandkarte legte.
+
+    Tiles whose ground the generator cannot place anywhere. Snow has not one
+    placeable tile out of 222, lava none at all. If such a tile sits on the map,
+    no brush painted it there -- measured, it came in through the cliff painter,
+    which laid a band of 28 snow tiles across a sand map while painting dirt.
+    """
+    from mapgen import model as _mm
+    tm = _mm()
+    schlecht = {f for f in range(len(tm.families)) if not tm.familie_nutzbar(f)}
+    return sum(1 for y in range(win.map.height) for x in range(win.map.width)
+               if int(tm.family_of[win.map.tile_mapping_index(x, y)]) in schlecht)
+
+
 def check_terrain(win, app) -> None:
     """Gelaende-Tab: Overlay am Tab, Stempeln, Zelltyp, Rueckgaengig."""
     tabs = win._sidebar_tabs
     terrain_idx = win._terrain_tab_index
     panel = win.terrain_panel
+    win._unbrauchbar_vorher = unbrauchbarer_boden(win)
 
     tabs.setCurrentIndex(0)
     pump(app)
@@ -251,7 +272,7 @@ def check_terrain(win, app) -> None:
     check("Overlay automatisch sichtbar", win._terrain_overlay_item is not None)
     check("Pinselleiste vorhanden", len(panel._buttons) >= 8,
           f"({len(panel._buttons)} Pinsel)")
-    check("Hochland ist vorausgewählt", panel.selected_brush() == "hoch")
+    check("Erdpinsel ist vorausgewählt", panel.selected_brush() == "mud")
 
     # Overlay-Schalter / overlay toggle
     panel.overlay_toggle.setChecked(False)
@@ -282,25 +303,56 @@ def check_terrain(win, app) -> None:
                    for xx in range(max(0, cx - r), min(win.map.width, cx + r))
                    if win.map.cell_type(xx, yy) in KLIPPE)
 
-    x, y = 40, 40
+    # Einen Hochland-Pinsel gibt es nicht mehr -- Hochland kommt aus einer
+    # gezeichneten Klippe (siehe den Klippenabschnitt weiter unten). Der Weg
+    # dahinter, Hoehenebene -> `synth_region` -> Klippenband, bleibt aber
+    # erreichbar: er laeuft an, sobald ein Bodenpinsel ueber eine Flaeche mit
+    # Hochland geht. Deshalb wird hier eine Stelle der Karte gesucht, an der
+    # schon Hochland liegt, und mit Erde darueber gemalt -- eine Handlung, die
+    # es wirklich gibt.
+    #
+    # There is no highland brush any more; highland comes from a drawn cliff.
+    # The path behind it stays reachable whenever a ground brush passes over an
+    # area carrying highland, so a spot that already has highland is looked up
+    # and painted over with dirt -- an action that actually exists.
+    ebenen0 = win._paint_layers()
+    ziel = next(((xx, yy)
+                 for yy in range(8, win.map.height - 8)
+                 for xx in range(8, win.map.width - 8)
+                 if ebenen0.hoehe[yy, xx]), None)
+    check("Hochland auf der Karte gefunden", ziel is not None, str(ziel))
+    x, y = ziel if ziel else (40, 40)
     before = win.map.tiles[win.map.tile_index(x, y)]
-    vorher = klippen_um(x, y)
-    panel.set_brush("hoch")
+    # Mit einer Familie malen, die dort noch NICHT liegt -- sonst aendert der
+    # Strich nichts und die Pruefungen darunter haetten nichts zu pruefen.
+    # Paint with a family not already there, otherwise the stroke changes
+    # nothing and the checks below would have nothing to check.
+    _namen = ebenen0.tm.families
+    _da = int(ebenen0.familie[y, x])
+    panel.set_brush(next((n for n in ("mud", "roc", "san")
+                          if n in _namen and _namen.index(n) != _da), "mud"))
     panel.set_brush_size(9)
     win._terrain_stamp(x, y)
     pump(app)
-    check("Hochland malen erzeugt ein Klippenband",
-          klippen_um(x, y) > vorher, f"({vorher} -> {klippen_um(x, y)})")
-    check("Ebene merkt sich das Hochland", bool(win._layers.hoehe[y, x]))
+    # Genau hier lag der Fehler: das Klippenband bestand aus Schneekacheln.
+    # This is exactly where the bug sat: the cliff band consisted of snow tiles.
+    nachher_unbrauchbar = unbrauchbarer_boden(win)
+    check("Malen an einer Klippe bringt keinen unbrauchbaren Boden mit",
+          nachher_unbrauchbar <= getattr(win, "_unbrauchbar_vorher", 0),
+          f"({getattr(win, '_unbrauchbar_vorher', 0)} -> {nachher_unbrauchbar})")
     check("Karte als geändert markiert", win.map_edited)
     check("bearbeitete Karte serialisierbar", win.terrain_map_bytes() is not None)
 
-    # Tiefland malen nimmt es wieder weg -- die Kante muss sich schliessen.
-    # Painting lowland takes it away again; the edge has to close.
+    # Tiefland malen nimmt das Hochland weg -- der Radierer fuer Klippen.
+    # Painting lowland takes the highland away -- the eraser for cliffs.
     panel.set_brush("tief")
     win._terrain_stamp(x, y)
     pump(app)
-    check("Tiefland malen senkt wieder ab", not win._layers.hoehe[y, x])
+    # Live nachfragen: `_paint_layers()` baut die Ebenen neu, sobald sich der
+    # Karteninhalt geaendert hat -- ein festgehaltenes Objekt ist danach alt.
+    # Ask live: `_paint_layers()` rebuilds the layers once the map content has
+    # changed, so a held reference is stale afterwards.
+    check("Tiefland malen senkt wieder ab", not win._paint_layers().hoehe[y, x])
 
     # Bodenpinsel wechselt das Biom
     panel.set_brush("san")
@@ -314,7 +366,7 @@ def check_terrain(win, app) -> None:
           f"({tm.families[fam] if 0 <= fam < len(tm.families) else fam})")
 
     # Pinselgroesse / brush size
-    panel.set_brush("hoch")
+    panel.set_brush("mud")
     panel.set_brush_size(3)
     cells = win._terrain_cells(60, 60)
     check("Pinsel 3 deckt einen runden Fleck ab", 4 <= len(cells) <= 9,
@@ -328,11 +380,180 @@ def check_terrain(win, app) -> None:
           win.map.tiles[win.map.tile_index(x, y)] == before,
           f"(0x{win.map.tiles[win.map.tile_index(x, y)]:08X} vs 0x{before:08X})")
 
+    # Grossflaechig malen: waehrend des Ziehens wird nur gesammelt, gerechnet
+    # wird einmal beim Loslassen. Sonst haengt der Editor bei jedem
+    # Mausschritt ueber eine Sekunde.
+    # Painting large areas: while dragging only the layers are collected, the
+    # tiles are computed once on release. Otherwise the editor would stall for
+    # over a second on every mouse step.
+    from mapgen import model as _m2
+    tm2 = _m2()
+    panel.set_brush("san")
+
+    # Kleiner Pinsel: waehrend des Ziehens wird live gerechnet.
+    # Der Strich muss auf einem FREMDEN Boden liegen, sonst aendert der Pinsel
+    # die Ebenen gar nicht und `_terrain_stamp` steigt sofort wieder aus. Die
+    # Pruefung lag vorher bei (40,70) -- dort ist schon Sand, und dass sich die
+    # Kachel trotzdem aenderte, lag allein am Klippenmaler: der setzte dort
+    # Schneekacheln, deren Klippen-Zelltypen beim naechsten Strich als Hochland
+    # zurueckgelesen wurden. (100,100) ist reine Erde ohne Hochland.
+    # Small brush: computed live while dragging. The stroke has to sit on a
+    # FOREIGN ground, otherwise the brush does not change the layers at all and
+    # `_terrain_stamp` bails out immediately. The check used to sit at (40,70)
+    # -- that is sand already, and the tile only changed there because the cliff
+    # painter placed snow tiles whose cliff cell types were read back as
+    # highland on the next stroke. (100,100) is pure dirt without highland.
+    panel.set_brush_size(9)
+    vor = win.map.tiles[win.map.tile_index(100, 100)]
+    win._terrain_strich_beginnen()
+    win._terrain_stamp(100, 100)
+    pump(app)
+    check("kleiner Pinsel rechnet live",
+          win.map.tiles[win.map.tile_index(100, 100)] != vor
+          and win._strich_rechteck is None)
+    zwischen = len(win.undo_stack) if hasattr(win, "undo_stack") else None
+    win._terrain_stamp(104, 100)
+    win._terrain_strich_abschliessen()
+    pump(app, 30)
+    fam = tm2.family_of[win.map.tile_mapping_index(100, 100)]
+    check("live gemalte Flaeche traegt den Boden",
+          fam == tm2.families.index("san"),
+          f"{tm2.families[fam] if 0 <= fam < len(tm2.families) else fam}")
+
+    # Grosser Pinsel: sammeln, erst beim Loslassen rechnen.
+    # Large brush: collect, compute on release.
+    panel.set_brush_size(41)
+    check("grosser Pinsel einstellbar", panel.brush_size.value() == 41,
+          str(panel.brush_size.value()))
+    vor_strich = win.map.tiles[win.map.tile_index(60, 40)]
+    win._terrain_strich_beginnen()
+    for schritt in range(3):
+        win._terrain_stamp(54 + schritt * 4, 40)
+    pump(app)
+    check("grosser Pinsel sammelt waehrend des Ziehens",
+          win._strich_rechteck is not None
+          and win.map.tiles[win.map.tile_index(60, 40)] == vor_strich)
+    win._terrain_strich_abschliessen()
+    pump(app, 40)
+    fam = tm2.family_of[win.map.tile_mapping_index(60, 40)]
+    check("nach dem Loslassen ist die Flaeche gemalt",
+          fam == tm2.families.index("san"),
+          f"{tm2.families[fam] if 0 <= fam < len(tm2.families) else fam}")
+    check("Strich ist abgeschlossen", win._strich_rechteck is None)
+
+    # Der Pinsel muss genau das malen, was er soll: die beruehrten Zellen
+    # tragen den gewaehlten Boden, der Uebergang bildet sich aussen herum.
+    # The brush must paint exactly what it should: the touched cells carry the
+    # chosen ground, the transition forms around them.
+    panel.set_brush("san")
+    panel.set_brush_size(7)
+    win._terrain_strich_beginnen()
+    win._terrain_stamp(30, 90)
+    win._terrain_strich_abschliessen()
+    pump(app, 30)
+    getroffen = [(x, y) for y in range(87, 94) for x in range(27, 34)
+                 if (x - 30) ** 2 + (y - 90) ** 2 <= 9]
+    isan = tm2.families.index("san")
+    rein = sum(1 for x, y in getroffen
+               if tm2.family_of[win.map.tile_mapping_index(x, y)] == isan)
+    check("gemalte Zellen tragen zu 100 % den gewaehlten Boden",
+          rein == len(getroffen), f"{rein}/{len(getroffen)}")
+
+    # Klippenpinsel: Punkte klicken statt Flaeche malen, dann setzen.
+    # Cliff brush: click points instead of painting an area, then place.
+    panel.set_brush("klippe")
+    check("Klippenfeld erscheint mit dem Pinsel", panel.klippen_box.isVisible())
+    check("Setzen ist ohne Punkte gesperrt",
+          not panel.btn_klippe_setzen.isEnabled())
+    for punkt in ((40, 100), (40, 118)):
+        win._terrain_strich_beginnen()
+        win._terrain_stamp(*punkt)
+        win._terrain_strich_abschliessen()
+    pump(app)
+    check("zwei Stuetzpunkte gesetzt", len(win._klippen_punkte) == 2,
+          str(win._klippen_punkte))
+    check("Ziehen legt keine weiteren Punkte an",
+          len(win._klippen_punkte) == 2)
+    check("Vorschau zeigt Punkte und Linie", len(win._klippen_items) >= 3,
+          f"{len(win._klippen_items)} Elemente")
+    check("Setzen ist jetzt frei", panel.btn_klippe_setzen.isEnabled())
+    vorher = [win.map.tile_mapping_index(x, 109) for x in range(37, 44)]
+    win._klippe_setzen()
+    pump(app, 30)
+    nachher = [win.map.tile_mapping_index(x, 109) for x in range(37, 44)]
+    check("Klippe hat Kacheln veraendert", vorher != nachher)
+    klippen = sum(1 for x in range(37, 44) for y in range(100, 118)
+                  if win.map.cell_type(x, y) in KLIPPE)
+    check("Klippenzellen entstanden", klippen > 20, f"{klippen} Zellen")
+    check("Punkte sind nach dem Setzen leer", not win._klippen_punkte)
+    # Die Stuetzpunkte sind weg, aber die offenen Enden bleiben als Anker
+    # sichtbar -- daran zeichnet man die Klippe weiter.
+    ebenen = win._paint_layers()
+    check("offene Enden als Anker gemerkt", len(ebenen.klippen_enden) == 2,
+          str(ebenen.klippen_enden))
+    anker = ebenen.offene_enden()
+    check("Anker auch fuer vorhandene Klippen der Karte",
+          len(anker) > len(ebenen.klippen_enden), f"{len(anker)} Anker")
+    check("nur noch Ankerringe in der Vorschau",
+          len(win._klippen_items) == len(anker),
+          f"{len(win._klippen_items)} Elemente, {len(anker)} Anker")
+    # Danebengeklickt muss der naechste Strich auf ein Ende einrasten.
+    win._terrain_strich_beginnen()
+    win._terrain_stamp(43, 121)
+    win._terrain_strich_abschliessen()
+    pump(app)
+    check("Klick daneben rastet auf das Klippenende ein",
+          win._klippen_punkte == [(40, 118)], str(win._klippen_punkte))
+    # Der gemerkte, kachelgenaue Endpunkt gewinnt gegen den abgeleiteten Ring.
+    # Der sitzt auf einem 3x3-Raster und kann naeher am Klick liegen; wer nur
+    # den naechsten von beiden nimmt, rastet bis zu zwei Kacheln hinter dem
+    # Wandende ein, und die Fortsetzung setzt am falschen Block an. Genau so war
+    # es gebaut -- `min` sortiert nach Abstand und ignoriert die Reihenfolge der
+    # Quellen, obwohl der Kommentar den Vorrang behauptete.
+    treffer = [ebenen.klippen_anker(40 + dx, 118 + dy)
+               for dx, dy in ((0, 0), (2, 0), (0, 3), (3, 3), (-2, 2))]
+    check("gemerktes Ende gewinnt gegen den abgeleiteten Ring",
+          all(t in ebenen.klippen_enden for t in treffer), str(treffer))
+    # Ein schon gesetzter Punkt zieht den naechsten Klick nicht auf sich
+    # zurueck -- sonst waere jede kurze Linie ein Punkt.
+    check("gesetzter Punkt rastet nicht erneut ein",
+          ebenen.klippen_anker(41, 117, ausser=[(40, 118)]) != (40, 118),
+          str(ebenen.klippen_anker(41, 117, ausser=[(40, 118)])))
+    # Mitten auf eine Wand zielen. Einen dauerhaften Ring gibt es dort nicht --
+    # das waeren auf cm04 1017 statt 51 -- aber der Klick rastet trotzdem ein,
+    # und der Editor zeigt EINEN Ring unter dem Zeiger.
+    mitte = ebenen.klippen_anker(37, 109)
+    check("Klick neben der Wandmitte rastet auf die Wand ein",
+          mitte is not None and win.map.cell_type(*mitte) in KLIPPE, str(mitte))
+    frei = next(((x, y) for y in range(3, win.map.height - 3, 7)
+                 for x in range(3, win.map.width - 3, 7)
+                 if all(win.map.cell_type(px, py) not in KLIPPE
+                        for px in range(x - 3, x + 4)
+                        for py in range(y - 3, y + 4))), None)
+    check("ohne Klippe in Reichweite rastet nichts ein",
+          frei is not None and ebenen.klippen_anker(*frei) is None,
+          f"{frei} -> {ebenen.klippen_anker(*frei) if frei else '-'}")
+    win._update_terrain_preview(37, 109)
+    check("Zielring erscheint neben der Wandmitte",
+          getattr(win, "_terrain_preview_item", None) is not None)
+    win._update_terrain_preview(*frei)
+    check("kein Zielring im freien Gelaende",
+          getattr(win, "_terrain_preview_item", None) is None)
+    win._clear_terrain_preview()
+    win._klippen_verwerfen()
+    pump(app)
+    win.undo()
+    pump(app, 30)
+    check("Klippe laesst sich rueckgaengig machen",
+          [win.map.tile_mapping_index(x, 109) for x in range(37, 44)] == vorher)
+    panel.set_brush("san")
+    check("Klippenfeld verschwindet wieder", not panel.klippen_box.isVisible())
+
     # Pipette / eyedropper
     win._terrain_pick(70, 70)
     pump(app)
     check("Pipette übernimmt den Untergrund als Pinsel",
-          panel.selected_brush() in ("hoch", "mud", "roc", "san", "veg", "sno"),
+          panel.selected_brush() in ("mud", "roc", "san", "veg", "sno"),
           panel.selected_brush())
 
     tabs.setCurrentIndex(0)
@@ -377,10 +598,10 @@ def check_terrain_strokes(win, app) -> None:
     win._sidebar_tabs.setCurrentIndex(win._terrain_tab_index)
     pump(app, 40)
     panel = win.terrain_panel
-    panel.set_brush("hoch")
+    panel.set_brush("mud")
     panel.set_brush_size(5)
     pump(app)
-    if not check("Pinsel für den Maltest gewählt", panel.selected_brush() == "hoch"):
+    if not check("Pinsel für den Maltest gewählt", panel.selected_brush() == "mud"):
         return
     win.view.zoom_default()
     win.view.centerOn(64 * 32, 64 * 32)
@@ -474,7 +695,18 @@ def check_new_map(win, app) -> None:
     check("Malmodus laedt die vorhandenen Felder",
           len(win._lava_paint_set) == len(win.lava_fields))
     vorher = len(win.lava_fields)
-    win._lava_stamp(20, 20, add=True)
+    # Freie Stelle suchen statt (20,20) zu raten: liegt dort schon Lava --
+    # das haengt davon ab, wo der Vulkan gelandet ist --, waechst die Zahl
+    # nicht und der Test schlaegt scheinbar zufaellig fehl.
+    # Look for a free spot instead of guessing (20,20): if lava is already
+    # there -- which depends on where the volcano landed -- the count does not
+    # grow and the test fails seemingly at random.
+    frei = next(((x, y) for y in range(4, win.map.height - 4)
+                 for x in range(4, win.map.width - 4)
+                 if (x, y) not in win._lava_paint_set), None)
+    if not check("freie Stelle zum Malen gefunden", frei is not None):
+        return
+    win._lava_stamp(frei[0], frei[1], add=True)
     win._end_lava_paint()
     pump(app, 10)
     check("gemalte Kacheln landen in den Lavafeldern", len(win.lava_fields) > vorher,
@@ -495,11 +727,11 @@ def check_terrain_save(win, app) -> None:
         win._sidebar_tabs.setCurrentIndex(win._terrain_tab_index)
         pump(app, 40)
         panel = win.terrain_panel
-        panel.set_brush("hoch")
+        panel.set_brush("mud")
         panel.set_brush_size(5)
         pump(app)
         if not check("Pinsel für den Speichertest gewählt",
-                     panel.selected_brush() == "hoch"):
+                     panel.selected_brush() == "mud"):
             return
         pump(app)
         x, y = 50, 50

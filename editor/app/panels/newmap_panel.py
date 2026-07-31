@@ -100,7 +100,11 @@ class NewMapPanel(QWidget):
 
         self.roughness = QSlider(Qt.Horizontal)
         self.roughness.setRange(0, 100)
-        self.roughness.setValue(35)
+        # Vorgabe 0: gemessen verdoppelt eine zerkluefte Biomgrenze die
+        # Kachelfehler, ohne dass die Karte dadurch interessanter wird.
+        # Default 0: measured, a rugged biome border doubles the tile errors
+        # without making the map more interesting.
+        self.roughness.setValue(0)
         form.addRow(tr("newmap.lbl_roughness"), self.roughness)
 
         # Mindestgroesse eines Bioms: kleinere Flecken gehen im Nachbarbiom

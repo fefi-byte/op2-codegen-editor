@@ -33,6 +33,7 @@ class _PlacementMixin:
         op, obj = self._undo_stack.pop()
         self._apply_inverse(op, obj)
         self._redo_stack.append((op, obj))
+        self.klippen_anker_auffrischen()
 
     def redo(self):
         if not getattr(self, "_redo_stack", None):
