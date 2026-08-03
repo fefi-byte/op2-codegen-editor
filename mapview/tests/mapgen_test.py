@@ -1150,6 +1150,62 @@ def check_wandhoehe():
           f"{q2:.1f} % mitten in der Wand, Originalkarten 0,7 %")
 
 
+def check_wand_haengt_zusammen():
+    """Eine gezeichnete Wand darf nicht in Stuecke zerfallen.
+
+    Bisher hat das nichts gemessen -- alle Kennzahlen sahen auf Nahtstellen,
+    keine auf die Form als Ganzes. Eine Wand mit Luecken faellt aber sofort
+    ins Auge, und zwar mehr als jede falsche Kachel.
+
+    Geprueft werden gerade, schraege und geknickte Zuege sowie ein zweiter Zug,
+    der an das Ende des ersten ansetzt.
+    """
+    from collections import deque
+    tm = mapgen.model()
+
+    def stuecke(m):
+        h, w = m.shape
+        ges = np.zeros_like(m)
+        n = 0
+        for y in range(h):
+            for x in range(w):
+                if not m[y, x] or ges[y, x]:
+                    continue
+                n += 1
+                q = deque([(x, y)])
+                ges[y, x] = True
+                while q:
+                    cx, cy = q.popleft()
+                    for dy in (-1, 0, 1):
+                        for dx in (-1, 0, 1):
+                            nx, ny = cx + dx, cy + dy
+                            if (0 <= nx < w and 0 <= ny < h and m[ny, nx]
+                                    and not ges[ny, nx]):
+                                ges[ny, nx] = True
+                                q.append((nx, ny))
+        return n
+
+    for fam in ("mud", "san"):
+        gr = next(t for t in range(2048)
+                  if tm.family_of[t] == tm.families.index(fam)
+                  and tm.placeable[t])
+        for name, zuege in (
+                ("gerade", [[(8, 20), (56, 20)]]),
+                ("schraeg 2:1", [[(6, 10), (52, 33)]]),
+                ("schraeg 1:1", [[(8, 8), (38, 38)]]),
+                ("mit Knick", [[(8, 10), (30, 21), (52, 32)]]),
+                ("zwei Zuege", [[(8, 10), (30, 21)], [(30, 21), (52, 32)]])):
+            g = np.full((48, 64), gr, dtype=np.int32)
+            ges = np.zeros((48, 64), dtype=bool)
+            for punkte in zuege:
+                m, _z = mapgen.klippe_aus_linie(g, punkte, "oben", tm,
+                                                np.random.default_rng(3), fam)
+                ges |= m
+            n = stuecke(ges)
+            check(f"{fam}/{name}: die Wand haengt zusammen", n == 1,
+                  f"{n} Stueck(e), {int(ges.sum())} Zellen")
+
+
 def check_regeltreu():
     """Keine gebaute Wand darf ein Paar tragen, das weder belegt noch erlaubt
     ist.
@@ -1225,6 +1281,7 @@ def main() -> int:
     check_klippen_nachbarn()
     check_kantenzuordnung()
     check_wandhoehe()
+    check_wand_haengt_zusammen()
     check_regeltreu()
     check_cliffs()
     check_min_biome()

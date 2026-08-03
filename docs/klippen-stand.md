@@ -1746,6 +1746,42 @@ die Wand nicht fertig, sondern wartet auf die Fortsetzung.
 Stand bei `hoehe=2` ueber alle fuenf Zuege: 461 Zellen, 0 regelwidrig, 0 hart,
 0 Fuellkacheln, 5 Loecher.
 
+### Was im Editorbild zu sehen war, und was davon gemessen ist
+
+Ein Bild aus dem Editor zeigte harte Kanten und Luecken. Nachgestellt wurde
+systematisch; **nicht reproduzieren** liessen sich die Luecken:
+
+| Vermutung | gemessen |
+|---|---|
+| Streckenzug mit Knicken (3 bis 6 Punkte) | haengt zusammen, 0 bis 4 harte Kanten |
+| zweiter Zug ans Ende des ersten | haengt zusammen |
+| kurze Abschnitte (3 bis 12 Kacheln) | haengt zusammen |
+| steile Neigungen bis 1:8 | haengt zusammen |
+| Winkelrasten verschiebt den Klick | hoechstens 2 Kacheln, nie 3 |
+
+Zwei Befunde dagegen sind hart:
+
+**1. Fuer san ist nichts zugeordnet — 0 von 138 Kacheln** (mud: 156 von 160).
+Damit ist auf san alles untaetig, was in diesem Abschnitt steht: die
+Randsetzung, die Regeldurchsetzung, die Loch- und die Hart-Regel. `kennt()`
+sagt Nein, und wer nichts weiss, darf nichts verbieten. Der Anteil unbelegter
+Paare ist dort entsprechend rund doppelt so hoch wie bei mud (35,4 % gegen
+17,7 % auf der 2:1, 39,0 % gegen 29,6 % auf der 1:1).
+
+**2. Eine Wand ueber eine Biomgrenze erzeugt 118 harte Bodenkanten.** Die
+Familie wird nur am ERSTEN Punkt bestimmt (`paint_layers.py`, `familie` aus
+`punkte[0]`) und fuer den ganzen Zug beibehalten. Laeuft die Wand ins
+Nachbarbiom, stehen ihre Kacheln dort gegen fremden Boden: gemessen an einem
+einzigen 2:1-Zug ueber eine mud/san-Grenze 74 Kachelseiten an fremdem Biom und
+118 harte Bodenkanten nach der Regel, die die Suite fuer den Boden anlegt.
+Nicht behoben.
+
+**Neu in der Suite: `check_wand_haengt_zusammen`.** Bis hierher sah jede
+Kennzahl auf Nahtstellen, keine auf die Form als Ganzes — eine Wand mit Luecken
+faellt aber mehr ins Auge als jede falsche Kachel. Geprueft werden gerade,
+schraege und geknickte Zuege sowie ein zweiter Zug am Ende des ersten, fuer mud
+und san.
+
 ### Offen
 
 **Der `ECKENSCHUTZ` ist inzwischen an drei Stellen der Engpass**: der Loeser
