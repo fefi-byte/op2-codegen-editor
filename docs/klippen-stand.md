@@ -1782,6 +1782,74 @@ faellt aber mehr ins Auge als jede falsche Kachel. Geprueft werden gerade,
 schraege und geknickte Zuege sowie ein zweiter Zug am Ende des ersten, fuer mud
 und san.
 
+## 13. Die Gruppen, neu geschuerft und nach FORM indiziert
+
+Das aeltere `cliff_patches` haelt dieselben Gruppen ueber ihre FUELLUNG
+indiziert. Beim Setzen lautet die Frage aber nicht „kenne ich diese
+Kachelfolge", sondern **„hier steht diese Stufe — welche Kacheln gehoeren da
+hin?"**. Nach Fuellung indiziert ist das eine Suche, nach Form ein
+Nachschlagen. `learn_cliff_gruppen.py` und `cliff_gruppen.py`.
+
+### Was die Karten hergeben
+
+Anteil der 121603 Klippenzellen, die in einer Gruppe ab 10 Vorkommen liegen:
+
+| Groesse | ab 3× | ab 10× | ab 30× | ab 100× |
+|---|---|---|---|---|
+| 2x2 | 99,3 % | 97,4 % | 92,8 % | 81,8 % |
+| 3x3 | 98,2 % | 93,6 % | 85,2 % | 70,6 % |
+| 4x3 | 97,1 % | 90,3 % | 78,6 % | 62,0 % |
+| 6x4 | 92,4 % | **80,2 %** | 66,3 % | 47,9 % |
+
+Die aeltere Notiz nannte fuer 6x4 „deckt streng 27,8 %". Das war eine andere
+Frage — dort ueberlappungsfrei gekachelt, hier „liegt in mindestens einer
+haeufigen Gruppe". Der Wortschatz ist da, er laesst sich nur nicht lueckenlos
+parkettieren; genau darum die Leiter mehrerer Groessen.
+
+### Warum die Form der Schluessel ist
+
+Nach Art getrennt, 4x3, Bestimmtheit = Vorkommen je Fuellung:
+
+| Art | Formen | Vorkommen | Fuellungen | Bestimmtheit |
+|---|---|---|---|---|
+| gerade | 354 | 204860 | 34133 | 6,0 |
+| Stufe | 749 | 64003 | 18911 | 3,4 |
+
+Im Mittel sagt das wenig, im Einzelnen sehr viel. Die haeufigsten GERADEN
+Formen haben 700 bis 3000 Fuellungen — die sagen nur „hier ist Wand". Einzelne
+STUFENformen dagegen sind Vorlagen:
+
+    6x4  ......|....##|...##.|...##.    175 Vorkommen,  4 Fuellungen
+    6x4  ......|....##|..###.|..##..     87 Vorkommen,  2 Fuellungen
+    4x3  ...#|..##|...#                 330 Vorkommen, 13 Fuellungen
+
+Und es sind die Stufen — also gerade das, was die Bloecke aus dem Kachelsatz
+nicht kennen: die kennen den geraden Lauf, den diagonalen gibt es nur in den
+Karten.
+
+### Was das Modell leistet
+
+**Bei 6x4 haben 56,8 % der Formen genau EINE Fuellung, 82,6 % hoechstens
+drei.** Die Form gibt die Kacheln also meist vor. Bei 2x2 dagegen kennt das
+Modell jedes Fenster, schlaegt aber im Mittel 268 Fuellungen vor: es weiss
+alles und sagt nichts.
+
+Nachgeschlagen auf cm02 (Fenster fuer Fenster, Fuellung nicht vorgegeben):
+
+| Groesse | Form bekannt | richtige Fuellung dabei | Vorschlaege im Mittel |
+|---|---|---|---|
+| 6x4 | 78 % | 64 % | 14,8 |
+| 4x3 | 98 % | 69 % | 35,1 |
+| 3x3 | 99 % | 74 % | 53,8 |
+| 2x2 | 100 % | 86 % | 267,7 |
+
+Das ist die Leiter: gross traegt die Richtung, klein stopft die Reste.
+
+### Stand (03.08.2026)
+
+Modell gebaut, Lader mit Formindex, drei Pruefungen in `mapgen_test.py`.
+**Haengt noch an nichts** — der Setzer benutzt weiterhin `cliff_patches`.
+
 ### Offen
 
 **Der `ECKENSCHUTZ` ist inzwischen an drei Stellen der Engpass**: der Loeser

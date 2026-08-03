@@ -1150,6 +1150,84 @@ def check_wandhoehe():
           f"{q2:.1f} % mitten in der Wand, Originalkarten 0,7 %")
 
 
+def check_gruppen_nach_form():
+    """Die Klippengruppen sind nach FORM nachschlagbar, und die Form legt
+    etwas fest.
+
+    Beim Setzen lautet die Frage "hier steht diese Stufe -- welche Kacheln
+    gehoeren da hin?". Ueber die Fuellung indiziert waere das eine Suche.
+
+    Der Nutzen haengt daran, dass eine Form wenige Fuellungen hat. Gemessen bei
+    6x4: 56,8 % der Formen haben genau EINE, 82,6 % hoechstens drei. Bei 2x2
+    dagegen kennt das Modell jedes Fenster, schlaegt aber im Mittel 268
+    Fuellungen vor -- es weiss alles und sagt nichts. Genau dafuer die Leiter
+    von gross nach klein.
+    """
+    try:
+        from cliff_gruppen import modell as _gm
+        G = _gm()
+    except Exception as e:                               # noqa: BLE001
+        check("Gruppenmodell ladbar", False, str(e))
+        return
+    check("Gruppenmodell geladen", len(G) > 10000,
+          f"{len(G)} Gruppen aus {G.karten} Karten")
+    check("Groessen von gross nach klein", G.groessen[0] == (6, 4),
+          f"{G.groessen}")
+
+    # Eine Form muss etwas festlegen, sonst ist sie keine Vorlage.
+    eindeutig = gesamt = 0
+    for (bw, bh, _f, _fam), zeilen in G._index.items():
+        if (bw, bh) != (6, 4):
+            continue
+        gesamt += 1
+        if len(zeilen) <= 3:
+            eindeutig += 1
+    check("6x4: die Form legt meist die Kacheln fest (>= 70 % mit <= 3)",
+          gesamt and 100 * eindeutig / gesamt >= 70,
+          f"{100 * eindeutig / max(1, gesamt):.0f} % von {gesamt} Formen")
+
+    # Und das Nachschlagen muss finden, was in den Karten steht.
+    import celltypes
+    from op2map import Op2Map
+    from vol import VolFile
+    tm = mapgen.model()
+    spiel = Path(r"C:\Program Files (x86)\GOG Galaxy\Games\Outpost 2")
+    if not (spiel / "maps.vol").exists():
+        return
+    vol = VolFile(str(spiel / "maps.vol"))
+    m = Op2Map(vol.read_file("cm02.map"))
+    h, w = m.height, m.width
+    idx = np.array([[m.tile_mapping_index(x, y) for x in range(w)]
+                    for y in range(h)], dtype=np.int32)
+    KL = (celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
+          celltypes.CLIFFS_LOW_SIDE)
+    ist = np.array([[m.cell_type(x, y) in KL for x in range(w)]
+                    for y in range(h)])
+    bw, bh = 4, 3
+    kennt = richtig = fenster = 0
+    for y in range(0, h - bh + 1, 5):
+        for x in range(0, w - bw + 1, 5):
+            maske = ist[y:y + bh, x:x + bw]
+            if not maske.any():
+                continue
+            fenster += 1
+            f = np.where(maske, idx[y:y + bh, x:x + bw], -1).astype(np.int32)
+            fams = {int(tm.family_of[int(t)]) for t in f[maske]}
+            fams.discard(-1)
+            fam = fams.pop() if len(fams) == 1 else -1
+            v = G.passend(maske, np.full(maske.shape, -1, dtype=np.int32), fam)
+            if v:
+                kennt += 1
+                if any(np.array_equal(k, f) for _i, k in v):
+                    richtig += 1
+    check("4x3: die Form aus cm02 ist fast immer bekannt (>= 90 %)",
+          fenster and 100 * kennt / fenster >= 90,
+          f"{100 * kennt / max(1, fenster):.0f} % von {fenster} Fenstern")
+    check("4x3: die Fuellung aus cm02 steht in den Vorschlaegen (>= 60 %)",
+          kennt and 100 * richtig / kennt >= 60,
+          f"{100 * richtig / max(1, kennt):.0f} %")
+
+
 def check_wand_haengt_zusammen():
     """Eine gezeichnete Wand darf nicht in Stuecke zerfallen.
 
@@ -1281,6 +1359,7 @@ def main() -> int:
     check_klippen_nachbarn()
     check_kantenzuordnung()
     check_wandhoehe()
+    check_gruppen_nach_form()
     check_wand_haengt_zusammen()
     check_regeltreu()
     check_cliffs()

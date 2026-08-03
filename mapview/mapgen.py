@@ -5008,6 +5008,31 @@ def _unbekannte_paare(grid: np.ndarray, maske: np.ndarray, tt):
 # Ab welchem Pixelabstand eine Naht als schlecht gilt, und ueber welche Spanne
 # der Abschlag laeuft. Gemessen: belegte Kachelpaare liegen im Median bei 24,
 # unbelegte bei 40 -- dazwischen liegt die Grenze.
+# Ab wievielen Abschnitten eine Naht als durchtrennt gilt, und ab wievielen
+# Vorkommen ein solches Paar trotzdem erlaubt bleibt.
+#
+# Zeigen beide Kacheln an ihrer Naht Boden, ist die Kante dort unterbrochen.
+# Ein oder zwei Abschnitte sind normal -- oben laeuft das Hochland weiter.
+# Gemessen ueber alle belegten mud-Paare:
+#
+#     Abschnitte   Paare   Vorkommen   Mittel   Median   davon genau 1x
+#          0        7022     228908     32,6       5         1540
+#          1         814      35428     43,5       8          138
+#          2         400      21580     54,0       5          116
+#          3          24         48      2,0       1           14
+#          4         708       1618      2,3       1          388
+#
+# Zwischen zwei und drei Abschnitten liegt ein Faktor 20 im mittleren
+# Vorkommen: ab drei sind es fast nur Einzelfaelle. Fast nur -- `94 W 89`
+# steht 70 mal, `171 W 78` 32 mal. Die sind gewollt, und ein pauschales Verbot
+# haette sie mitgenommen. Darum die zweite Zahl: haeufig belegt heisst
+# bestaetigt.
+#
+# 10 liegt deutlich ueber dem Median der unauffaelligen Gruppe (5 bis 8) und
+# laesst 20 der 732 Paare mit drei oder vier Abschnitten stehen.
+BODEN_AN_BODEN_MAX = 2
+BODEN_AN_BODEN_BESTAETIGT = 10
+
 NAHT_GUT = 24.0
 NAHT_SPANNE = 16.0
 
@@ -5612,6 +5637,245 @@ def _klippe_maengel(grid: np.ndarray, maske: np.ndarray, tt, ke,
                         hart += 1
                         zellen.add((x, y))
     return zellen, (rw, hart, loch)
+
+
+def klippe_linie_zellen(punkte):
+    """Die Punktfolge zu einer zusammenhaengenden Zellenkette -> [(x, y)].
+
+    Vierfach zusammenhaengend: zwei aufeinanderfolgende Zellen teilen immer
+    eine Kante, nie nur eine Ecke. Fuer eine EINZELNE Reihe ist das noetig --
+    ueber Eck haben zwei Kacheln keine gemeinsame Naht, und dann gibt es
+    nichts, was zueinander passen koennte.
+    """
+    aus = []
+    for i in range(len(punkte) - 1):
+        x0, y0 = int(punkte[i][0]), int(punkte[i][1])
+        x1, y1 = int(punkte[i + 1][0]), int(punkte[i + 1][1])
+        dx, dy = abs(x1 - x0), abs(y1 - y0)
+        sx = 1 if x1 > x0 else -1
+        sy = 1 if y1 > y0 else -1
+        x, y = x0, y0
+        fehler = dx - dy
+        while True:
+            if not aus or aus[-1] != (x, y):
+                aus.append((x, y))
+            if (x, y) == (x1, y1):
+                break
+            e2 = 2 * fehler
+            # Nie diagonal springen: erst waagerecht, dann senkrecht.
+            if e2 > -dy:
+                fehler -= dy
+                x += sx
+            elif e2 < dx:
+                fehler += dx
+                y += sy
+    # Doppelte am Segmentuebergang entfernen
+    sauber = []
+    for p in aus:
+        if not sauber or sauber[-1] != p:
+            sauber.append(p)
+    return sauber
+
+
+def klippe_oberkante_linie(grid: np.ndarray, punkte, tm: "TileModel",
+                           rng: np.random.Generator, familie: str = "mud",
+                           dicht: bool = False):
+    """Nur die OBERKANTE einer Klippe, als eine Reihe entlang der Linie.
+
+    Kein Band, keine Fuellung, keine Unterkante -- eine Zelle breit. Links der
+    Zeichenrichtung liegt das Hochland; die Kachelseite, die dorthin zeigt,
+    muss Boden zeigen, sonst waere es keine Oberkante.
+
+    Gemessen fuer mud mit Hochland im Norden: 40 Kacheln taugen dafuer, sie
+    haben untereinander 341 belegte und 642 nach der Kantenzuordnung erlaubte
+    Anschluesse, und keine einzige steht ohne Nachfolger da.
+
+    `dicht` verlangt zusaetzlich, dass auch die Gegenseite Boden zeigt -- dann
+    haengt unter der Reihe kein nackter Fels. Von den 40 koennen das nur 15,
+    der Vorrat ist also klein und die Reihe wird eintoeniger.
+
+    Gewaehlt wird gewichtet nach Haeufigkeit, nicht gierig: wer immer die
+    haeufigste Kachel nimmt, bekommt vier Kacheln im Kreis.
+
+    -> (Maske, Zahl der gesetzten Zellen)
+
+    Only the top edge of a cliff, one cell wide, along the drawn line. Left of
+    the drawing direction is the highland, so the side facing there must show
+    ground.
+    """
+    from cliff_kanten import BIOM, FELS, modell as _km
+    from cliff_tiles import modell as _tm
+    tt = _tm()
+    ke = _km()
+    try:
+        from cliff_pixels import modell as _pm
+        px = _pm()
+    except Exception:                                    # noqa: BLE001
+        px = None
+
+    maske = np.zeros(grid.shape, dtype=bool)
+    kette = klippe_linie_zellen(punkte)
+    if len(kette) < 2:
+        return maske, 0
+    h, w = grid.shape
+    fi = tm.families.index(familie) if familie in tm.families else -1
+    eigen = [int(t) for t, f in zip(tt.kacheln, tt.familie)
+             if (fi < 0 or int(f) == fi) and ke.kennt(int(t))]
+    if not eigen:
+        return maske, 0
+
+    def zeigt(t, seite):
+        v = ke.seite(t, seite)
+        if v is None:
+            return None
+        b = sum(1 for u in v if u == BIOM)
+        f = sum(1 for u in v if u == FELS)
+        return BIOM if b >= 3 else (FELS if f >= 3 else None)
+
+    def hoch_seite(i):
+        """Links der Zeichenrichtung. -> Himmelsrichtung."""
+        x0, y0 = kette[i]
+        x1, y1 = kette[i + 1] if i + 1 < len(kette) else kette[i - 1]
+        dx, dy = (x1 - x0, y1 - y0) if i + 1 < len(kette) \
+            else (x0 - x1, y0 - y1)
+        # Links von (dx, dy) bei nach unten wachsendem y ist (dy, -dx).
+        lx, ly = dy, -dx
+        return "N" if ly < 0 else "S" if ly > 0 else ("O" if lx > 0 else "W")
+
+    def lauf(i):
+        """In welche Richtung geht es zur naechsten Zelle?"""
+        if i + 1 >= len(kette):
+            return None
+        x0, y0 = kette[i]
+        x1, y1 = kette[i + 1]
+        return "O" if x1 > x0 else "W" if x1 < x0 else \
+            ("S" if y1 > y0 else "N")
+
+    gewicht = {t: float(tt.vorkommen[tt._platz[t]]) + 1.0 for t in eigen}
+
+    # Je Stelle der Vorrat, der die Hochseite erfuellt. Das haengt nur an der
+    # Laufrichtung, nicht an der Wahl davor -- also einmal ausrechnen.
+    vorrat = []
+    for i, (x, y) in enumerate(kette):
+        if not (0 <= x < w and 0 <= y < h):
+            vorrat.append([])
+            continue
+        hoch = hoch_seite(i)
+        kand = [t for t in eigen if zeigt(t, hoch) == BIOM]
+        if dicht:
+            gegen = {"N": "S", "S": "N", "O": "W", "W": "O"}[hoch]
+            kand = [t for t in kand if zeigt(t, gegen) == BIOM] or kand
+        vorrat.append(kand)
+
+    def ordnen(kand, vor, r):
+        """Belegte Anschluesse zuerst, dann die erlaubten; je nach Naht.
+
+        Derselbe Rang wie im Wandsetzer: belegt ist ein Beleg, erlaubt nur
+        eine Erlaubnis. Gewuerfelt wird innerhalb des Rangs, sonst stehen vier
+        Kacheln im Kreis -- gierig gewaehlt kamen auf 40 Zellen genau vier
+        verschiedene heraus.
+        """
+        if vor is None:
+            gew = np.array([gewicht[t] for t in kand], dtype=float)
+            gew = gew / gew.sum()
+            return list(rng.choice(kand, size=len(kand), replace=False,
+                                   p=gew))
+        # Zwei Bodenkanten duerfen nicht aneinanderstossen: dann ist die
+        # Oberkante an dieser Naht durchtrennt, die Klippe hoert mitten im
+        # Lauf auf und faengt daneben neu an.
+        #
+        # Ein oder zwei Abschnitte sind richtig: oben an der Naht laeuft
+        # das Hochland weiter, dort zeigen beide Kacheln Boden. Ab drei ist
+        # die Kante durchtrennt. Ohne Verbot waren 35,3 % der Naehte
+        # vollstaendig durchtrennt.
+        #
+        # OHNE Ausnahme fuer haeufig belegte Paare -- und das ist der Punkt.
+        # 20 Paare mit drei oder vier Abschnitten sind zehnmal oder oefter
+        # belegt, `89 O 94` sogar 70 mal, und die Pixel bestaetigen ihre
+        # Zuordnung: beide Seiten sind wirklich ganz Boden. Sie sind also echt
+        # -- aber in einer ANDEREN Lage. Bei jedem einzelnen Vorkommen laeuft
+        # quer zur Naht die Klippe weiter; die Wand geht unten durch und die
+        # Kante ist gar nicht unterbrochen. In einer einzelnen Reihe gibt es
+        # diese Fortsetzung nie, also traegt die Beleglage hier nicht.
+        #
+        # `BODEN_AN_BODEN_BESTAETIGT` bleibt stehen: sobald unter der Reihe
+        # eine Wand steht, gilt die Ausnahme wieder.
+        #
+        # The frequent exceptions are real, but attested in a different
+        # setting: in every occurrence the wall continues across the seam. A
+        # single row never does.
+        #
+        # Two ground edges must not meet: the top edge would be cut there.
+        kand = [t for t in kand
+                if ke.boden_an_boden(vor, t, r) <= BODEN_AN_BODEN_MAX]
+        if not kand:
+            return []
+        aus = []
+        for rang in (0, 1):
+            teil = [t for t in kand
+                    if (tt.passt(vor, t, r) if rang == 0
+                        else (not tt.passt(vor, t, r) and ke.passt(vor, t, r)))]
+            if not teil:
+                continue
+            gew = []
+            for t in teil:
+                g = gewicht[t] if rang == 0 else 1.0
+                if px is not None:
+                    d = px.naht(vor, t, r)
+                    if d is not None:
+                        g *= 1.0 / (1.0 + max(0.0, d - NAHT_GUT)
+                                    / NAHT_SPANNE)
+                gew.append(max(g, 1e-9))
+            gew = np.array(gew, dtype=float)
+            gew = gew / gew.sum()
+            aus.extend(rng.choice(teil, size=len(teil), replace=False,
+                                  p=gew))
+        return [int(t) for t in aus]
+
+    # Rueckverfolgung ueber die Kette. Passt an einer Stelle nichts mehr, geht
+    # es einen Schritt zurueck -- gierig fortgeschrieben ergab das bis zu 19
+    # regelwidrige Anschluesse auf einer Reihe.
+    gesetzt: list = [None] * len(kette)
+    reihen: list = [None] * len(kette)
+    i = 0
+    versuche = 0
+    while 0 <= i < len(kette):
+        versuche += 1
+        if versuche > 20000:
+            break
+        if not vorrat[i]:
+            gesetzt[i] = None
+            i += 1
+            continue
+        if reihen[i] is None:
+            vor = None
+            r = None
+            j = i - 1
+            while j >= 0 and gesetzt[j] is None:
+                j -= 1
+            if j >= 0:
+                vor, r = gesetzt[j], lauf(j)
+            reihen[i] = ordnen(vorrat[i], vor, r)
+        if reihen[i]:
+            gesetzt[i] = reihen[i].pop(0)
+            i += 1
+        else:
+            reihen[i] = None
+            gesetzt[i] = None
+            i -= 1
+            while i >= 0 and vorrat[i] == []:
+                i -= 1
+            if i < 0:
+                break
+
+    n = 0
+    for (x, y), t in zip(kette, gesetzt):
+        if t is None or not (0 <= x < w and 0 <= y < h):
+            continue
+        grid[y, x] = t
+        maske[y, x] = True
+        n += 1
+    return maske, n
 
 
 def klippe_raender_setzen(grid: np.ndarray, maske: np.ndarray,

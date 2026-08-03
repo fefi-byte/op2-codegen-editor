@@ -118,6 +118,19 @@ class CliffEdgeModel:
         n = sum(1 for x, y in zip(sa, sb) if x == BIOM and y == BIOM)
         return n >= mindestens
 
+    def boden_an_boden(self, a: int, b: int, richtung: str) -> int:
+        """Wieviele Abschnitte der Naht zeigen BEIDSEITS Boden?
+
+        `loch` fragt dasselbe mit einer festen Schwelle. Die Zahl selbst wird
+        gebraucht, wo die Schwelle nicht fest ist, sondern von der Beleglage
+        des Paares abhaengt.
+        """
+        sa = self.seite(a, richtung)
+        sb = self.seite(b, GEGEN[richtung])
+        if sa is None or sb is None:
+            return 0
+        return sum(1 for x, y in zip(sa, sb) if x == BIOM and y == BIOM)
+
     def streit(self, a: int, b: int, richtung: str) -> list[int]:
         """Welche Abschnitte widersprechen sich? Leer heisst: keiner."""
         sa = self.seite(a, richtung)
