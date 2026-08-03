@@ -118,34 +118,6 @@ class CliffEdgeModel:
         n = sum(1 for x, y in zip(sa, sb) if x == BIOM and y == BIOM)
         return n >= mindestens
 
-    def loch(self, a: int, b: int, richtung: str,
-             mindestens: int = 3) -> bool:
-        """Zeigen BEIDE Kacheln an dieser Naht Boden? Dann ist da ein Loch.
-
-        Zwischen einer Klippen- und einer Bodenzelle ist Boden richtig.
-        Zwischen ZWEI Klippenzellen heisst es: die Wand hoert hier auf und
-        faengt daneben neu an -- ein Schnitt quer durch die Wand. Genau das
-        passiert, wo zwei Blockstuecke ueberlappen, und dort stehen die
-        Uebergangskacheln dann mitten in der Klippe.
-
-        `passt` sagt dazu nichts, denn BIOM gleich BIOM gilt als passend.
-
-        Gemessen an 176524 Naehten zwischen Klippenzellen der 54 Karten:
-        ein Abschnitt Biom an Biom 10,03 %, zwei 6,11 %, drei 0,01 %, vier
-        0,46 %. Ein oder zwei sind eine schraege Kante, die durch die Naht
-        laeuft; ab drei ist es praktisch ausgeschlossen -- daher die
-        Vorgabe 3.
-
-        Both tiles showing ground at their shared seam means the wall stops
-        here and starts again next door: a cut across the wall.
-        """
-        sa = self.seite(a, richtung)
-        sb = self.seite(b, GEGEN[richtung])
-        if sa is None or sb is None:
-            return False
-        n = sum(1 for x, y in zip(sa, sb) if x == BIOM and y == BIOM)
-        return n >= mindestens
-
     def streit(self, a: int, b: int, richtung: str) -> list[int]:
         """Welche Abschnitte widersprechen sich? Leer heisst: keiner."""
         sa = self.seite(a, richtung)

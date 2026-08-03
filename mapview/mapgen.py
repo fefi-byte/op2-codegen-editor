@@ -5614,6 +5614,124 @@ def _klippe_maengel(grid: np.ndarray, maske: np.ndarray, tt, ke,
     return zellen, (rw, hart, loch)
 
 
+def klippe_raender_setzen(grid: np.ndarray, maske: np.ndarray,
+                          familie: str, rng: np.random.Generator,
+                          frei: np.ndarray | None = None,
+                          runden: int = 2) -> int:
+    """Zuerst die Raender -> Zahl der geaenderten Zellen.
+
+    Der Rand ist das Einzige, was man von einer Klippe sieht, und er ist
+    staerker eingeschraenkt als das Innere: liegt hinter einer Kachelseite
+    offener Boden, MUSS diese Seite Boden zeigen. Wer den Rand zuletzt
+    behandelt, hat dort keine Wahl mehr -- das Innere hat ihn dann schon
+    festgelegt.
+
+    Darum laeuft dieser Durchgang VOR `klippe_regeln_durchsetzen`. Er fasst nur
+    Randzellen an; das Innere bleibt stehen und bindet.
+
+    Die FUELLkachel faellt damit von selbst weg. 19 der 156 zugeordneten
+    mud-Kacheln zeigen auf allen vier Seiten Fels; sie gehoeren ins Innere
+    einer Wand und koennen an keinem Rand stehen. Bei `hoehe=2` ist jede Zelle
+    eine Randzelle, dort gibt es dann gar keine mehr. Zum Vergleich: die
+    Originalkarten haben 1,13 % Fuellkacheln auf ihren Randzellen.
+
+    Gewaehlt wird unter den erlaubten die Kachel, die zu den schon gesetzten
+    Nachbarn belegt passt; danach entscheidet die Pixelnaht. Geaendert wird nur
+    bei strikter Verbesserung.
+
+    Edges first: a side with open ground behind it must show ground. Doing the
+    edge last leaves no choice there. Fill tiles -- rock on all four sides --
+    drop out on their own; at `hoehe=2` every cell is an edge cell.
+    """
+    try:
+        from cliff_kanten import BIOM, FELS, modell as _km
+        from cliff_tiles import VERSATZ, modell as _tm
+        tt = _tm()
+        ke = _km()
+    except Exception:                                    # noqa: BLE001
+        return 0
+    try:
+        from cliff_pixels import modell as _pm
+        px = _pm()
+    except Exception:                                    # noqa: BLE001
+        px = None
+    if not maske.any():
+        return 0
+
+    tm = model()
+    fi = tm.families.index(familie) if familie in tm.families else -1
+    eigen = [int(t) for t, f in zip(tt.kacheln, tt.familie)
+             if fi < 0 or int(f) == fi]
+    if not eigen or not any(ke.kennt(t) for t in eigen):
+        return 0
+    h, w = grid.shape
+
+    def offen(x, y):
+        """Die Seiten, hinter denen kein Klippenfeld liegt."""
+        aus = []
+        for r in ("N", "O", "S", "W"):
+            dx, dy = VERSATZ[r]
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < w and 0 <= ny < h and not maske[ny, nx]:
+                aus.append(r)
+        return aus
+
+    def urteil(t, x, y, seiten):
+        """-> (Fels zum Boden, regelwidrig, unbelegt, Naht). Klein ist gut."""
+        hart = sum(1 for r in seiten
+                   if (v := ke.seite(t, r)) is not None
+                   and sum(1 for u in v if u == FELS) >= 3)
+        rw = ub = 0
+        naht = n = 0.0
+        for r in ("N", "O", "S", "W"):
+            dx, dy = VERSATZ[r]
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < w and 0 <= ny < h) or not maske[ny, nx]:
+                continue
+            b = int(grid[ny, nx])
+            if not tt.passt(t, b, r):
+                ub += 1
+                if not ke.passt(t, b, r):
+                    rw += 1
+            if px is not None:
+                d = px.naht(t, b, r)
+                if d is not None:
+                    naht += d
+                    n += 1
+        return hart, rw, ub, (naht / n if n else 0.0)
+
+    geaendert = 0
+    for _runde in range(runden):
+        diesmal = 0
+        for y in range(h):
+            for x in range(w):
+                if not maske[y, x]:
+                    continue
+                if frei is not None and not frei[y, x]:
+                    continue
+                seiten = offen(x, y)
+                if not seiten:
+                    continue                  # Innenzelle, nicht hier
+                alt = int(grid[y, x])
+                beste = urteil(alt, x, y, seiten)
+                if beste[0] == 0:
+                    continue                  # Rand ist schon in Ordnung
+                gewaehlt = None
+                for t in eigen:
+                    if t == alt or not ke.kennt(t):
+                        continue
+                    u = urteil(t, x, y, seiten)
+                    if u < beste:
+                        beste, gewaehlt = u, t
+                if gewaehlt is not None:
+                    grid[y, x] = gewaehlt
+                    diesmal += 1
+        geaendert += diesmal
+        if not diesmal:
+            break
+    return geaendert
+
+
 def klippe_regeln_durchsetzen(grid: np.ndarray, maske: np.ndarray,
                               familie: str, rng: np.random.Generator,
                               runden: int = 4,
@@ -6707,11 +6825,21 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
             schutz &= ~quer_heil
             schutz &= ~schon_da
             hart_schutz = schutz.copy()
+            # Erst die Raender. Sie sind staerker eingeschraenkt als das
+            # Innere und das Einzige, was man von der Wand sieht -- wer sie
+            # zuletzt behandelt, hat dort keine Wahl mehr.
             for ex, ey in gezeichnet:
                 r = HART_ECKENSCHUTZ
                 y0, y1 = max(0, ey - r), ey + r + 1
                 x0, x1 = max(0, ex - r), ex + r + 1
                 hart_schutz[y0:y1, x0:x1] = False
+            # Ist die Hoehe vorgegeben, gilt der Eckenschutz hier nicht:
+            # das Stutzen hat die Bloecke ohnehin zerschnitten, es gibt an den
+            # Zugenden nichts mehr zu bewahren. Und bei hoehe=2 hat die Wand
+            # gar kein Inneres -- jede Zelle ist Rand, eine Fuellkachel (auf
+            # allen vier Seiten Fels) kann dort nicht stehen.
+            klippe_raender_setzen(grid, maske, familie, rng,
+                                  frei=None if hoehe else hart_schutz)
             klippe_regeln_durchsetzen(grid, maske, familie, rng, frei=schutz,
                                       hart_frei=hart_schutz)
     return maske, zellen

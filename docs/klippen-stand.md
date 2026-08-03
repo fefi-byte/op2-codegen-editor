@@ -1711,6 +1711,41 @@ aufgenommen fiel „Fortsetzung um die Ecke bekommt einen Eckblock" um — jede
 angefasste Zelle macht ihren Block unauffindbar, und das Loch ist unerwuenscht,
 nicht unmoeglich. Es zaehlt nur dort mit, wo die Reparatur ohnehin arbeitet.
 
+### Erst die Raender (`klippe_raender_setzen`)
+
+Der Rand ist das Einzige, was man von einer Klippe sieht, und er ist staerker
+eingeschraenkt als das Innere: liegt hinter einer Kachelseite offener Boden,
+MUSS diese Seite Boden zeigen. Wer den Rand zuletzt behandelt, hat dort keine
+Wahl mehr — das Innere hat ihn schon festgelegt. Also laeuft der Durchgang vor
+`klippe_regeln_durchsetzen` und fasst nur Randzellen an.
+
+**Die Fuellkachel faellt damit von selbst weg.** 19 der 156 zugeordneten
+mud-Kacheln zeigen auf allen vier Seiten Fels; sie gehoeren ins Innere und
+koennen an keinem Rand stehen. Bei `hoehe=2` ist JEDE Zelle eine Randzelle —
+die Wand hat kein Inneres, also kann dort keine Fuellkachel vorkommen. Die
+zweite Forderung folgt aus der ersten. Zum Vergleich: die Originalkarten haben
+1,13 % Fuellkacheln auf ihren Randzellen.
+
+**Bei vorgegebener Hoehe gilt der Eckenschutz hier nicht.** Er soll die Bloecke
+auffindbar halten — aber das Stutzen hat sie ohnehin zerschnitten, an den
+Zugenden ist nichts mehr zu bewahren. Mit Schutz blieben Reste stehen, und
+gemessen sassen sie **ausnahmslos** an einem Zugende (15 von 15 Faellen).
+
+| Zug | | Fuellkachel am Rand | Fels zum Boden |
+|---|---|---|---|
+| waagerecht | `hoehe=2` vorher | 1,8 % | 5,5 % |
+| | nachher | **0** | **0** |
+| 2:1 hoch | `hoehe=2` vorher | 1,0 % | 4,1 % |
+| | nachher | **0** | **0** |
+| 1:1 runter | `hoehe=2` vorher | 0 | 3,9 % |
+| | nachher | 0 | **0** |
+
+Ohne `hoehe` bleibt der Schutz und damit ein Rest an den Zugenden — dort ist
+die Wand nicht fertig, sondern wartet auf die Fortsetzung.
+
+Stand bei `hoehe=2` ueber alle fuenf Zuege: 461 Zellen, 0 regelwidrig, 0 hart,
+0 Fuellkacheln, 5 Loecher.
+
 ### Offen
 
 **Der `ECKENSCHUTZ` ist inzwischen an drei Stellen der Engpass**: der Loeser
