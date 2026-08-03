@@ -33,7 +33,8 @@ except Exception:
     pass
 
 from PySide6.QtCore import QTimer                      # noqa: E402
-from PySide6.QtWidgets import QApplication             # noqa: E402
+from PySide6.QtWidgets import (QApplication,           # noqa: E402
+                               QGraphicsLineItem)
 
 _failures: list[str] = []
 
@@ -522,6 +523,10 @@ def check_terrain(win, app) -> None:
     # Mitten auf eine Wand zielen. Einen dauerhaften Ring gibt es dort nicht --
     # das waeren auf cm04 1017 statt 51 -- aber der Klick rastet trotzdem ein,
     # und der Editor zeigt EINEN Ring unter dem Zeiger.
+    # Ohne Stuetzpunkte -- mit einem gesetzten zeigt die Vorschau die
+    # Baurichtung statt eines Rings.
+    win._klippen_verwerfen()
+    pump(app)
     mitte = ebenen.klippen_anker(37, 109)
     check("Klick neben der Wandmitte rastet auf die Wand ein",
           mitte is not None and win.map.cell_type(*mitte) in KLIPPE, str(mitte))
@@ -540,6 +545,37 @@ def check_terrain(win, app) -> None:
     check("kein Zielring im freien Gelaende",
           getattr(win, "_terrain_preview_item", None) is None)
     win._clear_terrain_preview()
+
+    # Baurichtungen: ab dem zweiten Punkt rastet der Klick auf eine der
+    # gemessenen Neigungen, und solange ein Punkt steht, zeigt eine Linie
+    # dorthin, wohin gebaut wuerde.
+    import math
+
+    import mapgen as _mg
+    win._klippen_verwerfen()
+    win._terrain_strich_beginnen()
+    win._terrain_stamp(40, 60)
+    win._terrain_strich_abschliessen()
+    pump(app)
+    check("erster Punkt gesetzt", len(win._klippen_punkte) == 1,
+          str(win._klippen_punkte))
+    win._update_terrain_preview(53, 66)
+    check("nach dem ersten Klick zeigt eine Linie die Baurichtung",
+          isinstance(getattr(win, "_terrain_preview_item", None),
+                     QGraphicsLineItem))
+    win._terrain_strich_beginnen()
+    win._terrain_stamp(53, 66)          # 13 rechts, 6 runter -> nicht erlaubt
+    win._terrain_strich_abschliessen()
+    pump(app)
+    zweiter = win._klippen_punkte[-1]
+    dx, dy = zweiter[0] - 40, zweiter[1] - 60
+    teiler = math.gcd(abs(dx), abs(dy)) or 1
+    check("der zweite Punkt rastet auf eine erlaubte Richtung",
+          (dx // teiler, dy // teiler) in _mg.klippen_richtungen(),
+          f"{win._klippen_punkte} -> dx={dx}, dy={dy}")
+    win._klippen_verwerfen()
+    win._clear_terrain_preview()
+    pump(app)
     win._klippen_verwerfen()
     pump(app)
     win.undo()

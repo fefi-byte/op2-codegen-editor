@@ -21,6 +21,7 @@ from the original maps, so transitions are real ones rather than invented.
 """
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -4327,9 +4328,1497 @@ def klippe_wand_an(grid: np.ndarray, x: int, y: int, tm: "TileModel",
     return None
 
 
+# Die Neigungen, in denen sich eine Klippe bauen laesst -- als (dx, dy) je
+# Achtelkreis, daraus werden alle vier Quadranten gespiegelt.
+#
+# Gemessen an cm03: der waagerechte Versatz der linken Klippenkante von Zeile
+# zu Zeile (919 Messungen).
+#
+#     Versatz je Zeile   Anteil   entspricht
+#      0 Spalten          55,2 %   senkrecht
+#     ±1 Spalte           24,5 %   45 Grad
+#     ±2 Spalten           8,0 %   26,6 Grad
+#     ±3 Spalten           6,6 %   18,4 Grad
+#     ±4 Spalten           3,6 %   14,0 Grad
+#
+# Ueber die Haelfte aller Schritte ist senkrecht; darueber hinaus kommen nur
+# Versaetze bis vier Spalten vor. Eine schraege Wand entsteht in den Originalen
+# also nicht aus einem festen Verhaeltnis, sondern aus einer Treppe -- die
+# Schraege bei (82,39) in cm03 wechselt zwischen -1 und -2 und ergibt so 1,6:1.
+# Genau diese Verhaeltnisse sind hier die erlaubten Richtungen.
+#
+# The slopes a cliff can be built in, as (dx, dy) per octant, mirrored into all
+# four quadrants. Measured on cm03: the horizontal offset of the left cliff edge
+# from row to row, 919 samples. More than half of all steps are vertical, and
+# beyond that only offsets up to four columns occur.
+KLIPPEN_NEIGUNGEN = ((1, 0), (4, 1), (3, 1), (2, 1), (1, 1),
+                     (1, 2), (1, 3), (1, 4), (0, 1))
+
+
+def klippen_richtungen() -> list[tuple[int, int]]:
+    """Alle erlaubten Baurichtungen als gekuerzte (dx, dy)."""
+    aus = set()
+    for dx, dy in KLIPPEN_NEIGUNGEN:
+        for sx in (1, -1):
+            for sy in (1, -1):
+                aus.add((dx * sx, dy * sy))
+    return sorted(aus)
+
+
+def klippe_winkel_rasten(ax: int, ay: int, bx: int, by: int) -> tuple[int, int]:
+    """Den Zielpunkt auf die naechste erlaubte Baurichtung ziehen.
+
+    Gewaehlt wird die Richtung mit dem kleinsten Winkelabstand, und darauf die
+    Laenge, die der Zeigerlage am naechsten kommt. So bleibt die gezogene
+    Strecke gleich lang und dreht sich nur auf die erlaubte Neigung.
+
+    Pull the target point onto the nearest permitted build direction: the
+    direction with the smallest angular distance, at the length closest to where
+    the cursor sits, so the stroke keeps its length and only rotates.
+    """
+    vx, vy = bx - ax, by - ay
+    if vx == 0 and vy == 0:
+        return bx, by
+    laenge = (vx * vx + vy * vy) ** 0.5
+    beste = None
+    for dx, dy in klippen_richtungen():
+        n = (dx * dx + dy * dy) ** 0.5
+        # Kosinus des Winkels zwischen Zeigerrichtung und Kandidat.
+        kos = (vx * dx + vy * dy) / (laenge * n)
+        if beste is None or kos > beste[0]:
+            beste = (kos, dx, dy, n)
+    _k, dx, dy, n = beste
+    schritte = max(1, int(round(laenge / n)))
+    return ax + dx * schritte, ay + dy * schritte
+
+
+# Wie stark der Versatz innerhalb einer Schraegen schwankt. Gemessen an 41
+# schraegen Kantenstuecken aus 6 Originalkarten: KEINES benutzt lauter gleiche
+# Versaetze, 39 % benutzen vier verschiedene Werte, die Streuung innerhalb
+# einer Folge liegt im Median bei 1,31.
+#
+#     0  0  0 -1  0 -1 -2 -2 -1  0 -1 -2 -4 -3 -2 -4 -2  0  0
+#     0  0 -1 -2  0  0 -1 -3 -1 -3 -2 -3 -4 -1  0 -1  0  0 -1 +1
+#
+# Darin steckt dreierlei: Nullen mittendrin (die Wand laeuft ein Stueck
+# senkrecht weiter), grosse Spruenge neben kleinen, und gelegentlich eine
+# Gegenbewegung. Eine gleichmaessige Treppe -2, -2, -2 kommt nirgends vor --
+# und genau deshalb sieht man bei ihr jede Stufe einzeln.
+#
+# How much the offset varies inside a slope. Measured on 41 diagonal edge runs
+# from 6 original maps: not one uses uniform offsets, 39 % use four different
+# values, and the spread within a run has a median of 1.31.
+#
+# Diese Streuung war lange die einzige Vorgabe, und daran ist der Erzeuger
+# gescheitert: Mittelwert und Streuung legen eine Verteilung nicht fest. Die
+# Verteilung selbst ist unten gemessen und wird direkt benutzt.
+# Mean and spread do not pin down a distribution; the distribution itself is
+# measured below and used directly.
+
+# Die Treppe einer Schraegen -- Trittlaenge und Sprunghoehe, direkt gemessen.
+#
+# Gezaehlt an 206 Schraegen aus den 54 Stockkarten (974 Tritte): die Oberkante
+# eines Klippenbandes Spalte fuer Spalte verfolgt und gezaehlt, wie viele
+# Spalten sie gleich bleibt, bevor sie springt.
+#
+#   Trittlaenge   1  41,1 %   2  23,4 %   3  12,1 %   4  7,8 %   5  6,1 %
+#                 Median 2, Mittel 2,62, laenger kommt vor, aber selten
+#   Sprunghoehe   1  75,5 %   2  24,5 %   -- drei Zeilen NIE
+#
+# Die Trittlaengen sind fast genau geometrisch: mit q = 1 - 1/2,62 sagt die
+# Verteilung 38,2 / 23,6 / 14,6 / 9,0 / 5,6 % gegen gemessene
+# 41,1 / 23,4 / 12,1 / 7,8 / 6,1 %. Erzeugt wird deshalb geometrisch mit dem
+# Mittel, das die verlangte Neigung fordert -- die FORM der Verteilung ist
+# gemessen, ihr Mittelwert kommt aus der gezeichneten Linie.
+#
+# Vorher wurde die Folge aus Mittelwert und Streuung gebaut. Das lieferte 17 %
+# Schritte <= 0 -- ein Tritt der Laenge 0 ist kein Tritt, sondern zwei Absaetze
+# uebereinander, und die Wand faellt in EINER Spalte um zwei Zeilen. An genau
+# diesen Stellen sassen 79 % der Kachelpaare, die in keiner Originalkarte
+# vorkommen. Mit einer Untergrenze allein wurde es nicht besser, sondern
+# anders schlecht: die geforderte Streuung war dann nur noch ueber Extreme zu
+# erreichen (lauter Einsen und Vieren), und ueber Eck stand 20 % lang dieselbe
+# Kachel statt der gemessenen 1,31 %.
+#
+# Measured on 206 slopes from the 54 stock maps: tread lengths are all but
+# exactly geometric, and a riser is one row (75,5 %) or two (24,5 %), never
+# three. The distribution's SHAPE is measured; its mean comes from the drawn
+# line.
+# Die Naht an der Stufe laesst sich NICHT ueber die Blockwahl verbessern -- der
+# Blockweg hat dafuer keinen Spielraum. Gemessen:
+#
+#   Bloecke je Familie insgesamt            mud 18, san 17
+#   Bloecke je Laufrichtung                 1 bis 3
+#   Blockpaare mit mehr als einem
+#     gezaehlten Versatz                    38 von 482 (8 %)
+#
+# Ein Gewicht auf der Naht wurde gebaut und gemessen: Faktoren von 0 bis 200
+# aendern kein einziges Ergebnis, weil `waehle` meist genau einen Kandidaten
+# hat. Die Wand, die der Blockweg baut, ist praktisch festgelegt.
+#
+# The seam cannot be improved through the block choice: with 18 blocks per
+# family, 1 to 3 per direction and a single counted offset for 92 % of pairs,
+# there is nothing to weight. Seam weights from 0 to 200 changed no result.
+
+# Feste Treppenmuster je Baurichtung, als (Tritt, Sprung) in Laufrichtung.
+#
+# Bei 18 Bloecken je Familie gibt es nichts zu variieren -- die Abwechslung, die
+# ein Zufallsgenerator hineinbringt, ist keine, sondern Streuung um einen festen
+# Vorrat herum. Gemessen an der Zahl der Kachelpaare, die in keiner der 54
+# Originalkarten vorkommen (eine echte Karte liegt bei 1,01 %), gemittelt ueber
+# 12 Seeds und beide Familien AM FERTIGEN PINSEL:
+#
+#   Winkel   Grad    gewuerfelt   festes Muster
+#     4:1    14,0°      10,1 %         8,0 %
+#     3:1    18,4°      13,5 %        10,8 %
+#     2:1    26,6°      19,1 %        18,6 %
+#     1:1    45,0°      30,5 %        32,3 %
+#     1:2    63,4°      27,3 %        22,6 %
+#     1:3    71,6°      22,6 %        19,5 %
+#     1:4    76,0°      19,8 %        14,6 %
+#
+# --- Warum die Suche gebremst werden musste --------------------------------
+#
+# Eine erste Suche optimierte allein auf diese Quote und fand deutlich bessere
+# Werte (26,6°: 13,2 %). Das Ergebnis sah aber treppiger aus als jede
+# Originalklippe, und der Grund stand in der Zielgroesse: wenige unbekannte
+# Paare heisst wenige NAEHTE, also lange Tritte und doppelte Spruenge. Gemessen
+# hatten alle sieben gefundenen Muster **67 % Zweiersprunge**, wo die Originale
+# 25 % haben, und nur 21 % Tritte der Laenge 1 statt 41 %.
+#
+# Gesucht wird darum zweistufig: Kandidaten aus der gemessenen Verteilung
+# ziehen, davon nur die typische Haelfte behalten (nach Wahrscheinlichkeit unter
+# genau dieser Verteilung), und erst unter denen die beste Naht nehmen. Alle
+# Muster haben jetzt 25 % Zweiersprunge wie die Originale. Der Verzicht kostet
+# bei mittleren Winkeln fast den ganzen Vorsprung -- das ist der ehrliche Preis
+# dafuer, das Mass nicht zu ueberlisten.
+#
+# A first search optimised this rate alone and scored much better, but the
+# result looked more stepped than any original: few unknown pairs means few
+# SEAMS, hence long treads and double risers. All seven patterns came out with
+# 67 % double risers where the originals have 25 %. The search now draws from
+# the measured distribution, keeps only the typical half, and optimises within
+# that.
+#
+# Der Preis ist Gleichfoermigkeit: jede Schraege desselben Winkels sieht gleich
+# aus. Bei diesem Vorrat ist das ehrlicher als Zufall, der nur zwischen
+# schlechten Varianten waehlt.
+#
+# Fixed staircase patterns per build direction. With 18 blocks per family there
+# is nothing to vary, and a fixed pattern roughly halves the share of tile pairs
+# that occur in no original map. Searched over 400 random staircases per angle,
+# scored on both families at once; the patterns come out identical for mud and
+# san, so the good staircase is a property of the geometry.
+KLIPPEN_TREPPENMUSTER = {
+    (4, 1): [(6, 2), (3, 2), (6, 1), (3, 1), (5, 1), (12, 1), (2, 1), (3, 1)],
+    (3, 1): [(3, 2), (11, 1), (2, 1), (3, 1), (3, 2), (2, 1), (3, 1), (3, 1)],
+    (2, 1): [(1, 2), (2, 1), (3, 1), (2, 2), (1, 1), (7, 1), (3, 1), (1, 1)],
+    (1, 1): [(1, 1), (1, 1), (1, 2), (1, 1), (1, 1), (3, 1), (1, 2), (1, 1)],
+    (1, 2): [(5, 1), (1, 2), (1, 2), (3, 1), (2, 1), (5, 1), (2, 1), (1, 1)],
+    (1, 3): [(10, 1), (4, 2), (1, 1), (5, 1), (2, 1), (1, 1), (6, 2), (1, 1)],
+    (1, 4): [(12, 1), (5, 1), (2, 1), (12, 2), (2, 1), (3, 2), (2, 1), (2, 1)],
+}
+
+
+def _muster_fuer(dx: int, dy: int):
+    """Das Muster der Baurichtung, die diesem Stueck am naechsten liegt."""
+    if not dx or not dy:
+        return None
+    lang, kurz = (abs(dx), abs(dy)) if abs(dx) >= abs(dy) \
+        else (abs(dy), abs(dx))
+    verhaeltnis = lang / kurz
+    beste, muster = None, None
+    for (a, b), p in KLIPPEN_TREPPENMUSTER.items():
+        soll = max(a, b) / min(a, b)
+        d = abs(soll - verhaeltnis)
+        if beste is None or d < beste:
+            beste, muster = d, p
+    return muster
+
+
+TRITT_MITTEL = 2.62
+TRITT_HOECHST = 12         # laenger als das kommt gemessen nicht vor
+SPRUNG_ZWEI = 0.245        # Anteil der Spruenge ueber zwei Zeilen
+MIN_TRITT = 1
+
+
+def _tritte(gesamt: int, schritte: int,
+            rng: np.random.Generator) -> list[int]:
+    """`schritte` Trittlaengen >= MIN_TRITT mit Summe genau `gesamt`.
+
+    Geometrisch verteilt mit dem Mittel, das sich aus beiden ergibt. Die Summe
+    bleibt exakt erhalten, damit die Schraege ihren Endpunkt trifft.
+    """
+    if schritte <= 0:
+        return []
+    vz = 1 if gesamt >= 0 else -1
+    rest = abs(int(gesamt))
+    if rest < schritte * MIN_TRITT:
+        # Kuerzer als die Zahl der Stufen: gleichmaessig aufteilen
+        grund = rest / schritte
+        return [vz * int(round(grund * (k + 1)) - round(grund * k))
+                for k in range(schritte)]
+    mittel = rest / schritte
+    q = max(0.0, 1.0 - 1.0 / mittel) if mittel > 1 else 0.0
+    folge = [MIN_TRITT + (int(rng.geometric(1 - q)) - 1 if q > 0 else 0)
+             for _ in range(schritte)]
+    folge = [min(v, TRITT_HOECHST) for v in folge]
+    # Summe genau treffen: einzelne Tritte anpassen, Grenzen einhalten
+    for _ in range(400 * schritte):
+        d = rest - sum(folge)
+        if d == 0:
+            break
+        i = int(rng.integers(schritte))
+        if d > 0 and folge[i] < TRITT_HOECHST:
+            folge[i] += 1
+        elif d < 0 and folge[i] > MIN_TRITT:
+            folge[i] -= 1
+    return [vz * v for v in folge]
+
+
+def _spruenge(gesamt: int, rng: np.random.Generator) -> list[int]:
+    """Sprunghoehen (1 oder 2 Zeilen), die sich zu `gesamt` addieren.
+
+    Gemessen sind 75,5 % einzeilige und 24,5 % zweizeilige Spruenge; drei
+    Zeilen kommen nicht vor. Ein zweizeiliger Sprung laesst zwei drei Reihen
+    hohe Bloecke noch um eine Reihe ueberlappen -- ab drei klafft eine Luecke.
+    """
+    rest = abs(int(gesamt))
+    if rest <= 0:
+        return []
+    vz = 1 if gesamt >= 0 else -1
+    aus = []
+    while rest > 0:
+        if rest >= 2 and rng.random() < SPRUNG_ZWEI:
+            aus.append(2)
+            rest -= 2
+        else:
+            aus.append(1)
+            rest -= 1
+    rng.shuffle(aus)
+    return [vz * v for v in aus]
+
+
+def klippe_treppe(punkte, rng: np.random.Generator | None = None
+                  ) -> list[tuple[int, int]]:
+    """Schraege Stuecke in eine Treppe aus achsenparallelen zerlegen.
+
+    `klippe_aus_linie` stuft jedes Stueck als waagerecht ODER senkrecht ein und
+    laeuft nur auf dieser Achse -- die andere Komponente faellt weg. Eine
+    2:1-Schraege von (6,16) nach (26,6) kam so als rein waagerechte Wand bei
+    y=16 heraus und erreichte den Zielpunkt ueberhaupt nicht.
+
+    Das ist auch nicht zu beheben, indem man den Laeufen Schraegen beibringt:
+    die Klippen der Originalkarten SIND Treppen. Gemessen an cm03 sind 55 % der
+    Kantenschritte senkrecht und der Rest Versaetze von einer bis vier Spalten;
+    eine durchgehende Schraege kommt nicht vor. Die Zerlegung bildet also ab,
+    was dort steht.
+
+    Aus der Richtung (dx, dy) wird die kleinste ganzzahlige Stufe gekuerzt und
+    so oft wiederholt, wie sie hineinpasst. Bei 2:1 heisst das: zwei Kacheln
+    waagerecht, eine senkrecht, wieder von vorn -- die laengere Achse zuerst,
+    damit die Stufe als Tritt beginnt und nicht als Absatz.
+
+    Break diagonal segments into a staircase of axis-parallel ones.
+    `klippe_aus_linie` classifies each segment as horizontal OR vertical and
+    runs along that axis only, so the other component is lost. This is not
+    fixed by teaching the runs to go diagonally: the originals' cliffs ARE
+    staircases -- 55 % of their edge steps are vertical and the rest are offsets
+    of one to four columns, with no continuous slope anywhere.
+    """
+    punkte = [(int(x), int(y)) for x, y in punkte]
+    if len(punkte) < 2:
+        return punkte
+    if rng is None:
+        rng = np.random.default_rng(0)
+    aus = [punkte[0]]
+    for i in range(len(punkte) - 1):
+        ax, ay = aus[-1]
+        bx, by = punkte[i + 1]
+        dx, dy = bx - ax, by - ay
+        if dx == 0 or dy == 0:
+            aus.append((bx, by))
+            continue
+        x, y = ax, ay
+        flach = abs(dx) >= abs(dy)
+        muster = _muster_fuer(dx, dy)
+        if muster:
+            # Festes Muster, so oft wiederholt, wie es ganz hineinpasst.
+            vz_l = 1 if (dx if flach else dy) > 0 else -1
+            vz_q = 1 if (dy if flach else dx) > 0 else -1
+            lang, quer = abs(dx if flach else dy), abs(dy if flach else dx)
+            i = gel = geq = 0
+            while True:
+                tritt, sprung = muster[i % len(muster)]
+                if gel + tritt > lang or geq + sprung > quer:
+                    break
+                gel += tritt
+                geq += sprung
+                if flach:
+                    x += vz_l * tritt
+                    aus.append((x, y))
+                    y += vz_q * sprung
+                else:
+                    y += vz_l * tritt
+                    aus.append((x, y))
+                    x += vz_q * sprung
+                aus.append((x, y))
+                i += 1
+            # Der Rest MUSS zerlegt werden. Ihn einfach dem Endpunkt zu
+            # ueberlassen haengt eine unzerlegte Schraege an, und genau die
+            # laesst `klippe_aus_linie` auf eine Achse fallen -- die andere
+            # Komponente verschwindet ersatzlos. Gemessen kostete das bei 26,6°
+            # 5 Punkte (16,2 % statt 10,9 %).
+            # The remainder must be decomposed too: leaving it to the end point
+            # appends an undecomposed diagonal, and that is exactly what gets
+            # collapsed onto one axis.
+            rl, rq = lang - gel, quer - geq
+            if rl and rq:
+                sp = _spruenge(vz_q * rq, rng)
+                for tritt, sprung in zip(_tritte(vz_l * rl, len(sp), rng), sp):
+                    if flach:
+                        x += tritt
+                        aus.append((x, y))
+                        y += sprung
+                    else:
+                        y += tritt
+                        aus.append((x, y))
+                        x += sprung
+                    aus.append((x, y))
+        elif flach:
+            # Ohne Muster: aus der gemessenen Verteilung wuerfeln.
+            spruenge = _spruenge(dy, rng)
+            for tritt, sprung in zip(_tritte(dx, len(spruenge), rng),
+                                     spruenge):
+                x += tritt
+                aus.append((x, y))
+                y += sprung
+                aus.append((x, y))
+        else:
+            spruenge = _spruenge(dx, rng)
+            for tritt, sprung in zip(_tritte(dy, len(spruenge), rng),
+                                     spruenge):
+                y += tritt
+                aus.append((x, y))
+                x += sprung
+                aus.append((x, y))
+        aus.append((bx, by))
+    # Punkte, die nichts bewegen, wieder herauswerfen.
+    sauber = [aus[0]]
+    for p in aus[1:]:
+        if p != sauber[-1]:
+            sauber.append(p)
+    return sauber
+
+
+# Wieviele Zellen am TIEFende eines Bandes `CLIFFS_LOW_SIDE` sind. Der Rest ist
+# Hochseite, und ein Band der Dicke 1 ist die Nordkante.
+#
+# Gemessen ueber alle 54 Stockkarten, senkrechte Baender von oben nach unten:
+#
+#   Laenge 1   N     94 %
+#   Laenge 2   HL    52 %
+#   Laenge 3   HLL   82 %
+#   Laenge 4   HHLL  45 %   (HLLL nur 22 %)
+#   Laenge 5   HHHLL 26 %   (HLLLL nur 16 %)
+#
+# Es sind also nicht "eine Hochzelle und der Rest tief", sondern immer ZWEI
+# Tiefzellen am unteren Ende -- ausser das Band ist nur zwei dick, dann eine.
+# Always two low cells at the low end (one if the band is only two thick).
+KLIPPEN_TIEFZELLEN = 2
+
+
+def klippe_hochrichtung(maske: np.ndarray, punkte, hand: int) -> np.ndarray:
+    """Je Klippenzelle: in welcher Richtung liegt das Hochland? -> 0=N,1=O,2=S,3=W
+
+    -1 heisst unbekannt (keine Klippe oder kein Stueck in der Naehe). Die
+    Richtung kommt aus dem naechstliegenden Linienstueck und der Hand: `hand`
+    +1 ist Hochland links der Zeichenrichtung, -1 rechts.
+    """
+    h, w = maske.shape
+    aus = np.full(maske.shape, -1, dtype=np.int8)
+    stuecke = []
+    for i in range(len(punkte) - 1):
+        (x1, y1), (x2, y2) = punkte[i], punkte[i + 1]
+        dx, dy = x2 - x1, y2 - y1
+        if dx == 0 and dy == 0:
+            continue
+        # Links von (dx, dy) ist (dy, -dx), weil y nach unten waechst.
+        nx, ny = hand * dy, hand * -dx
+        if abs(nx) >= abs(ny):
+            r = 1 if nx > 0 else 3
+        else:
+            r = 2 if ny > 0 else 0
+        stuecke.append((x1, y1, x2, y2, r))
+    if not stuecke:
+        return aus
+    for y, x in zip(*np.nonzero(maske)):
+        beste, beste_r = None, -1
+        for x1, y1, x2, y2, r in stuecke:
+            vx, vy = x2 - x1, y2 - y1
+            laenge = vx * vx + vy * vy
+            t = 0.0 if not laenge else max(0.0, min(
+                1.0, ((x - x1) * vx + (y - y1) * vy) / laenge))
+            ax, ay = x1 + t * vx - x, y1 + t * vy - y
+            d = ax * ax + ay * ay
+            # Bei Gleichstand gewinnt das SPAETERE Stueck. Eine Zelle am Knick
+            # ist von beiden Stuecken gleich weit entfernt, gehoert aber zu dem,
+            # das dort weitergeht -- sonst bekommt der Ueberstand des
+            # eingehenden Laufs dessen Hochseite und steht quer zur Wand, die
+            # dort tatsaechlich liegt.
+            # On a tie the LATER segment wins: a cell at the bend belongs to the
+            # one carrying on, not to the one ending there.
+            if beste is None or d <= beste:
+                beste, beste_r = d, r
+        aus[y, x] = beste_r
+    return aus
+
+
+def klippe_zelltypen(maske: np.ndarray, punkte, hand: int) -> np.ndarray:
+    """Zelltypen aus Maske und Hochseite ableiten -> Feld, -1 wo keine Klippe.
+
+    Aus der KACHEL laesst sich der Zelltyp nicht ablesen: 171 der 307
+    Klippenkacheln kommen sowohl als Hoch- wie als Tiefseite vor, und nur 20,2 %
+    der Zellen haben eine Kachel, die ihren Typ festlegt.
+    `celltypes.default_cell_type` trifft darum 94,1 %, und die fehlenden 6 % sind
+    fast alle vertauschte Hoch- und Tiefseiten -- Waende, die zur falschen Seite
+    zeigen.
+
+    Aus der FORM auch nicht: dieselbe Kontur gibt es mit dem Hochland oben und
+    mit dem Hochland unten. Die Hochseite ist eine eigene Eingabe, und der
+    Pinsel hat sie -- also wird sie benutzt.
+
+    Derive cell types from the mask and the high side. A tile does not carry
+    this (171 of 307 tiles occur as both high and low side), and neither does
+    the shape -- the same contour exists with the highland above and below.
+    """
+    richtung = klippe_hochrichtung(maske, punkte, hand)
+    h, w = maske.shape
+    aus = np.full(maske.shape, -1, dtype=np.int16)
+    for y, x in zip(*np.nonzero(maske)):
+        r = int(richtung[y, x])
+        if r < 0:
+            aus[y, x] = celltypes.CLIFFS_LOW_SIDE
+            continue
+        senkrecht = r in (0, 2)
+        # Das Band quer zur Wand: in Richtung Hochland und dagegen auslaufen
+        dx, dy = (0, -1) if r == 0 else (1, 0) if r == 1 else \
+            (0, 1) if r == 2 else (-1, 0)
+        nach_hoch = 0
+        cx, cy = x + dx, y + dy
+        while 0 <= cx < w and 0 <= cy < h and maske[cy, cx]:
+            nach_hoch += 1
+            cx, cy = cx + dx, cy + dy
+        nach_tief = 0
+        cx, cy = x - dx, y - dy
+        while 0 <= cx < w and 0 <= cy < h and maske[cy, cx]:
+            nach_tief += 1
+            cx, cy = cx - dx, cy - dy
+        dicke = nach_hoch + nach_tief + 1
+        if dicke == 1 and senkrecht:
+            aus[y, x] = celltypes.NORTH_CLIFFS
+        elif nach_tief < min(KLIPPEN_TIEFZELLEN, dicke - 1):
+            aus[y, x] = celltypes.CLIFFS_LOW_SIDE
+        else:
+            aus[y, x] = celltypes.CLIFFS_HIGH_SIDE
+    return aus
+
+
+def klippe_feinsetzen(grid: np.ndarray, maske: np.ndarray,
+                      zellen: np.ndarray, familie: str,
+                      rng: np.random.Generator,
+                      nur: np.ndarray | None = None) -> tuple[int, int]:
+    """Die Kacheln unter der Maske neu setzen -> (von Gruppen, von der Tabelle).
+
+    `maske` sagt, wo ueberhaupt Klippe ist -- daran haengt, was als Gelaende
+    gilt. `nur` schraenkt ein, was davon NEU gesetzt wird; der Rest bleibt
+    stehen und bindet als Bedingung. Ohne `nur` wird alles neu gesetzt.
+
+    Die Trennung ist noetig, weil eine Reparatur einzelner Zellen sonst die
+    umstehende Wand fuer Gelaende haelt.
+
+    Zwei Durchgaenge auf den geschuerften Modellen:
+
+    1. **Gruppen** (`cliff_patches`), von der groessten Groesse abwaerts. Eine
+       Gruppe darf nur dort liegen, wo genau die Zellen Klippe sind, die in ihr
+       Klippe sind, UND wo die Zelltypen stimmen. Ohne die zweite Bedingung
+       waehlt man die Bergseite blind -- gemessen 16,8 % der Zellen mit
+       vertauschter Hoch- und Tiefseite, mit ihr 0,7 %.
+    2. **Nachbarschaftstabelle** (`cliff_tiles`) fuer den Rest: vier Nachbarn
+       hart, Diagonalen als Gewicht, Gelaende als Aussage und nicht als Luecke.
+
+    Die Bloecke aus `klippe_aus_linie` setzen die Wand richtig, sehen aber immer
+    nur einen Block weit; die Gruppen tragen den Lauf als Ganzes. Gemessen
+    decken sie 98 % der Zellen ab.
+
+    Fehlt eines der Modelle, bleibt alles unveraendert -- der Pinsel arbeitet
+    dann wie zuvor.
+    Re-lay the tiles under the mask: mined groups first, adjacency table for the
+    rest. Without the models present, nothing changes.
+    """
+    try:
+        from cliff_patches import modell as _patchmodell
+        from cliff_tiles import BODEN, RICHTUNGEN, VERSATZ
+        from cliff_tiles import modell as _tilemodell
+        P, T = _patchmodell(), _tilemodell()
+    except Exception:                                    # noqa: BLE001
+        return 0, 0
+    if not maske.any():
+        return 0, 0
+
+    tm = model()
+    fi = tm.families.index(familie) if familie in tm.families else -1
+    h, w = grid.shape
+    alt = grid.copy()
+    neu = grid.copy()
+    frei = maske if nur is None else (maske & nur)
+    if not frei.any():
+        return 0, 0
+    neu[frei] = -1
+
+    von_gruppen = 0
+    for bw, bh in P.groessen:
+        for y in range(h - bh + 1):
+            for x in range(w - bw + 1):
+                teil = maske[y:y + bh, x:x + bw]
+                if not teil.any():
+                    continue
+                fenster = neu[y:y + bh, x:x + bw]
+                offen = teil & (fenster < 0)
+                if not offen.any():
+                    continue
+                # Nur gesetzte KLIPPENzellen binden. Die Bodenzellen tragen noch
+                # ihre alte Kachel und wuerden sich gegen die Wildcard der
+                # Gruppe vergleichen -- dann passt nie eine.
+                bekannt = np.where(teil, fenster, -1)
+                kand = P.passend(teil, bekannt, fi if fi >= 0 else None,
+                                 zellen[y:y + bh, x:x + bw])
+                if not kand:
+                    continue
+                g = np.array([n for _b, _z, n in kand], dtype=float)
+                bloc, _zt, _n = kand[int(rng.choice(len(kand),
+                                                    p=g / g.sum()))]
+                neu[y:y + bh, x:x + bw] = np.where(teil, bloc, fenster)
+                von_gruppen += int(offen.sum())
+
+    # Naehte zwischen zwei Gruppen pruefen. Die Vertraeglichkeit wird nur
+    # INNERHALB des Fensters geprueft -- was am Gruppenrand nach aussen stoesst,
+    # sieht dabei niemand. Gemessen entstanden dort Kachelpaare, die in keiner
+    # der 54 Originalkarten vorkommen: bei einem senkrechten Zug 22 % statt 0 %.
+    # Solche Zellen werden wieder freigegeben und unten von der Tabelle gesetzt,
+    # die jeden Nachbarn prueft.
+    # Group compatibility is only checked inside the window, so seams between
+    # two groups went unchecked and produced tile pairs that occur in no
+    # original map (22 % on a vertical stroke). Such cells are released again.
+    for r in ("O", "S"):
+        dx, dy = VERSATZ[r]
+        for y, x in zip(*np.nonzero(frei)):
+            nx, ny = int(x) + dx, int(y) + dy
+            if not (0 <= nx < w and 0 <= ny < h and maske[ny, nx]):
+                continue
+            a, b = int(neu[y, x]), int(neu[ny, nx])
+            if a < 0 or b < 0 or T.passt(a, b, r):
+                continue
+            neu[ny, nx] = -1
+
+    offen = {(int(x), int(y)) for y, x in zip(*np.nonzero(frei))
+             if neu[y, x] < 0}
+    von_tabelle = 0
+    while offen:
+        beste, beste_kand = None, None
+        for (x, y) in offen:
+            umg = {}
+            for r in RICHTUNGEN:
+                dx, dy = VERSATZ[r]
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h):
+                    continue
+                if not maske[ny, nx]:
+                    umg[r] = BODEN
+                elif neu[ny, nx] >= 0:
+                    umg[r] = int(neu[ny, nx])
+            k = T.moeglich(umg, fi if fi >= 0 else None) if umg else None
+            n = len(k) if k is not None else 10 ** 6
+            if beste is None or n < beste[0]:
+                beste, beste_kand = (n, x, y), k
+                if n <= 1:
+                    break
+        _n, x, y = beste
+        offen.discard((x, y))
+        von_tabelle += 1
+        if not beste_kand:
+            # Nichts passt: die alte Kachel stehen lassen ist besser als eine
+            # falsche zu erfinden.
+            neu[y, x] = alt[y, x]
+            continue
+        b = list(beste_kand)
+        g = np.array([beste_kand[t] for t in b], dtype=float)
+        neu[y, x] = b[int(rng.choice(len(b), p=g / g.sum()))]
+
+    grid[frei] = neu[frei]
+    return von_gruppen, von_tabelle
+
+
+# Wie weit um eine gezeichnete Ecke herum die Nahtreparatur die Finger laesst.
+# Der groesste Klippenblock ist 6 Reihen hoch; wer naeher herangeht, macht ihn
+# fuer die Fortsetzung unauffindbar.
+ECKENSCHUTZ = 7
+
+REGELN_ECKENSCHUTZ = 0
+
+# Schutzradius fuer die RANDreparatur (harte Uebergaenge). Sie fasst die
+# Aussenkante der Wand an -- also genau dort, wo die Bloecke ihre Kanten haben,
+# und wo die Fortsetzung eines spaeteren Zuges ihre Anker sucht.
+#
+# Das Innere (regelwidrig, Loch) braucht diesen Schutz nicht und vertraegt ihn
+# auch nicht: mit gemeinsamem Radius geht beides nicht auf.
+#
+#   Radius   Suite                          hart     regelwidrig
+#     0      4 rot (Fortsetzung, Ecke)     0,13 %        0
+#     1      gruen                         1,02 %        0
+#     2      gruen                         1,56 %        0
+#     7      gruen                         3,52 %        0
+#
+# Die Originalkarten liegen bei 0,47 %. 1 ist der kleinste Radius, bei dem die
+# Bloecke auffindbar bleiben.
+HART_ECKENSCHUTZ = 1
+
+
+def _unbekannte_paare(grid: np.ndarray, maske: np.ndarray, tt):
+    """Zellen, die an einem in den Originalen unbelegten Paar haengen."""
+    h, w = grid.shape
+    zellen = set()
+    zahl = 0
+    for r, dx, dy in (("O", 1, 0), ("S", 0, 1)):
+        for y in range(h):
+            for x in range(w):
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h):
+                    continue
+                if not (maske[y, x] and maske[ny, nx]):
+                    continue
+                if tt.passt(int(grid[y, x]), int(grid[ny, nx]), r):
+                    continue
+                zahl += 1
+                zellen.add((x, y))
+                zellen.add((nx, ny))
+    return zellen, zahl
+
+
+# Ab welchem Pixelabstand eine Naht als schlecht gilt, und ueber welche Spanne
+# der Abschlag laeuft. Gemessen: belegte Kachelpaare liegen im Median bei 24,
+# unbelegte bei 40 -- dazwischen liegt die Grenze.
+NAHT_GUT = 24.0
+NAHT_SPANNE = 16.0
+
+
+def klippe_wand_aus_feld(grid: np.ndarray, x: int, y: int, familie: str,
+                         umkreis: int = 6):
+    """Wanderkennung aus dem FELD statt aus Blockmustern.
+
+    -> (achse, seite, kante, hoch_oben) oder None
+
+    `klippe_wand_an` sucht ganze TileGroup-Bloecke im Gitter wieder. Das ist der
+    Grund, warum sich nichts an den Kacheln aendern darf: wer eine Zelle
+    ersetzt, macht den Block unauffindbar, und die Fortsetzung findet ihre Wand
+    nicht mehr. Gemessen fallen dabei 21 Pruefungen um.
+
+    Gebraucht wird aber gar kein Block. Was die Fortsetzung wissen muss, steht
+    im Feld:
+
+      * **Achse** -- laeuft die Wand hier waagerecht oder senkrecht? Das sagt
+        die Ausdehnung des zusammenhaengenden Klippenstuecks.
+      * **Seite** -- auf welcher Seite des Klicks liegt sie?
+      * **Kante** -- wo genau liegt ihre HOCHkante? Seit die gezeichnete Linie
+        die Hochkante ist, ist das die Flucht, an der weitergebaut wird.
+      * **hoch_oben** -- liegt das Hochland auf der kleinen Koordinate?
+        Abgelesen am Zelltyp der Kacheln, nicht geraten.
+
+    Das haengt an keinem Kachelmuster und ueberlebt jede Neubelegung.
+
+    Reading the wall from the FIELD instead of matching blocks. Block matching
+    is why no tile may change; everything the continuation needs -- axis, side,
+    high edge -- is in the field and survives any re-assignment.
+    """
+    try:
+        from cliff_tiles import modell as _ctm
+        ct = _ctm()
+    except Exception:                                    # noqa: BLE001
+        return None
+    tm = model()
+    fi = tm.families.index(familie) if familie in tm.families else -1
+    h, w = grid.shape
+
+    def klippe_hier(xx, yy):
+        if not (0 <= xx < w and 0 <= yy < h):
+            return False
+        t = int(grid[yy, xx])
+        if not ct.ist_klippe(t):
+            return False
+        return fi < 0 or int(ct.familie[ct._platz[t]]) == fi
+
+    # Naechste Klippenzelle im Umkreis
+    naechste = None
+    for d in range(umkreis + 1):
+        for dy in range(-d, d + 1):
+            for dx in range(-d, d + 1):
+                if max(abs(dx), abs(dy)) != d:
+                    continue
+                if klippe_hier(x + dx, y + dy):
+                    naechste = (x + dx, y + dy)
+                    break
+            if naechste:
+                break
+        if naechste:
+            break
+    if naechste is None:
+        return None
+
+    # Zusammenhaengendes Stueck im Umkreis einsammeln
+    stueck = set()
+    rand = [naechste]
+    while rand:
+        cx, cy = rand.pop()
+        if (cx, cy) in stueck:
+            continue
+        if abs(cx - x) > umkreis + 2 or abs(cy - y) > umkreis + 2:
+            continue
+        if not klippe_hier(cx, cy):
+            continue
+        stueck.add((cx, cy))
+        rand += [(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)]
+    if not stueck:
+        return None
+
+    xs = [p[0] for p in stueck]
+    ys = [p[1] for p in stueck]
+    breite, hoehe = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+    achse = "h" if breite >= hoehe else "v"
+
+    # Auf welcher Seite liegt die Wand?
+    # Dieselbe Regel wie `klippe_wand_an`: es entscheidet der GROESSERE Versatz,
+    # nicht die Achse -- sonst weichen die beiden Wege dort voneinander ab, wo
+    # der Klick mitten auf der Wand sitzt.
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    if abs(my - y) >= abs(mx - x):
+        seite = 2 if my > y else 3
+    else:
+        seite = 0 if mx > x else 1
+
+    # Wo ist die Hochkante? Der Zelltyp der Kacheln sagt es.
+    HOCH = celltypes.CLIFFS_HIGH_SIDE
+    if achse == "h":
+        nahe = min(xs, key=lambda v: abs(v - x))
+        spalte = sorted(p[1] for p in stueck if p[0] == nahe)
+        hoch_oben = None
+        for yy in (spalte[0], spalte[-1]):
+            t = int(grid[yy, nahe])
+            if int(ct.zelltyp[ct._platz[t]]) == HOCH:
+                hoch_oben = (yy == spalte[0])
+                break
+        if hoch_oben is None:
+            hoch_oben = True
+        kante = spalte[0] if hoch_oben else spalte[-1]
+    else:
+        nahe = min(ys, key=lambda v: abs(v - y))
+        zeile = sorted(p[0] for p in stueck if p[1] == nahe)
+        hoch_oben = None
+        for xx in (zeile[0], zeile[-1]):
+            t = int(grid[nahe, xx])
+            if int(ct.zelltyp[ct._platz[t]]) == HOCH:
+                hoch_oben = (xx == zeile[0])
+                break
+        if hoch_oben is None:
+            hoch_oben = True
+        kante = zeile[0] if hoch_oben else zeile[-1]
+    return achse, seite, int(kante), bool(hoch_oben)
+
+
+def klippe_loesen(grid: np.ndarray, maske: np.ndarray, zellen: np.ndarray,
+                  familie: str, rng: np.random.Generator,
+                  frei: np.ndarray | None = None,
+                  zeit: float = 2.0, kanten: bool = True) -> bool:
+    """Die Wand SUCHEN statt setzen -- Rueckverfolgung ueber die ganze Maske.
+
+    Alle bisherigen Wege setzen gierig, Zelle fuer Zelle, ohne zurueckzunehmen.
+    Sie laufen sich fest, und daraus schien zu folgen, der Kachelsatz gebe
+    Schraegen nicht her. Das war falsch. Mit Rueckverfolgung gemessen:
+
+        mud waagerecht   loesbar in    82 Versuchen
+        mud schraeg 2:1  loesbar in   129
+        mud schraeg 1:1  loesbar in   113
+        san waagerecht   loesbar in  1628
+        san schraeg 2:1  loesbar in  3163
+        san schraeg 1:1  loesbar in   489
+
+    Fuer jede dieser Waende gibt es eine Belegung OHNE ein einziges Kachelpaar,
+    das in den 54 Originalkarten nicht vorkommt -- gefunden in Sekunden. Die
+    Fehlschlaege waren algorithmisch, nicht materiell.
+
+    Der Zelltyp geht NICHT als Bedingung ein, nur als Gewicht. Als harte
+    Bedingung macht er san-Schraegen beweisbar unloesbar (erschoepfend
+    durchsucht in 36 bzw. 1203 Versuchen). Gesetzt wird er davon unabhaengig aus
+    der Hochseite -- wohin die Wand zeigt, ist eine Frage der Karte und nicht
+    der Kachelwahl.
+
+    `kanten` nimmt die Kantenzuordnung aus `cliff_kanten` dazu. Die
+    Paartabelle kennt nur, was in den 54 Karten nebeneinander VORKAM -- 9,2 %
+    aller mud-Paarungen. Die Kantenzuordnung erlaubt weitere 30,4 % und
+    verbietet 60,4 %; sie laesst 99,85 % der belegten Vorkommen durch. Belegte
+    Paare kommen weiter zuerst dran (siehe `belegt_ringsum`), denn belegt ist
+    mehr wert als erlaubt. Fuer san und sno ist noch nichts zugeordnet, dort
+    aendert sich nichts.
+
+    `frei` schraenkt ein, welche Zellen neu belegt werden; der Rest bleibt
+    stehen und bindet. Ohne Loesung innerhalb von `zeit` bleibt alles
+    unveraendert.
+
+    Search the wall instead of laying it: backtracking with constraint
+    propagation over the whole mask. Every wall measured is solvable with zero
+    unattested pairs. The cell type enters as a weight only -- as a hard
+    constraint it makes san diagonals provably unsolvable.
+    """
+    try:
+        from cliff_tiles import GEGEN, RICHTUNGEN, VERSATZ
+        from cliff_tiles import modell as _tm
+        tt = _tm()
+    except Exception:                                    # noqa: BLE001
+        return False
+    try:
+        from cliff_pixels import modell as _pm
+        px = _pm()
+    except Exception:                                    # noqa: BLE001
+        px = None
+    try:
+        from cliff_kanten import modell as _km
+        ke = _km() if kanten else None
+    except Exception:                                    # noqa: BLE001
+        ke = None
+    if not maske.any():
+        return False
+    import time as _t
+
+    tm = model()
+    fi = tm.families.index(familie) if familie in tm.families else -1
+    h, w = grid.shape
+    gerade = list(RICHTUNGEN[:tt.gerade])
+    felder = [(int(x), int(y)) for y, x in zip(*np.nonzero(maske))
+              if frei is None or frei[y, x]]
+    if not felder:
+        return False
+
+    eigen = [int(t) for t, f in zip(tt.kacheln, tt.familie)
+             if fi < 0 or int(f) == fi]
+    if not eigen:
+        return False
+    eigen_menge = set(eigen)
+    gewicht = {t: float(tt.vorkommen[tt._platz[t]]) for t in eigen}
+    boden_erlaubt = {r: {t for t in eigen if tt._boden[tt._platz[t], i] > 0}
+                     for i, r in enumerate(gerade)}
+
+    # Was die Kantenzuordnung zusaetzlich erlaubt. Einmal ausrechnen, sonst
+    # steht es in der innersten Schleife der Rueckverfolgung.
+    #
+    # Kennt sie eine der beiden Kacheln nicht, sagt sie nichts -- fuer san und
+    # sno ist das derzeit alles, und dort bleibt der Loeser, wie er war.
+    dazu = {}
+    dazu_boden = {}
+    if ke is not None and any(ke.kennt(t) for t in eigen):
+        wissend = [t for t in eigen if ke.kennt(t)]
+        for r in gerade:
+            for a in wissend:
+                dazu[(a, r)] = {b for b in wissend if ke.passt(a, b, r)}
+            # Boden darf, wo die ganze Seite Biom (oder egal) ist.
+            dazu_boden[r] = {t for t in wissend
+                             if all(v in (0, 2) for v in ke.seite(t, r))}
+
+    belegt = {(int(x), int(y)): int(grid[y, x])
+              for y, x in zip(*np.nonzero(maske))
+              if frei is not None and not frei[y, x]}
+
+    def moeglich(x, y):
+        aus = None
+        for r in gerade:
+            dx, dy = VERSATZ[r]
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < w and 0 <= ny < h):
+                continue
+            if not maske[ny, nx]:
+                erlaubt = boden_erlaubt[r] | dazu_boden.get(r, set())
+            elif (nx, ny) in belegt:
+                nachbar = belegt[(nx, ny)]
+                erlaubt = set(tt.nachbarn(nachbar, GEGEN[r]))
+                erlaubt |= dazu.get((nachbar, GEGEN[r]), set())
+                if ke is not None:
+                    # Kein Loch: zwei Klippenzellen sollten an ihrer Naht
+                    # nicht beide Boden zeigen, sonst ist die Wand dort
+                    # durchgeschnitten. Mit Rueckfall -- 2 bis 3 der 35
+                    # Originalbloecke enthalten selbst eines, das Loch ist
+                    # also unerwuenscht und nicht unmoeglich, und eine
+                    # gefundene Wand ist besser als keine.
+                    ohne = {t for t in erlaubt
+                            if not ke.loch(nachbar, t, GEGEN[r])}
+                    erlaubt = ohne or erlaubt
+            else:
+                continue
+            aus = erlaubt if aus is None else (aus & erlaubt)
+            if not aus:
+                return []
+        return list(aus & eigen_menge) if aus is not None else list(eigen)
+
+    def naht_summe(t, x, y):
+        """Wie gut passt diese Kachel an die schon gesetzten Nachbarn?
+
+        Die Tabelle sagt nur, WAS erlaubt ist -- im Schnitt 4,5 Kacheln je
+        Stelle. Welche davon PASST, steht in den Pixeln: belegte Paare haben an
+        der Naht einen Farbabstand um 24, unbelegte um 40. Ohne dieses Mass
+        nimmt der Loeser immer die haeufigste Kachel und baut eine Wand ohne
+        Textur.
+        """
+        if px is None:
+            return 0.0
+        summe = n = 0.0
+        for r in gerade:
+            dx, dy = VERSATZ[r]
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < w and 0 <= ny < h) or not maske[ny, nx]:
+                continue
+            nachbar = belegt.get((nx, ny))
+            if nachbar is None:
+                continue
+            d = px.naht(t, int(nachbar), r)
+            if d is not None:
+                summe += d
+                n += 1
+        return summe / n if n else 0.0
+
+    mit_pixeln = [px is not None]
+
+    def belegt_ringsum(t, x, y):
+        """Ist diese Kachel an ALLEN gesetzten Nachbarn belegt, nicht nur
+        erlaubt?
+
+        Belegt ist ein Beleg, erlaubt nur eine Erlaubnis -- daher der Rang.
+        Abgetastet als Gewicht statt als Rang ergab sich (mud, mittlere Naht):
+
+            Abschlag   1,00   0,50   0,25   0,10   0,00
+            Naht       26,9   26,5   25,9   25,8   24,4
+
+        Am besten ist der Grenzfall, und der ist genau dieser Rang: erlaubte
+        Paare kommen nach allen belegten. Zum Vergleich: die Originalkarten
+        liegen bei 24.
+        """
+        for r in gerade:
+            dx, dy = VERSATZ[r]
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < w and 0 <= ny < h) or not maske[ny, nx]:
+                continue
+            nachbar = belegt.get((nx, ny))
+            if nachbar is not None and not tt.passt(t, int(nachbar), r):
+                return False
+        return True
+
+    def ordnen(kand, x, y):
+        zt = int(zellen[y, x]) if zellen is not None else -1
+
+        def schluessel(t):
+            i = tt._platz[t]
+            passt = 1.0 if zt < 0 or int(tt.zelltyp[i]) == zt else 0.15
+            rang = 0 if belegt_ringsum(t, x, y) else 1
+            if not mit_pixeln[0]:
+                return (rang, -gewicht[t] * passt)
+            # Die Naht zaehlt als Abschlag: 24 ist gut, 40 schlecht.
+            naht = naht_summe(t, x, y)
+            guete = 1.0 / (1.0 + max(0.0, naht - NAHT_GUT) / NAHT_SPANNE)
+            if rang:
+                # Bei einer bloss ERLAUBTEN Paarung sagt die Haeufigkeit
+                # nichts ueber diese Stelle -- die Kachel ist ja gerade
+                # deshalb im Vorrat, weil ihre KANTEN passen, nicht weil sie
+                # hier je gelegen haette. Dann entscheidet die Naht allein.
+                # Gemessen (mittlere Naht, Original 24):
+                #
+                #                     waagerecht  2:1   1:1
+                #   nur Paartabelle       25,2   26,6  26,4
+                #   Rang + Haeufigkeit    25,3   26,3  26,2
+                #   Rang + Naht           25,5   24,2  23,8
+                #
+                # For a merely permitted pairing the frequency says nothing
+                # about this spot; the seam decides.
+                return (rang, -passt * guete)
+            return (rang, -gewicht[t] * passt * guete)
+
+        return sorted(kand, key=schluessel)
+
+    start = _t.time()
+
+    def schritt():
+        if _t.time() - start > zeit:
+            raise TimeoutError
+        rest = [p for p in felder if p not in belegt]
+        if not rest:
+            return True
+        beste = kand = None
+        for (x, y) in rest:
+            k = moeglich(x, y)
+            if not k:
+                return False
+            if kand is None or len(k) < len(kand):
+                beste, kand = (x, y), k
+                if len(k) == 1:
+                    break
+        x, y = beste
+        for t in ordnen(kand, x, y):
+            belegt[(x, y)] = t
+            if schritt():
+                return True
+            del belegt[(x, y)]
+        return False
+
+    # Erst mit der Pixelordnung, dann ohne. Die Naht fuehrt die Suche in
+    # huebschere Aeste, aber nicht immer in loesbare: zwei von sechs Waenden
+    # liefen damit in die Zeitgrenze, die ohne sie in 0,0 Sekunden loesten.
+    # Eine schoene Wand ist besser als eine gefundene, aber eine gefundene
+    # besser als keine.
+    # First with the pixel ordering, then without: the seam leads the search
+    # into prettier branches, not always into solvable ones.
+    for versuch in (0, 1):
+        if versuch:
+            if not mit_pixeln[0]:
+                return False
+            mit_pixeln[0] = False
+            belegt = {(int(x), int(y)): int(grid[y, x])
+                      for y, x in zip(*np.nonzero(maske))
+                      if frei is not None and not frei[y, x]}
+            start = _t.time()
+        try:
+            if schritt():
+                for (x, y), t in belegt.items():
+                    grid[y, x] = t
+                return True
+        except TimeoutError:
+            continue
+        return False
+    return False
+
+
+def klippe_stufen(maske: np.ndarray, ecken=()) -> set:
+    """Die Zellen an einer STUFE der Wand -> {(x, y)}.
+
+    Eine Stufe ist eine Stelle, an der die Wand von einer Spalte zur naechsten
+    ihre Ausdehnung wechselt -- also alles Schraege. Gerade Stuecke sind keine
+    Stufen.
+
+    Der Unterschied traegt die ganze Arbeitsteilung: die Bloecke stammen aus
+    dem Kachelsatz und kennen den geraden Lauf, den diagonalen kennen sie
+    nicht -- den gibt es nur in den Karten, und dafuer sind die Gruppen da.
+    Gemessen (mud, "falsch mitten" = Bodenkante mit Klippe dahinter,
+    Originalkarten 0,72 bis 0,89 %):
+
+        Zug          Bloecke   Gruppen
+        senkrecht     0,0 %     3,4 %
+        waagerecht    0,7 %     0,7 %
+        2:1 runter    5,2 %     1,7 %
+        2:1 hoch      1,3 %     0,4 %
+        1:1 runter    6,5 %     2,9 %
+
+    Gezeichnete Ecken sind KEINE Stufen. Dort wechselt die Ausdehnung auch,
+    aber ein Eckblock gehoert hin und darf nicht angefasst werden -- sonst
+    findet die Fortsetzung eines spaeteren Zuges ihn nicht mehr.
+
+    The cells at a step of the wall: everything slanted. Blocks come from the
+    tileset and know the straight run; the diagonal one exists only in the
+    maps, which is what the mined groups are for.
+    """
+    an_stufe = set()
+    _hh, ww = maske.shape
+    kante = {}
+    for x in range(ww):
+        ys = np.nonzero(maske[:, x])[0]
+        if len(ys):
+            kante[x] = (int(ys[0]), int(ys[-1]))
+    for x in kante:
+        for dx in (-1, 1):
+            n = kante.get(x + dx)
+            if n and (n[0] != kante[x][0] or n[1] != kante[x][1]):
+                for xx in (x, x + dx):
+                    if xx in kante:
+                        for y in range(kante[xx][0], kante[xx][1] + 1):
+                            if maske[y, xx]:
+                                an_stufe.add((xx, y))
+                break
+    for ex, ey in ecken:
+        for dy in range(-ECKENSCHUTZ, ECKENSCHUTZ + 1):
+            for dx in range(-ECKENSCHUTZ, ECKENSCHUTZ + 1):
+                an_stufe.discard((ex + dx, ey + dy))
+    return an_stufe
+
+
+def klippe_naehte_bessern(grid: np.ndarray, maske: np.ndarray,
+                          zellen: np.ndarray, familie: str,
+                          rng: np.random.Generator, runden: int = 3,
+                          ecken=()) -> int:
+    """Nur die schadhaften Stellen neu setzen -> Zahl der behobenen Paare.
+
+    Die Gruppen ANSTELLE der Bloecke zu setzen macht alles schlechter -- ein
+    senkrechter Lauf steht als Block bei 0 % unbekannten Paaren und mit Gruppen
+    bei 11 bis 12 %. Wo der Blockweg fehlerfrei ist, kann kein Ersatz gewinnen.
+
+    Gebraucht werden die Gruppen dort, wo die Bloecke NICHTS haben: an den
+    Stufen einer Schraegen. Also wird nichts ersetzt, sondern repariert -- nur
+    die Zellen, die an einem unbelegten Kachelpaar haengen, werden freigegeben
+    und aus Gruppen und Tabelle neu gesetzt. Der Rest bleibt stehen und dient
+    als Bedingung.
+
+    Wird es dabei nicht besser, bleibt die Runde verworfen. Eine Reparatur, die
+    schadet, ist keine.
+
+    Repair instead of replace: only cells hanging on an unattested tile pair are
+    released and re-laid from groups and table, with everything else kept as a
+    constraint. A round that does not improve is rolled back.
+    """
+    try:
+        from cliff_tiles import modell as _tm
+        tt = _tm()
+    except Exception:                                    # noqa: BLE001
+        return 0
+    if not maske.any():
+        return 0
+    _z, vorher = _unbekannte_paare(grid, maske, tt)
+    if not vorher:
+        return 0
+    anfang = vorher
+
+    # Nur Zellen AN EINER STUFE anfassen. Gerade Waende sind als Block schon
+    # fehlerfrei (senkrecht 0 %, waagerecht 2 bis 3 %), dort gibt es nichts zu
+    # holen -- aber jede angefasste Zelle macht den Block, in dem sie liegt,
+    # fuer die Fortsetzung unauffindbar. Uneingeschraenkt fielen drei
+    # Pruefungen aus Abschnitt 7 um (Eckblock, Wandabschluss, Naht bei san).
+    #
+    # Only cells AT A STEP: straight walls are already flawless as blocks, and
+    # every touched cell makes its block unfindable for the continuation.
+    an_stufe = klippe_stufen(maske, ecken)
+    if not an_stufe:
+        return 0
+    for _runde in range(runden):
+        schlecht, jetzt = _unbekannte_paare(grid, maske, tt)
+        if not schlecht:
+            break
+        sicher = grid.copy()
+        teil = np.zeros_like(maske)
+        for x, y in schlecht:
+            if (x, y) in an_stufe:
+                teil[y, x] = True
+        if not teil.any():
+            break
+        klippe_feinsetzen(grid, maske, zellen, familie, rng, nur=teil)
+        _z2, danach = _unbekannte_paare(grid, maske, tt)
+        if danach >= jetzt:
+            grid[...] = sicher
+            break
+    _z3, ende = _unbekannte_paare(grid, maske, tt)
+    return anfang - ende
+
+
+def _regelwidrige_paare(grid: np.ndarray, maske: np.ndarray, tt, ke):
+    """Zellen an Paaren, die WEDER belegt NOCH erlaubt sind.
+
+    Der Unterschied zu `_unbekannte_paare` ist der ganze Punkt: unbelegt heisst
+    nur, dass die 54 Karten dieses Paar nicht zeigen -- sie sind eine
+    Stichprobe. Regelwidrig heisst, dass die Kanten nicht zueinander passen,
+    und das ist ein Fehler. Auf einer 45-Grad-Wand stehen 162 unbelegten Paaren
+    136 regelwidrige gegenueber; nach dem Loeser 246 unbelegte und keins.
+    """
+    h, w = grid.shape
+    zellen = set()
+    zahl = 0
+    for r, dx, dy in (("O", 1, 0), ("S", 0, 1)):
+        for y in range(h):
+            for x in range(w):
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h):
+                    continue
+                if not (maske[y, x] and maske[ny, nx]):
+                    continue
+                a, b = int(grid[y, x]), int(grid[ny, nx])
+                if tt.passt(a, b, r) or (ke is not None and ke.passt(a, b, r)):
+                    continue
+                zahl += 1
+                zellen.add((x, y))
+                zellen.add((nx, ny))
+    return zellen, zahl
+
+
+def _klippe_maengel(grid: np.ndarray, maske: np.ndarray, tt, ke,
+                    hart_frei: np.ndarray | None = None):
+    """Alle Maengel an einer gesetzten Wand -> (Zellen, (regelwidrig, hart,
+    loch)).
+
+    Drei Arten, nach Gewicht geordnet:
+
+    regelwidrig  ein Paar, das weder in den 54 Karten vorkommt noch nach der
+                 Kantenzuordnung erlaubt ist. Unmoeglich, muss weg.
+    hart         eine Kachelseite zeigt Fels, daneben liegt offener Boden --
+                 die Wand hoert ohne Uebergang auf. Originalkarten: 0,47 %.
+    loch         zwei Klippenzellen zeigen an ihrer Naht beide Boden, die Wand
+                 ist dort durchgeschnitten. Originalkarten: 0,46 %.
+
+    Die beiden letzten sind unerwuenscht, nicht unmoeglich -- Originalmaterial
+    enthaelt sie in kleiner Zahl.
+    """
+    from cliff_kanten import BIOM, FELS
+    h, w = grid.shape
+    zellen = set()
+    rw = hart = loch = 0
+    for r, dx, dy in (("O", 1, 0), ("S", 0, 1)):
+        for y in range(h - max(0, dy)):
+            for x in range(w - max(0, dx)):
+                nx, ny = x + dx, y + dy
+                if not (maske[y, x] and maske[ny, nx]):
+                    continue
+                a, b = int(grid[y, x]), int(grid[ny, nx])
+                schlecht = False
+                if not (tt.passt(a, b, r)
+                        or (ke is not None and ke.passt(a, b, r))):
+                    rw += 1
+                    schlecht = True
+                elif ke is not None and ke.loch(a, b, r):
+                    # Gezaehlt, aber KEIN Ausgangspunkt: das Loch ist
+                    # unerwuenscht und nicht unmoeglich, und jede angefasste
+                    # Zelle macht den Block, in dem sie liegt, fuer die
+                    # Fortsetzung unauffindbar. Als Ausgangspunkt aufgenommen
+                    # fiel prompt "Fortsetzung um die Ecke bekommt einen
+                    # Eckblock" um. Wo die Reparatur ohnehin arbeitet, zaehlt
+                    # das Loch in `urteil` mit.
+                    loch += 1
+                if schlecht:
+                    zellen.add((x, y))
+                    zellen.add((nx, ny))
+    if ke is not None:
+        for y in range(h):
+            for x in range(w):
+                if not maske[y, x]:
+                    continue
+                if hart_frei is not None and not hart_frei[y, x]:
+                    continue
+                for r, (dx, dy) in (("N", (0, -1)), ("O", (1, 0)),
+                                    ("S", (0, 1)), ("W", (-1, 0))):
+                    nx, ny = x + dx, y + dy
+                    if not (0 <= nx < w and 0 <= ny < h) or maske[ny, nx]:
+                        continue
+                    v = ke.seite(int(grid[y, x]), r)
+                    if v is None:
+                        continue
+                    if sum(1 for u in v if u == FELS) >= 3:
+                        hart += 1
+                        zellen.add((x, y))
+    return zellen, (rw, hart, loch)
+
+
+def klippe_regeln_durchsetzen(grid: np.ndarray, maske: np.ndarray,
+                              familie: str, rng: np.random.Generator,
+                              runden: int = 4,
+                              frei: np.ndarray | None = None,
+                              hart_frei: np.ndarray | None = None) -> int:
+    """Paare beseitigen, die weder belegt noch erlaubt sind -> Zahl behobener.
+
+    Der Loeser setzt keine solchen Paare, aber er laeuft nicht ueberall: an
+    Ecken, Enden und wiederhergestellten Querwaenden bleiben die Bloecke
+    stehen, und der reine Blockweg hat auf den Schraegen 88 bzw. 136.
+
+    Die vorhandene `klippe_naehte_bessern` zielt auf UNBELEGTE Paare und
+    bringt die regelwidrigen nur von 136 auf 80 -- sie sucht in der falschen
+    Menge, denn unbelegte gibt es hundertfach mehr. Diese Runde zielt allein
+    auf das, was wirklich falsch ist. Weil das wenige sind, kann sie Kachel
+    fuer Kachel vorgehen und jede Ersetzung einzeln pruefen.
+
+    Ersetzt wird nur, wenn es an dieser Zelle STRIKT besser wird; unter
+    gleichguten Kandidaten gewinnt der belegte, dann der mit der besseren
+    Naht. Wird eine Runde nicht besser, bleibt sie verworfen.
+
+    `frei` schuetzt Zellen vor dem Anfassen -- dieselbe Bedeutung wie beim
+    Loeser. `hart_frei` gilt zusaetzlich fuer die RANDreparatur: harte
+    Uebergaenge liegen an der Aussenkante der Wand, also dort, wo die Bloecke
+    ihre Kanten haben und die Fortsetzung ihre Anker sucht. Ohne diesen zweiten
+    Schutz fallen fuenf Pruefungen zu Ecke und Fortsetzung um.
+
+    Remove pairs that are neither attested nor permitted. The existing seam
+    repair aims at unattested pairs, of which there are a hundredfold more, and
+    only gets 136 down to 80; this round aims at the actual defect.
+    """
+    try:
+        from cliff_tiles import VERSATZ, modell as _tm
+        tt = _tm()
+    except Exception:                                    # noqa: BLE001
+        return 0
+    try:
+        from cliff_kanten import modell as _km
+        ke = _km()
+    except Exception:                                    # noqa: BLE001
+        return 0
+    try:
+        from cliff_pixels import modell as _pm
+        px = _pm()
+    except Exception:                                    # noqa: BLE001
+        px = None
+    if not maske.any():
+        return 0
+    _z, anfang = _klippe_maengel(grid, maske, tt, ke, hart_frei)
+    if not any(anfang):
+        return 0
+
+    tm = model()
+    fi = tm.families.index(familie) if familie in tm.families else -1
+    eigen = [int(t) for t, f in zip(tt.kacheln, tt.familie)
+             if fi < 0 or int(f) == fi]
+    if not eigen:
+        return 0
+    h, w = grid.shape
+
+    def urteil(t, x, y):
+        """-> (regelwidrig, hart, Loch, unbelegt, Naht) fuer t an der Stelle.
+
+        Die Reihenfolge ist die Rangfolge. Regelwidrig zuerst -- das ist
+        unmoeglich. Danach die beiden sichtbaren Maengel: eine Wand, die ohne
+        Uebergang aufhoert, und eine, die mittendrin durchgeschnitten ist.
+        Beide kommen in Originalmaterial vor (0,47 % und 0,46 %), sind also
+        unerwuenscht und nicht unmoeglich; ein regelwidriges Paar dafuer in
+        Kauf zu nehmen waere ein schlechter Tausch.
+        """
+        from cliff_kanten import FELS
+        rw = ha = lo = ub = 0
+        naht = n = 0.0
+        for r in ("N", "O", "S", "W"):
+            dx, dy = VERSATZ[r]
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < w and 0 <= ny < h):
+                continue
+            if not maske[ny, nx]:
+                # Offener Boden: die Seite darf hier nicht Fels zeigen --
+                # ausser die Stelle ist als Rand geschuetzt.
+                if hart_frei is not None and not hart_frei[y, x]:
+                    continue
+                v = ke.seite(t, r)
+                if v is not None and sum(1 for u in v if u == FELS) >= 3:
+                    ha += 1
+                continue
+            b = int(grid[ny, nx])
+            if ke.loch(t, b, r):
+                lo += 1
+            if not tt.passt(t, b, r):
+                ub += 1
+                if not ke.passt(t, b, r):
+                    rw += 1
+            if px is not None:
+                d = px.naht(t, b, r)
+                if d is not None:
+                    naht += d
+                    n += 1
+        return rw, ha, lo, ub, (naht / n if n else 0.0)
+
+    behoben = 0
+    for _runde in range(runden):
+        schlecht, jetzt = _klippe_maengel(grid, maske, tt, ke, hart_frei)
+        if not schlecht:
+            break
+        sicher = grid.copy()
+        for x, y in sorted(schlecht):
+            if frei is not None and not frei[y, x]:
+                continue
+            alt = int(grid[y, x])
+            beste = urteil(alt, x, y)
+            gewaehlt = None
+            for t in eigen:
+                if t == alt:
+                    continue
+                u = urteil(t, x, y)
+                if u < beste:
+                    beste, gewaehlt = u, t
+            if gewaehlt is not None:
+                grid[y, x] = gewaehlt
+        _z2, danach = _klippe_maengel(grid, maske, tt, ke, hart_frei)
+        if sum(danach) >= sum(jetzt):
+            grid[...] = sicher
+            break
+        behoben += sum(jetzt) - sum(danach)
+    _z3, ende = _klippe_maengel(grid, maske, tt, ke, hart_frei)
+    return sum(anfang) - sum(ende)
+
+
+def klippe_hoehe_begrenzen(maske: np.ndarray, punkte, hand: int,
+                           hoehe: int) -> np.ndarray:
+    """Das Wandband auf `hoehe` Kacheln stutzen -> neue Maske.
+
+    Aus den Bloecken ergibt sich die Hoehe von selbst, und waagerecht kommt
+    sauber 3 heraus. Auf einer Schraegen aber ueberlappen die Bloecke an den
+    Stufen, und das Band wird 3 bis 7 Kacheln dick. In einem zu dicken Band
+    landen die Kacheln, die als Ober- oder Unterkante gedacht sind,
+    zwangslaeufig in der Mitte -- gemessen 7,4 % (2:1) und 8,9 % (1:1) gegen
+    0,3 % in den Originalkarten.
+
+    Gestutzt wird von der HOCHseite her. Die gezeichnete Linie ist die
+    Wandkante, sie bleibt stehen; was ueber die Hoehe hinaus dahinter liegt,
+    ist der Ueberschuss aus den ueberlappenden Bloecken.
+
+    Die Originalkarten benutzen 1 Kachel zu 23,9 %, 2 zu 12,6 %, 3 zu 27,0 %
+    -- 2 und 3 sind beide belegt.
+
+    Trim the wall band to `hoehe` tiles, measured from the low edge. Blocks
+    overlap at the steps of a diagonal and make the band up to seven tiles
+    thick; transition tiles then end up mid-wall.
+    """
+    richtung = klippe_hochrichtung(maske, punkte, hand)
+    h, w = maske.shape
+
+    # Erst die Tiefkante finden: Maskenzellen, bei denen ENTGEGEN der
+    # Hochrichtung kein Klippenfeld mehr liegt. Das ist die sichtbare
+    # Wandkante, und die bleibt stehen.
+    tiefe = np.full(maske.shape, -1, dtype=np.int16)
+    rand = []
+    for y, x in zip(*np.nonzero(maske)):
+        r = int(richtung[y, x])
+        if r < 0:
+            continue
+        dx, dy = (0, -1) if r == 0 else (1, 0) if r == 1 else \
+            (0, 1) if r == 2 else (-1, 0)
+        cx, cy = x - dx, y - dy
+        if not (0 <= cx < w and 0 <= cy < h) or not maske[cy, cx]:
+            tiefe[y, x] = 0
+            rand.append((int(x), int(y)))
+
+    # Von dort ins Band hinein zaehlen, dem Band folgend. Entlang einer ACHSE
+    # zu zaehlen war falsch: auf einer 45-Grad-Wand zeigt die Hochrichtung mal
+    # nach Norden, mal nach Westen, und eine senkrechte Zeile durch das
+    # schraege Band ist laenger als seine Dicke. Bei hoehe=3 blieben so
+    # Baender von 4 stehen und 7,9 % der Uebergangskacheln weiter mitten in
+    # der Wand.
+    #
+    # Counting along an axis was wrong: on a 45-degree wall a vertical run
+    # through the slanted band is longer than the band is thick.
+    while rand:
+        weiter = []
+        for x, y in rand:
+            for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                cx, cy = x + dx, y + dy
+                if (0 <= cx < w and 0 <= cy < h and maske[cy, cx]
+                        and tiefe[cy, cx] < 0):
+                    tiefe[cy, cx] = tiefe[y, x] + 1
+                    weiter.append((cx, cy))
+        rand = weiter
+
+    # Wo keine Tiefkante zu finden war, bleibt alles stehen -- nichts
+    # anfassen ist besser als raten.
+    return maske & (((tiefe >= 0) & (tiefe < hoehe)) | (tiefe < 0))
+
+
 def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
                      tm: "TileModel", rng: np.random.Generator,
-                     familie: str = "san"):
+                     familie: str = "san",
+                     kacheln_feinsetzen: bool = False,
+                     loesen: bool = False,
+                     naehte_bessern: bool = True,
+                     regeln_durchsetzen: bool = True,
+                     hoehe: int | None = None,
+                     gruppen_auf_stufen: bool = True):
     """Eine gezeichnete Kante mit Bloecken belegen -> (Maske, Zelltypfeld).
 
     Statt eine Flaeche zu malen und daraus die Klippe abzuleiten, wird die
@@ -4357,7 +5846,49 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
 
     hoch_seite: "links"/"rechts" bei senkrechten, "oben"/"unten" bei
     waagerechten Stuecken -- gemeint ist stets, wo das Hochland liegt.
+
+    gruppen_auf_stufen: die STUFEN aus den geschuerften Gruppen setzen, die
+    geraden Stuecke als Bloecke lassen. Die Gruppen galten als gescheitert,
+    weil ein senkrechter Lauf als Block bei 0 % unbekannten Paaren steht und
+    mit Gruppen bei 11 bis 12 % -- richtig gemessen und falsch
+    verallgemeinert: an Schraegen ist es umgekehrt. Siehe `klippe_stufen`.
+
+    hoehe: wieviele Kacheln die Wand tief sein soll, von der gezeichneten
+    Kante aus gezaehlt. `None` laesst sie so, wie die Bloecke sie ergeben --
+    waagerecht sind das sauber 3, auf Schraegen aber 3 bis 7, weil die Bloecke
+    an den Stufen ueberlappen. Siehe `klippe_hoehe_begrenzen`.
+
+    kacheln_feinsetzen: die Kacheln danach aus den geschuerften Gruppen neu
+    setzen (`klippe_feinsetzen`). Standardmaessig AUS, und das ist kein
+    Versaeumnis, sondern ein offener Konflikt:
+
+    Die Fortsetzung eines Zuges sucht die gesetzten BLOECKE im Gitter wieder --
+    daran haengen Flucht, Eckwahl, Wandende und T-Stoss, also 20 Pruefungen aus
+    Abschnitt 7. Werden die Kacheln durch Gruppenkacheln ersetzt, ist der Block
+    nicht mehr auffindbar und alle 20 fallen um. Die Zelltypen dagegen sind
+    unabhaengig davon und immer an.
+
+    Off by default, and not by oversight: continuation finds the placed BLOCKS
+    in the grid again, and replacing the tiles makes them unfindable, which
+    breaks all 20 continuation, corner, end and T-junction checks.
     """
+    # Schraege Stuecke zuerst in eine Treppe zerlegen. Ohne das faellt die
+    # kleinere Achse ersatzlos weg: eine 2:1-Schraege wurde als rein
+    # waagerechte Wand gebaut und erreichte ihren Endpunkt gar nicht.
+    # Break diagonal segments into a staircase first, otherwise the smaller axis
+    # is dropped entirely.
+    gezeichnet = [(int(x), int(y)) for x, y in punkte]
+    # Was schon vor diesem Zug Klippe war, gehoert ihm nicht. Der Loeser darf
+    # nur anfassen, was dieser Zug selbst gelegt hat -- sonst raeumt eine
+    # Fortsetzung die Wand um, an die sie anschliessen soll.
+    try:
+        from cliff_tiles import modell as _ctm
+        _ct = _ctm()
+        schon_da = np.array([[_ct.ist_klippe(int(t)) for t in zeile]
+                             for zeile in grid], dtype=bool)
+    except Exception:                                    # noqa: BLE001
+        schon_da = np.zeros(grid.shape, dtype=bool)
+    punkte = klippe_treppe(punkte, rng)
     h, w = grid.shape
     maske = np.zeros(grid.shape, dtype=bool)
     zellen = np.full(grid.shape, -1, dtype=np.int16)
@@ -4401,6 +5932,9 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
         ist abgezaehlt. Das steuert die Wahl als GEWICHT, nicht als Filter:
         Sand bringt nur 7 bis 20 Vorkommen je Block mit, ein Filter liesse
         davon eine Handvoll Paarungen uebrig und jede Wand saehe gleich aus.
+
+        Die Naht zusaetzlich zu gewichten wurde versucht und wieder entfernt:
+        die Toepfe fassen 1 bis 3 Bloecke, es gibt meist gar keine Wahl.
 
         Draw the next block -- weighted by the original maps. How often group b
         lay on this side of group a across the 33 maps is counted; that steers
@@ -4571,7 +6105,39 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
     # der letzte Block darf ueberstehen, weil die Ecke ihn spaeter zudeckt.
     # The straight runs go through to the drawn point; the last block may
     # overhang because the corner covers it later.
+    # Welche Stuecke sind Absaetze einer Treppe? Sie werden NICHT gebaut.
+    #
+    # Gemessen an der Schraegen in cm03: dort steht die Hochseite immer UEBER
+    # der Tiefseite (`HH` ueber `TTTT`), also lauter waagerechte Wandstuecke,
+    # von Zeile zu Zeile versetzt. Senkrechte Wandstuecke kommen in der ganzen
+    # Schraegen nicht ein einziges Mal vor. Meine erste Treppe baute die
+    # Absaetze als senkrechte Waende, erkennbar am waagerechten Wechsel `HTHT`
+    # -- die Signatur einer senkrechten Wand, hoch links, tief rechts.
+    #
+    # Gebaut werden deshalb nur die Tritte. Der Absatz ergibt sich aus dem
+    # Versatz: die waagerechten Bloecke sind drei Reihen hoch, Tritte auf
+    # benachbarten Zeilen ueberlappen einander also von selbst.
+    #
+    # Which segments are the risers of a staircase? They are NOT built. Measured
+    # on the diagonal in cm03, the high side always sits ABOVE the low side --
+    # horizontal wall pieces, offset from row to row, with no vertical piece
+    # anywhere. Only the treads are built; the riser follows from the offset,
+    # since horizontal blocks are three rows tall and neighbouring treads
+    # overlap by themselves.
+    absatz = set()
     for i in range(len(punkte) - 1):
+        (ax_, ay_), (bx_, by_) = punkte[i], punkte[i + 1]
+        if ax_ != bx_ or abs(by_ - ay_) > 2:
+            continue
+        vor_waagerecht = i > 0 and punkte[i - 1][1] == ay_
+        nach_waagerecht = (i + 2 < len(punkte)
+                           and punkte[i + 2][1] == by_)
+        if vor_waagerecht and nach_waagerecht:
+            absatz.add(i)
+
+    for i in range(len(punkte) - 1):
+        if i in absatz:
+            continue
         (x1, y1), (x2, y2) = punkte[i], punkte[i + 1]
         senkrecht, bl = stueck(i)
         if not bl:
@@ -4666,8 +6232,32 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
                 # attaches with the MEASURED offset. Centring each block
                 # separately shifts the wall as soon as two different sizes
                 # meet -- for dirt 3 against 6 rows.
-                flucht = (x1 - b.shape[1] // 2) if senkrecht \
-                    else (y1 - b.shape[0] // 2)
+                #
+                # Die gezeichnete Linie ist die OBERKANTE des Hochlands, nicht
+                # die Wandmitte. Die Klippe waechst von dort nach unten weg.
+                #
+                # Vorher lag die Linie in der Mitte, und das hatte zwei Folgen:
+                # die Hochflaeche verschob sich um die halbe Blockhoehe gegen
+                # das, was man gezeichnet hat, und zwei verschieden hohe
+                # Bloecke (mud senkrecht 5 Reihen, waagerecht 3) legten ihre
+                # Mitte gleich, also ihre Kanten verschieden. Auf der Kante
+                # ausgerichtet stimmt beides.
+                #
+                # Welche Seite oben ist, sagt `hand` bezogen auf die
+                # LAUFRICHTUNG: waagerecht ist links von "nach Osten" der
+                # Norden, senkrecht ist links von "nach Sueden" der Osten.
+                #
+                # The drawn line is the TOP EDGE of the highland, not the
+                # middle of the wall; the cliff grows away from it. Centring
+                # shifted the plateau by half a block against what was drawn,
+                # and made blocks of different size share their middle instead
+                # of their edge.
+                if senkrecht:
+                    hoch_zuerst = (hand > 0) != (schritt > 0)
+                    flucht = x1 if hoch_zuerst else x1 - b.shape[1] + 1
+                else:
+                    hoch_zuerst = (hand > 0) == (schritt > 0)
+                    flucht = y1 if hoch_zuerst else y1 - b.shape[0] + 1
                 anschluss.setdefault(i, []).append((b, seite, flucht))
             else:
                 flucht += tm.klippen_bester_versatz(vorher, b, seite)
@@ -4753,7 +6343,15 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
             gesehen.add(_s)
             ecken_alle.append(_b)
     mit_ecke: set = set()
-    knicke = list(range(1, len(punkte) - 1))
+    # Die Punkte einer Treppenstufe sind keine Knicke -- dort biegt nichts ab,
+    # die Wand laeuft versetzt weiter. Ein Eckblock wuerde die Stufe als
+    # eigenes Bauteil sichtbar machen, genau das, was die Originalkarten nicht
+    # tun.
+    # The points of a staircase step are not bends: nothing turns there, the
+    # wall carries on offset. A corner block would make the step visible as a
+    # part of its own, which the originals never do.
+    knicke = [i for i in range(1, len(punkte) - 1)
+              if (i - 1) not in absatz and i not in absatz]
     if geschlossen:
         knicke.append(0)
     # Setzt die Linie an einer vorhandenen Klippe an, deren Wand in der ANDEREN
@@ -5015,10 +6613,107 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
     # does not fork. So none is invented. The branch butts against the cross
     # wall and that wall stays intact -- the block that lay there goes back on
     # top. Without it the branch's last run block cuts a pale notch into it.
+    quer_heil = np.zeros(grid.shape, dtype=bool)
     for idx in sorted(t_stoss):
         for wbx, wby, wb in t_bloecke.get(idx, []):
             if setze(wbx, wby, wb):
                 gesetzt += 1
+                bh_, bw_ = wb.shape
+                quer_heil[wby:wby + bh_, wbx:wbx + bw_] = True
+
+    # Bis hierher steht die Wand aus Bloecken: richtig ausgerichtet, aber jeder
+    # Block nur einen Block weit sehend, und die Zelltypen aus
+    # `default_cell_type` -- gemessen 94,1 % richtig, mit den fehlenden 6 %
+    # fast durchweg vertauschter Hoch- und Tiefseite.
+    #
+    # Beides wird jetzt ersetzt: die Zelltypen kommen aus der HOCHSEITE, die der
+    # Pinsel ohnehin kennt, und die Kacheln aus den geschuerften Gruppen, die
+    # einen Lauf als Ganzes tragen. Die Maske bleibt unangetastet -- wo die Wand
+    # verlaeuft, hat der Blockweg entschieden, und daran haengen die Pruefungen
+    # zu Ecken, Enden und T-Stoss.
+    #
+    # From here the wall stands as blocks -- correctly oriented, but each block
+    # sees only one block far, and the cell types come from `default_cell_type`.
+    # Both are now replaced: cell types from the high side the brush already
+    # knows, tiles from the mined groups. The mask stays untouched.
+    if maske.any() and hoehe:
+        # Erst stutzen, dann belegen -- sonst stehen die Kacheln schon in
+        # einem Band, das es hinterher nicht mehr gibt.
+        gestutzt = klippe_hoehe_begrenzen(maske, punkte, hand, hoehe)
+        weg = maske & ~gestutzt
+        if weg.any():
+            fi = tm.families.index(familie) if familie in tm.families else -1
+            vorrat = tm.by_family.get(fi)
+            if vorrat is not None:
+                kacheln, gewichte = vorrat
+                n = int(weg.sum())
+                grid[weg] = rng.choice(kacheln, size=n, p=gewichte)
+            maske = gestutzt
+    if maske.any():
+        zellen = np.where(maske, klippe_zelltypen(maske, punkte, hand),
+                          np.full(maske.shape, -1, dtype=np.int16))
+        if kacheln_feinsetzen:
+            klippe_feinsetzen(grid, maske, zellen, familie, rng)
+        elif gruppen_auf_stufen and not loesen:
+            # Jedes Werkzeug dort, wo es herkommt: Bloecke tragen die geraden
+            # Stuecke, die geschuerften Gruppen die Stufen. Siehe
+            # `klippe_stufen` fuer die Messung.
+            stufen = klippe_stufen(maske, gezeichnet)
+            if stufen:
+                nur = np.zeros_like(maske)
+                for sx, sy in stufen:
+                    nur[sy, sx] = True
+                nur &= ~quer_heil
+                nur &= ~schon_da
+                if nur.any():
+                    klippe_feinsetzen(grid, maske, zellen, familie, rng,
+                                      nur=nur)
+        elif loesen:
+            # Die Wand SUCHEN statt setzen. Gemessen bringt das jede gepruefte
+            # Wand auf 0,0 % unbekannte Kachelpaare, in unter einer halben
+            # Sekunde -- auch die 45-Grad-Schraege, wo der Blockweg bei 34 %
+            # steht. Findet die Suche nichts, bleiben die Bloecke stehen.
+            # Die Enden und Knicke der gezeichneten Linie bleiben, wie der
+            # Blockweg sie gelegt hat: dort sucht die Fortsetzung eines
+            # spaeteren Zuges ihre Anker, und eine ersetzte Kachel macht den
+            # Block, in dem sie liegt, unauffindbar.
+            frei = np.ones_like(maske)
+            for ex, ey in gezeichnet:
+                y0, y1 = max(0, ey - ECKENSCHUTZ), ey + ECKENSCHUTZ + 1
+                x0, x1 = max(0, ex - ECKENSCHUTZ), ex + ECKENSCHUTZ + 1
+                frei[y0:y1, x0:x1] = False
+            # Die wiederhergestellte Querwand eines T-Stosses gehoert nicht
+            # diesem Zug -- sie stand vorher da und bleibt, wie sie war.
+            frei &= ~quer_heil
+            frei &= ~schon_da
+            klippe_loesen(grid, maske, zellen, familie, rng, frei=frei)
+        elif naehte_bessern:
+            klippe_naehte_bessern(grid, maske, zellen, familie, rng,
+                                  ecken=gezeichnet)
+        # Zum Schluss, egal welcher Weg gebaut hat: was weder belegt noch
+        # erlaubt ist, hat hier nichts zu suchen. Die geschuetzten Ecken sind
+        # ausgenommen -- dort sucht die Fortsetzung ihre Anker.
+        schutz = np.ones_like(maske) if regeln_durchsetzen else None
+        for ex, ey in gezeichnet if regeln_durchsetzen else ():
+            r = REGELN_ECKENSCHUTZ
+            y0, y1 = max(0, ey - r), ey + r + 1
+            x0, x1 = max(0, ex - r), ex + r + 1
+            schutz[y0:y1, x0:x1] = False
+        # Dieselben Ausnahmen wie beim Loeser: die wiederhergestellte
+        # Querwand eines T-Stosses gehoert nicht diesem Zug, und was schon
+        # vorher stand, bleibt stehen. Ohne die erste fiel die Pruefung
+        # "T-Stoss laesst die Querwand heil" um.
+        if regeln_durchsetzen:
+            schutz &= ~quer_heil
+            schutz &= ~schon_da
+            hart_schutz = schutz.copy()
+            for ex, ey in gezeichnet:
+                r = HART_ECKENSCHUTZ
+                y0, y1 = max(0, ey - r), ey + r + 1
+                x0, x1 = max(0, ex - r), ex + r + 1
+                hart_schutz[y0:y1, x0:x1] = False
+            klippe_regeln_durchsetzen(grid, maske, familie, rng, frei=schutz,
+                                      hart_frei=hart_schutz)
     return maske, zellen
 
 

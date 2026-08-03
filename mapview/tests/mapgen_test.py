@@ -438,6 +438,41 @@ def check_klippen_nachbarn():
         check(f"{fam}: zulaufende Linie bekommt an der Naht eine Ecke",
               bool(ecke) and not kappe, f"Ecke {ecke}, Wandenden {kappe}")
 
+    # Baurichtungen: eine Klippe laesst sich nur in den Neigungen ziehen, die
+    # in den Originalen vorkommen. Gemessen an cm03 (919 Kantenschritte) ist
+    # ueber die Haelfte senkrecht, der Rest sind Versaetze von einer bis vier
+    # Spalten je Zeile -- mehr gibt es nicht.
+    richtungen = mapgen.klippen_richtungen()
+    check("32 Baurichtungen, in alle vier Quadranten gespiegelt",
+          len(richtungen) == 32, f"{len(richtungen)}")
+    import math
+    winkel = sorted({round(math.degrees(math.atan2(abs(dy), abs(dx))), 1)
+                     for dx, dy in richtungen})
+    check("die Winkel sind die gemessenen Kachelverhaeltnisse",
+          winkel == [0.0, 14.0, 18.4, 26.6, 45.0, 63.4, 71.6, 76.0, 90.0],
+          str(winkel))
+    # Jeder Zeigerpunkt landet auf einer erlaubten Richtung, und die Laenge
+    # bleibt ungefaehr erhalten -- die Strecke dreht sich nur.
+    daneben, laengen = [], []
+    r = np.random.default_rng(4)
+    for _ in range(200):
+        ax, ay = 40, 40
+        bx, by = int(r.integers(10, 71)), int(r.integers(10, 71))
+        gx, gy = mapgen.klippe_winkel_rasten(ax, ay, bx, by)
+        dx, dy = gx - ax, gy - ay
+        if dx == 0 and dy == 0:
+            continue
+        teiler = math.gcd(abs(dx), abs(dy)) or 1
+        if (dx // teiler, dy // teiler) not in richtungen:
+            daneben.append(((bx, by), (gx, gy)))
+        vor = math.hypot(bx - ax, by - ay)
+        nach = math.hypot(dx, dy)
+        laengen.append(abs(nach - vor) / max(1.0, vor))
+    check("gerastete Punkte liegen auf einer erlaubten Richtung",
+          not daneben, f"{len(daneben)} daneben {daneben[:3]}")
+    check("die Laenge bleibt beim Rasten ungefaehr erhalten",
+          max(laengen) < 0.35, f"groesste Abweichung {100*max(laengen):.0f} %")
+
     # T-Stoss: der Zug trifft MITTEN auf eine vorhandene Wand. Dafuer gibt es
     # keinen Block -- `mud` hat gar keinen mit drei Wandseiten, `san` drei, die
     # in zehn Karten 16 mal vorkommen und davon einmal mit Klippe hinter allen
@@ -502,6 +537,71 @@ def check_klippen_nachbarn():
                          and z[y, x - 1] == celltypes.CLIFFS_LOW_SIDE]
         check(f"{fam}: Hochland liegt innen (6 Seeds)", not verdreht,
               f"hoch oestlich von tief an {len(verdreht)} Stellen {verdreht[:4]}")
+
+    # Der Zelltyp kommt aus der HOCHSEITE, nicht aus der Kachel. Aus der Kachel
+    # geht es gar nicht: 171 der 307 Klippenkacheln kommen sowohl als Hoch- wie
+    # als Tiefseite vor, und nur 20,2 % der Zellen haben eine Kachel, die ihren
+    # Typ festlegt. `celltypes.default_cell_type` -- der Weg bis hierher --
+    # trifft 94,1 %, und die fehlenden 6 % sind fast durchweg vertauschte Hoch-
+    # und Tiefseiten, also Waende, die zur falschen Seite zeigen.
+    #
+    # Geprueft wird die gemessene Regel: am Hochland-Ende des Bandes steht die
+    # Hochseite, am anderen Ende die Tiefseite (senkrechte Baender der Laenge 3
+    # sind in den Originalen zu 82 % HLL, der Laenge 4 zu 45 % HHLL).
+    #
+    # Auf dem Stand davor war das rot -- die Zelltypen kamen je Kachel aus
+    # `default_cell_type` und wussten von der Hochseite nichts.
+    for fam in ("san", "mud"):
+        gr = next((t for t in range(2048)
+                   if tm.family_of[t] == tm.families.index(fam)
+                   and tm.placeable[t]), 0)
+        falsch = []
+        for hoch in ("oben", "unten"):
+            g = np.full((20, 32), gr, dtype=np.int32)
+            m, z = mapgen.klippe_aus_linie(g, [(4, 10), (28, 10)], hoch, tm,
+                                           np.random.default_rng(3), fam)
+            for x in range(32):
+                spalte = np.nonzero(m[:, x])[0]
+                if len(spalte) < 2:
+                    continue
+                folge = [int(z[y, x]) for y in spalte]
+                am_hoch = folge[0] if hoch == "oben" else folge[-1]
+                am_tief = folge[-1] if hoch == "oben" else folge[0]
+                if am_hoch != celltypes.CLIFFS_HIGH_SIDE:
+                    falsch.append((hoch, x, "Hochende nicht hoch"))
+                elif am_tief != celltypes.CLIFFS_LOW_SIDE:
+                    falsch.append((hoch, x, "Tiefende nicht tief"))
+        check(f"{fam}: Zelltyp folgt der Hochseite", not falsch,
+              f"{len(falsch)} Spalten falsch {falsch[:3]}")
+
+    # Die gezeichnete Linie IST die Oberkante des Hochlands, nicht die
+    # Wandmitte. Die Klippe waechst von dort weg.
+    #
+    # Vorher lag die Linie in der Mitte (`y1 - blockhoehe // 2`), mit zwei
+    # Folgen: die Hochflaeche sass um die halbe Blockhoehe neben dem, was man
+    # gezeichnet hat, und zwei verschieden hohe Bloecke -- mud senkrecht 5
+    # Reihen, waagerecht 3 -- legten ihre MITTE gleich, also ihre Kanten
+    # verschieden. Auf dem alten Stand ist diese Pruefung rot.
+    for fam in ("san", "mud"):
+        gr = next((t for t in range(2048)
+                   if tm.family_of[t] == tm.families.index(fam)
+                   and tm.placeable[t]), 0)
+        daneben = []
+        for hoch, yy in (("oben", 10), ("unten", 10)):
+            g = np.full((24, 32), gr, dtype=np.int32)
+            m, _z = mapgen.klippe_aus_linie(g, [(4, yy), (28, yy)], hoch, tm,
+                                            np.random.default_rng(1), fam)
+            for x in range(32):
+                spalte = np.nonzero(m[:, x])[0]
+                if not len(spalte):
+                    continue
+                # bei "oben" liegt das Hochland oben, die Wand beginnt auf der
+                # Linie; bei "unten" endet sie darauf
+                kante = int(spalte[0]) if hoch == "oben" else int(spalte[-1])
+                if kante != yy:
+                    daneben.append((hoch, x, kante))
+        check(f"{fam}: gezeichnete Linie ist die Hochkante", not daneben,
+              f"{len(daneben)} Spalten daneben {daneben[:3]}")
 
     # Kein Lauf darf ueber seine Ecke hinausragen. Frueher lief der letzte Block
     # durch und die Ecke sollte ihn zudecken -- bei mud ist der senkrechte
@@ -927,6 +1027,190 @@ def check_harte_kanten():
               schlimm == 0, f"{schlimm} harte Kanten")
 
 
+def check_kantenzuordnung():
+    """Die Kantenzuordnung von Hand -- laesst sie durch, was belegt ist?
+
+    Die Paartabelle kennt nur, was in den 54 Karten NEBENEINANDER VORKAM;
+    9,2 % aller mud-Paarungen. Die Kantenzuordnung erlaubt weitere 30,4 % und
+    verbietet 60,4 %. Damit sie das darf, muss sie das Belegte durchlassen --
+    eine Regel, die Originalkarten verbietet, ist falsch, nicht streng.
+
+    Der Rest von 0,15 % sind Stellen, an denen die Originalkarten dieselbe
+    Kante in beide Richtungen benutzen; siehe docs/klippen-stand.md 12.
+    """
+    try:
+        from cliff_kanten import modell as _km
+        from cliff_tiles import modell as _tm
+    except Exception as e:                               # noqa: BLE001
+        check("Kantenzuordnung ladbar", False, str(e))
+        return
+    K, T = _km(), _tm()
+    check("Kantenzuordnung geladen", len(K) > 100, f"{len(K)} Kacheln")
+
+    gut = schlecht = 0
+    for r in ("O", "S"):
+        for a in K.kanten:
+            if not T.ist_klippe(a):
+                continue
+            for b, n in T.nachbarn(a, r).items():
+                if not K.kennt(b):
+                    continue
+                if K.passt(a, b, r):
+                    gut += n
+                else:
+                    schlecht += n
+    anteil = 100 * gut / max(1, gut + schlecht)
+    check("laesst die belegten Paare durch (>= 99,5 %)", anteil >= 99.5,
+          f"{anteil:.2f} % von {gut + schlecht} Vorkommen")
+
+    # Und sie muss noch etwas verbieten, sonst ist sie keine Aussage.
+    fam = [t for t in K.kanten if T.ist_klippe(t)]
+    erlaubt = ges = 0
+    for a in fam[:60]:
+        for b in fam[:60]:
+            ges += 1
+            if K.passt(a, b, "O"):
+                erlaubt += 1
+    check("verbietet noch etwas (< 80 % erlaubt)", 100 * erlaubt / ges < 80,
+          f"{100 * erlaubt / ges:.0f} % erlaubt")
+
+
+def check_wandhoehe():
+    """`hoehe` bestimmt, wie tief das Band wird -- und wo die Uebergaenge
+    landen.
+
+    Ohne Angabe ergibt sich die Hoehe aus den Bloecken: waagerecht sauber 3,
+    auf Schraegen aber 3 bis 7, weil die Bloecke an den Stufen ueberlappen. In
+    einem zu dicken Band stehen die Kacheln, die als Ober- oder Unterkante
+    gedacht sind, mitten in der Wand -- gemessen 8,5 % (2:1) und 11,3 % (1:1)
+    gegen 0,7 bis 0,9 % in den Originalkarten, dort gleich auf geraden wie auf
+    schraegen Stellen.
+    """
+    try:
+        from cliff_kanten import BIOM, FELS, modell as _km
+    except Exception as e:                               # noqa: BLE001
+        check("Wandhoehe", False, str(e))
+        return
+    K = _km()
+    tm = mapgen.model()
+    gr = next(t for t in range(2048)
+              if tm.family_of[t] == tm.families.index("mud")
+              and tm.placeable[t])
+
+    def zeigt_boden(t, s):
+        v = K.seite(t, s)
+        if v is None:
+            return None
+        b = sum(1 for u in v if u == BIOM)
+        f = sum(1 for u in v if u == FELS)
+        return True if b >= 3 else (False if f >= 3 else None)
+
+    def bauen(punkte, hoehe):
+        g = np.full((48, 64), gr, dtype=np.int32)
+        m, _z = mapgen.klippe_aus_linie(g, punkte, "oben", tm,
+                                        np.random.default_rng(3), "mud",
+                                        hoehe=hoehe)
+        tiefste = 0
+        for x in range(m.shape[1]):
+            lauf = 0
+            for y in range(m.shape[0]):
+                lauf = lauf + 1 if m[y, x] else 0
+                tiefste = max(tiefste, lauf)
+        falsch = ges = 0
+        h2, w2 = m.shape
+        for y in range(h2):
+            for x in range(w2):
+                if not m[y, x]:
+                    continue
+                for s, dy in (("N", -1), ("S", 1)):
+                    ny = y + dy
+                    nk = 0 <= ny < h2 and m[ny, x]
+                    bod = zeigt_boden(int(g[y, x]), s)
+                    if bod is None:
+                        continue
+                    ges += 1
+                    falsch += bool(bod and nk)
+        return tiefste, 100 * falsch / max(1, ges)
+
+    schraeg = [(8, 8), (38, 38)]
+    # Gegenlauf: ohne Angabe MUSS das Band dicker als 3 werden, sonst misst
+    # die Pruefung nichts.
+    dick, _q = bauen(schraeg, None)
+    check("ohne hoehe wird das Band dicker als 3 -- die Pruefung misst etwas",
+          dick > 3, f"{dick} Kacheln")
+
+    for hoehe in (2, 3):
+        d, q = bauen(schraeg, hoehe)
+        check(f"hoehe={hoehe} haelt das Band duenn", d <= hoehe + 2,
+              f"tiefste Zeile {d}")
+    # Bei 2 liegt die Wand auf dem Wert der Originalkarten; bei 3 bleibt auf
+    # der 45-Grad-Schraegen ein Rest, siehe docs/klippen-stand.md 12.
+    _d2, q2 = bauen(schraeg, 2)
+    check("hoehe=2: Uebergaenge stehen am Rand (<= 2 %)", q2 <= 2.0,
+          f"{q2:.1f} % mitten in der Wand, Originalkarten 0,7 %")
+
+
+def check_regeltreu():
+    """Keine gebaute Wand darf ein Paar tragen, das weder belegt noch erlaubt
+    ist.
+
+    Der Loeser setzt von sich aus keine, aber er laeuft nicht ueberall -- an
+    Ecken, Enden und wiederhergestellten Querwaenden bleiben Bloecke stehen.
+    Dafuer laeuft `klippe_regeln_durchsetzen` zum Schluss.
+
+    Die Pruefung schlaegt nachweislich an: mit `regeln_durchsetzen=False`
+    haben dieselben Waende 88 (2:1) bzw. 136 (1:1) regelwidrige Paare. Ohne
+    diesen Gegenlauf waere eine gruene Zeile hier ohne Aussage.
+    """
+    try:
+        from cliff_kanten import modell as _km
+        from cliff_tiles import VERSATZ, modell as _tm
+    except Exception as e:                               # noqa: BLE001
+        check("Loeser regeltreu", False, str(e))
+        return
+    K, T = _km(), _tm()
+    tm = mapgen.model()
+    fi = tm.families.index("mud")
+    gr = next(t for t in range(2048)
+              if tm.family_of[t] == fi and tm.placeable[t])
+
+    def regelwidrig(m, g):
+        aus = 0
+        h, w = g.shape
+        for r in ("N", "O", "S", "W"):
+            dx, dy = VERSATZ[r]
+            for y in range(h):
+                for x in range(w):
+                    nx, ny = x + dx, y + dy
+                    if not (0 <= nx < w and 0 <= ny < h):
+                        continue
+                    if not (m[y, x] and m[ny, nx]):
+                        continue
+                    a, b = int(g[y, x]), int(g[ny, nx])
+                    if not T.passt(a, b, r) and not K.passt(a, b, r):
+                        aus += 1
+        return aus
+
+    for name, punkte in (("2:1", [(6, 10), (52, 33)]),
+                         ("1:1", [(8, 8), (38, 38)])):
+        # Gegenlauf: ohne die Durchsetzung MUSS es regelwidrige Paare geben,
+        # sonst misst die Pruefung nichts.
+        g = np.full((48, 64), gr, dtype=np.int32)
+        m, _z = mapgen.klippe_aus_linie(g, punkte, "oben", tm,
+                                        np.random.default_rng(3), "mud",
+                                        regeln_durchsetzen=False)
+        vor = regelwidrig(m, g)
+        check(f"ohne Durchsetzung regelwidrig ({name}) -- die Pruefung misst "
+              f"etwas", vor > 0, f"{vor} Paare")
+
+        g = np.full((48, 64), gr, dtype=np.int32)
+        m, _z = mapgen.klippe_aus_linie(g, punkte, "oben", tm,
+                                        np.random.default_rng(3), "mud")
+        nach = regelwidrig(m, g)
+        check(f"gebaute Wand ist regeltreu ({name})", nach == 0,
+              f"{nach} Paare")
+
+
 def main() -> int:
     if not mapgen.MODEL_PATH.exists():
         print("tiles_model.npz fehlt -> zuerst 'python mapview/learn_tiles.py'")
@@ -939,6 +1223,9 @@ def main() -> int:
     check_no_scatter()
     check_volcanoes()
     check_klippen_nachbarn()
+    check_kantenzuordnung()
+    check_wandhoehe()
+    check_regeltreu()
     check_cliffs()
     check_min_biome()
     check_details()

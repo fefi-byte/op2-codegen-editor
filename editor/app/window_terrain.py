@@ -491,6 +491,18 @@ class _TerrainMixin:
             if anker is not None:
                 tx, ty = anker
                 self.statusBar().showMessage(tr("terrain.klippe_eingerastet"))
+        # Ab dem zweiten Punkt auf eine erlaubte Baurichtung rasten. Gemessen
+        # kommen in den Originalkarten nur Neigungen bis vier Spalten je Zeile
+        # vor, ueber die Haelfte der Kantenschritte ist senkrecht -- eine frei
+        # gezogene Schraege gibt es dort nicht (siehe `KLIPPEN_NEIGUNGEN`).
+        # From the second point on, snap to a permitted build direction: the
+        # originals only use slopes up to four columns per row.
+        if punkte:
+            ax, ay = punkte[-1]
+            if (tx, ty) != (ax, ay):
+                tx, ty = mapgen.klippe_winkel_rasten(ax, ay, tx, ty)
+                tx = max(0, min(self.map.width - 1, tx))
+                ty = max(0, min(self.map.height - 1, ty))
         # Auf denselben Punkt noch einmal zu klicken schliesst die Figur.
         # Clicking the same point again closes the figure.
         punkte.append((int(tx), int(ty)))
@@ -854,6 +866,24 @@ class _TerrainMixin:
         if not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
             return
         punkte = getattr(self, "_klippen_punkte", None) or []
+        # Steht schon ein Punkt, zeigt eine Linie, wohin gebaut wuerde. Sie
+        # rastet auf dieselbe Richtung wie der Klick -- so sieht man die
+        # Baurichtung, bevor man sie setzt.
+        # With a point already placed, a line shows where building would go; it
+        # snaps to the same direction as the click would.
+        if punkte:
+            ax, ay = punkte[-1]
+            if (tx, ty) != (ax, ay):
+                bx, by = mapgen.klippe_winkel_rasten(ax, ay, tx, ty)
+                linie = QGraphicsLineItem((ax + 0.5) * SCENE_TILE,
+                                          (ay + 0.5) * SCENE_TILE,
+                                          (bx + 0.5) * SCENE_TILE,
+                                          (by + 0.5) * SCENE_TILE)
+                linie.setPen(QPen(QColor(120, 220, 255), 3, Qt.DashLine))
+                linie.setZValue(1000)
+                self.scene.addItem(linie)
+                self._terrain_preview_item = linie
+                return
         ziel = ebenen.klippen_anker(tx, ty, ausser=punkte)
         if ziel is None or ziel in ebenen.offene_enden():
             return          # dort steht schon ein dauerhafter Ring
