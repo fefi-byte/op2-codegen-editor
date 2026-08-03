@@ -4962,6 +4962,26 @@ def klippe_feinsetzen(grid: np.ndarray, maske: np.ndarray,
 # Wie weit um eine gezeichnete Ecke herum die Nahtreparatur die Finger laesst.
 # Der groesste Klippenblock ist 6 Reihen hoch; wer naeher herangeht, macht ihn
 # fuer die Fortsetzung unauffindbar.
+# Wie weit um einen gezeichneten Punkt herum nichts angefasst werden darf.
+#
+# Lange galt er als DER Engpass: Loeser, Regeldurchsetzung, Randsetzung und
+# Gruppen stiessen alle an ihn. Nachgemessen stimmt das nicht. Mit dem
+# Rueckfall auf `klippe_wand_aus_feld` haelt die Fortsetzung bis Radius 3 --
+# aber die Qualitaet wird dabei nicht besser, sondern ueberwiegend schlechter
+# ("Uebergaenge mitten in der Wand", Originalkarten 0,72 bis 0,89 %):
+#
+#     Zug            hoehe   Radius 7   Radius 3
+#     2:1 runter       -       4,8 %      9,1 %
+#     2:1 runter       3       1,2 %      3,9 %
+#     2:1 hoch         -       3,3 %      2,8 %
+#     2:1 hoch         3       8,0 %      7,4 %
+#     1:1 runter       -      14,9 %     13,0 %
+#     1:1 runter       3       3,0 %      3,1 %
+#
+# Der Schutz haelt an den Ecken Blockkacheln fest, die dort zufaellig richtig
+# sind; wer ihn verkleinert, laesst die Reparaturen ran und die machen es an
+# zwei von drei Stellen schlechter. Er bleibt also bei 7 -- nicht aus
+# Vorsicht, sondern weil gemessen.
 ECKENSCHUTZ = 7
 
 REGELN_ECKENSCHUTZ = 0
@@ -6691,6 +6711,8 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
         flucht = None
         vorher = None
         letzter = None
+        # Ersatzkante aus dem Feld, falls kein Block mehr auffindbar ist.
+        feld_kante = None
         if i == 0:
             treffer = klippen_treffer(grid, x1, y1, tm, familie)
             laeuft = (2, 3) if senkrecht else (0, 1)
@@ -6700,6 +6722,18 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
                     flucht = bx if senkrecht else by
                     anschluss.setdefault(i, []).append((b, gegen[seite], flucht))
                     break
+            if flucht is None and schon_da.any():
+                # Kein vollstaendiger Block mehr da -- aber die Wand steht
+                # noch. `klippe_wand_aus_feld` liest ihre Hochkante aus dem
+                # Feld; daran laesst sich genauso fluchten.
+                feld = klippe_wand_aus_feld(grid, x1, y1, familie)
+                if feld is not None:
+                    achse_f, _seite_f, kante, _hoch_oben = feld
+                    # Nur wenn die vorhandene Wand in DIESELBE Richtung
+                    # laeuft. Eine Querwand ist keine Fortsetzung, und an ihr
+                    # auszurichten verdrehte prompt zwei Eckpruefungen.
+                    if (achse_f == "v") == bool(senkrecht):
+                        feld_kante = int(kante)
             for _d, bx, by, b in treffer:
                 bh, bw = b.shape
                 if (wandseiten(b) == {gegen[seite]}
@@ -6770,12 +6804,22 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
                 # shifted the plateau by half a block against what was drawn,
                 # and made blocks of different size share their middle instead
                 # of their edge.
+                # Steht schon eine Wand da, deren Block nicht mehr
+                # auffindbar ist, gilt IHRE Hochkante statt des Klicks. Sonst
+                # setzt die Fortsetzung um bis zu einer halben Blockhoehe
+                # versetzt an.
+                kante_x = feld_kante if (i == 0 and feld_kante is not None
+                                         and senkrecht) else x1
+                kante_y = feld_kante if (i == 0 and feld_kante is not None
+                                         and not senkrecht) else y1
                 if senkrecht:
                     hoch_zuerst = (hand > 0) != (schritt > 0)
-                    flucht = x1 if hoch_zuerst else x1 - b.shape[1] + 1
+                    flucht = (kante_x if hoch_zuerst
+                              else kante_x - b.shape[1] + 1)
                 else:
                     hoch_zuerst = (hand > 0) == (schritt > 0)
-                    flucht = y1 if hoch_zuerst else y1 - b.shape[0] + 1
+                    flucht = (kante_y if hoch_zuerst
+                              else kante_y - b.shape[0] + 1)
                 anschluss.setdefault(i, []).append((b, seite, flucht))
             else:
                 flucht += tm.klippen_bester_versatz(vorher, b, seite)

@@ -1915,12 +1915,49 @@ san. `cliff_patches` und `klippe_feinsetzen` stehen noch da und werden von
 
 ### Offen
 
-**Der `ECKENSCHUTZ` ist inzwischen an drei Stellen der Engpass**: der Loeser
-laeuft bei kurzen Zuegen gar nicht (bei sechs Kacheln liegt die ganze Wand
-darin), die Regeldurchsetzung brauchte Radius 0, und den Gruppen kostet er die
-Haelfte ihres Gewinns. Er ist mit 15x15 je Punkt grob bemessen; was die
-Fortsetzung wirklich braucht, ist nicht gemessen. Das waere der naechste
-Schritt.
+### Der `ECKENSCHUTZ` war NICHT der Engpass
+
+Ueber mehrere Abschnitte stand hier, er sei „an drei Stellen der Engpass".
+Das war eine Vermutung, die nie geprueft wurde. Nachgemessen ist sie falsch.
+
+Der Grund fuer den Schutz: `klippen_treffer` sucht VOLLSTAENDIG
+wiedergefundene Bloecke. Eine geaenderte Kachel, und der Block ist weg, also
+darf an den gezeichneten Ecken nichts angefasst werden.
+
+Gebraucht wird aber kein Block. Achse, Seite und Hochkante stehen im Feld, und
+`klippe_wand_aus_feld` liest sie dort — die Funktion stand seit langem da und
+wurde von nichts benutzt. Sie ist jetzt als **Rueckfall** eingehaengt: findet
+`klippen_treffer` keinen Anker, wird die Hochkante aus dem Feld gelesen und die
+Flucht daran ausgerichtet. Nur bei gleicher Achse — eine Querwand ist keine
+Fortsetzung, und an ihr auszurichten verdrehte prompt zwei Eckpruefungen.
+
+Damit haelt die Fortsetzung bis Radius 3 statt 7. **Die Qualitaet wird dabei
+aber nicht besser** („Uebergaenge mitten in der Wand", Originalkarten 0,72 bis
+0,89 %):
+
+| Zug | `hoehe` | Radius 7 | Radius 3 |
+|---|---|---|---|
+| 2:1 runter | — | 4,8 % | 9,1 % |
+| 2:1 runter | 3 | **1,2 %** | 3,9 % |
+| 2:1 hoch | — | 3,3 % | 2,8 % |
+| 2:1 hoch | 3 | 8,0 % | 7,4 % |
+| 1:1 runter | — | 14,9 % | 13,0 % |
+| 1:1 runter | 3 | 3,0 % | 3,1 % |
+
+An zwei von drei Zuegen wird es schlechter. Der Schutz haelt an den Ecken
+Blockkacheln fest, die dort zufaellig richtig sind; wer ihn verkleinert, laesst
+die Reparaturen ran, und die koennen „Bodenkante mit Klippe dahinter" nicht
+beheben — der einzige Mangel, der bis heute nur gemessen und nie repariert
+wird.
+
+Der Schutz bleibt also bei 7, jetzt mit der Messung im Quelltext statt mit
+einer Vermutung. Der Rueckfall bleibt ebenfalls: er macht die Fortsetzung
+unabhaengig davon, ob ein Block ueberlebt hat, und das ist unabhaengig vom
+Radius ein Gewinn.
+
+**Was wirklich fehlt**, ist eine Reparatur fuer „Bodenkante mit Klippe
+dahinter". Ein Versuch fasste jede Innennaht an und warf sechs Pruefungen um;
+sie muesste auf die wenigen Zellen zielen, die es wirklich betrifft.
 
 san und sno sind noch nicht von Hand zugeordnet — dort aendert der Einbau
 nichts, `kennt()` sagt Nein und wer nichts weiss, darf nichts verbieten. `san
