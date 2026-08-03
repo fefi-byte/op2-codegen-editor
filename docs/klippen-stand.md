@@ -1845,10 +1845,39 @@ Nachgeschlagen auf cm02 (Fenster fuer Fenster, Fuellung nicht vorgegeben):
 
 Das ist die Leiter: gross traegt die Richtung, klein stopft die Reste.
 
+### Am Setzer (`klippe_gruppen_setzen`)
+
+Die Leiter: groesste Form zuerst nachschlagen und setzen, dann die
+naechstkleinere ueber das, was uebrig bleibt. Was eine grosse Gruppe gesetzt
+hat, bindet die kleineren. Eingehaengt dort, wo bisher `klippe_feinsetzen` mit
+dem Fuellungsmodell lief — auf den Stufen.
+
+Dieselben Waende, beide Modelle, „falsch mitten" = Bodenkante mit Klippe
+dahinter (Originalkarten 0,72 bis 0,89 %):
+
+| Zug | `hoehe` | Fuellungsmodell | **Formmodell** |
+|---|---|---|---|
+| waagerecht | — | 0,9 % | 0,9 % |
+| senkrecht | — | 0,0 % | 0,0 % |
+| 2:1 runter | — | 12,9 % | **4,8 %** |
+| 2:1 runter | 3 | 5,6 % | **1,2 %** |
+| 2:1 hoch | — | 18,1 % | **3,3 %** |
+| 2:1 hoch | 3 | 15,7 % | **8,0 %** |
+| 1:1 runter | — | 21,6 % | **14,9 %** |
+| 1:1 runter | 3 | 6,2 % | **3,0 %** |
+
+Auf jeder Schraegen mindestens halbiert, auf geraden Laeufen unveraendert —
+dort setzen die Bloecke, und die Gruppen fassen sie nicht an.
+
+**Der Preis ist die Naht**, sie steigt um etwa eins bis zwei (2:1 runter 22,0 →
+23,1, 1:1 runter 22,9 → 24,8). Die Originalkarten liegen bei 24, 24,8 ist also
+kein Ausreisser. Regelwidrig bleibt ueberall 0.
+
 ### Stand (03.08.2026)
 
-Modell gebaut, Lader mit Formindex, drei Pruefungen in `mapgen_test.py`.
-**Haengt noch an nichts** — der Setzer benutzt weiterhin `cliff_patches`.
+Modell gebaut, Lader mit Formindex, am Setzer angeschlossen, drei Pruefungen in
+`mapgen_test.py`. `cliff_patches` und `klippe_feinsetzen` stehen noch da und
+werden von `kacheln_feinsetzen=True` benutzt.
 
 ### Offen
 

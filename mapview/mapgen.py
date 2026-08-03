@@ -5878,6 +5878,80 @@ def klippe_oberkante_linie(grid: np.ndarray, punkte, tm: "TileModel",
     return maske, n
 
 
+def klippe_gruppen_setzen(grid: np.ndarray, maske: np.ndarray,
+                          familie: str, rng: np.random.Generator,
+                          frei: np.ndarray | None = None) -> int:
+    """Die Wand aus geschuerften Gruppen setzen, groesste Form zuerst.
+
+    Nachgeschlagen wird nach FORM: an jeder Fensterstelle steht eine bestimmte
+    Klippenform, und das Modell sagt, welche Kacheln in den Originalkarten
+    darin standen. Bei 6x4 haben 56,8 % der Formen genau EINE Fuellung -- da
+    ist nichts zu waehlen, nur nachzuschlagen.
+
+    Die Leiter geht von gross nach klein. Was eine grosse Gruppe gesetzt hat,
+    bindet die kleineren: die grosse traegt die Richtung eines Laufs, die
+    kleine stopft, was uebrig bleibt. Gemessen an cm02 kennt 6x4 78 % der
+    Fenster und schlaegt im Mittel 14,8 Fuellungen vor; 2x2 kennt 100 %, aber
+    mit 267,7 Vorschlaegen -- es weiss alles und sagt nichts. Andersherum
+    waere die Leiter also wertlos.
+
+    Gesetzt wird nur, wo `frei` es erlaubt; alles andere bleibt stehen und
+    bindet als Bedingung. Gewuerfelt wird nach Haeufigkeit, nicht gierig.
+
+    -> Zahl der gesetzten Zellen.
+
+    Lay the wall from mined groups, largest shape first: what a large group
+    sets binds the smaller ones.
+    """
+    try:
+        from cliff_gruppen import modell as _gm
+        G = _gm()
+    except Exception:                                    # noqa: BLE001
+        return 0
+    if not maske.any():
+        return 0
+    tm = model()
+    if familie not in tm.families:
+        return 0
+    fi = tm.families.index(familie)
+    h, w = grid.shape
+    # Was diese Runde schon gesetzt hat -- das bindet die kleineren Gruppen.
+    gesetzt = np.zeros_like(maske)
+    n = 0
+    for bw, bh in G.groessen:
+        for y in range(h - bh + 1):
+            for x in range(w - bw + 1):
+                fm = maske[y:y + bh, x:x + bw]
+                if not fm.any():
+                    continue
+                fenster = grid[y:y + bh, x:x + bw]
+                # Gebunden ist, was schon gesetzt wurde oder nicht angefasst
+                # werden darf. Boden bindet NICHT -- er gehoert nicht zur
+                # Gruppe, und als Bedingung gezaehlt bricht die Trefferquote
+                # ein (gemessen 13,9 auf 4,2 Prozent).
+                fest = gesetzt[y:y + bh, x:x + bw].copy()
+                if frei is not None:
+                    fest |= ~frei[y:y + bh, x:x + bw]
+                vorhanden = np.where(fm & fest, fenster, -1).astype(np.int32)
+                kand = G.passend(fm, vorhanden, fi)
+                if not kand:
+                    continue
+                gew = np.array([float(G.anzahl[i]) for i, _f in kand])
+                gew = gew / gew.sum()
+                i = int(rng.choice(len(kand), p=gew))
+                fuell = kand[i][1]
+                for yy in range(bh):
+                    for xx in range(bw):
+                        if not fm[yy, xx] or fest[yy, xx]:
+                            continue
+                        grid[y + yy, x + xx] = int(fuell[yy, xx])
+                        gesetzt[y + yy, x + xx] = True
+                        n += 1
+        if gesetzt[maske].all():
+            break
+    return n
+
+
 def klippe_raender_setzen(grid: np.ndarray, maske: np.ndarray,
                           familie: str, rng: np.random.Generator,
                           frei: np.ndarray | None = None,
@@ -7048,8 +7122,7 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
                 nur &= ~quer_heil
                 nur &= ~schon_da
                 if nur.any():
-                    klippe_feinsetzen(grid, maske, zellen, familie, rng,
-                                      nur=nur)
+                    klippe_gruppen_setzen(grid, maske, familie, rng, frei=nur)
         elif loesen:
             # Die Wand SUCHEN statt setzen. Gemessen bringt das jede gepruefte
             # Wand auf 0,0 % unbekannte Kachelpaare, in unter einer halben
