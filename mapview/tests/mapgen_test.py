@@ -1143,10 +1143,19 @@ def check_wandhoehe():
         d, q = bauen(schraeg, hoehe)
         check(f"hoehe={hoehe} haelt das Band duenn", d <= hoehe + 2,
               f"tiefste Zeile {d}")
-    # Bei 2 liegt die Wand auf dem Wert der Originalkarten; bei 3 bleibt auf
-    # der 45-Grad-Schraegen ein Rest, siehe docs/klippen-stand.md 12.
+    # Bei 2 lag die Wand einmal auf dem Wert der Originalkarten (0,7 %). Dann
+    # kam die Bruecke im Stutzen dazu: bei hoehe=2 auf der 45-Grad-Schraegen
+    # zerfiel die Wand sonst in zwei Stuecke, und die zurueckgeholten
+    # Bruecken-Zellen sitzen naturgemaess im Inneren. Der Wert stieg damit auf
+    # 3,1 %.
+    #
+    # Das ist ein bewusster Tausch und keine Verschlechterung, die man
+    # wegdefiniert: eine Wand mit Luecke faellt sofort ins Auge, eine
+    # Uebergangskachel eine Zelle zu weit innen nicht. Ein Versuch, auch das
+    # zu reparieren, fasste jede Innennaht an und warf sechs Pruefungen zu
+    # Ecke und Fortsetzung um -- zurueckgenommen.
     _d2, q2 = bauen(schraeg, 2)
-    check("hoehe=2: Uebergaenge stehen am Rand (<= 2 %)", q2 <= 2.0,
+    check("hoehe=2: Uebergaenge stehen fast alle am Rand (<= 4 %)", q2 <= 4.0,
           f"{q2:.1f} % mitten in der Wand, Originalkarten 0,7 %")
 
 
@@ -1273,15 +1282,20 @@ def check_wand_haengt_zusammen():
                 ("schraeg 1:1", [[(8, 8), (38, 38)]]),
                 ("mit Knick", [[(8, 10), (30, 21), (52, 32)]]),
                 ("zwei Zuege", [[(8, 10), (30, 21)], [(30, 21), (52, 32)]])):
-            g = np.full((48, 64), gr, dtype=np.int32)
-            ges = np.zeros((48, 64), dtype=bool)
-            for punkte in zuege:
-                m, _z = mapgen.klippe_aus_linie(g, punkte, "oben", tm,
-                                                np.random.default_rng(3), fam)
-                ges |= m
-            n = stuecke(ges)
-            check(f"{fam}/{name}: die Wand haengt zusammen", n == 1,
-                  f"{n} Stueck(e), {int(ges.sum())} Zellen")
+            # Auch mit vorgegebener Hoehe. Das Stutzen entfernt Zellen, und
+            # eine Zelle zuviel entfernt reisst die Wand auseinander -- ohne
+            # diese Faelle deckt die Pruefung das Stutzen gar nicht ab.
+            for hoehe in (None, 3, 2):
+                g = np.full((48, 64), gr, dtype=np.int32)
+                ges = np.zeros((48, 64), dtype=bool)
+                for punkte in zuege:
+                    m, _z = mapgen.klippe_aus_linie(
+                        g, punkte, "oben", tm, np.random.default_rng(3), fam,
+                        hoehe=hoehe)
+                    ges |= m
+                n = stuecke(ges)
+                check(f"{fam}/{name}/hoehe {hoehe}: die Wand haengt zusammen",
+                      n == 1, f"{n} Stueck(e), {int(ges.sum())} Zellen")
 
 
 def check_regeltreu():

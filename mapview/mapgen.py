@@ -6261,9 +6261,71 @@ def klippe_hoehe_begrenzen(maske: np.ndarray, punkte, hand: int,
                     weiter.append((cx, cy))
         rand = weiter
 
-    # Wo keine Tiefkante zu finden war, bleibt alles stehen -- nichts
-    # anfassen ist besser als raten.
-    return maske & (((tiefe >= 0) & (tiefe < hoehe)) | (tiefe < 0))
+    # Zellen, die von der Tiefkante aus gar nicht erreichbar sind, fallen
+    # WEG. Sie stehenzulassen war der erste Gedanke -- "nichts anfassen ist
+    # besser als raten" -- und er war falsch: genau daraus entstanden Formen
+    # wie `.#.#` und `....|....|..#.`, ein Band mit Loch und einzelne Zellen
+    # im Nichts. Die gibt es in keiner Originalkarte, also kennt das
+    # Formmodell sie nicht, findet keine Gruppe und laesst die Blockkacheln
+    # stehen. Bei `2:1 hoch` mit `hoehe=3` waren das 17 verschiedene solcher
+    # Formen an 32 Fensterstellen, und die Trefferquote bei 4x3 fiel von 99
+    # auf 91 Prozent.
+    #
+    # Die BFS-Tiefe selbst kann keine Loecher erzeugen: eine Zelle in Tiefe d
+    # hat immer einen Nachbarn in d-1, der ebenfalls bleibt. Die Loecher kamen
+    # allein aus dieser Ausnahme.
+    #
+    # Cells unreachable from the low edge are dropped; keeping them was what
+    # produced shapes the maps never show.
+    behalten = maske & (tiefe >= 0) & (tiefe < hoehe)
+
+    # Zusammenhang wiederherstellen. Bei hoehe=2 auf einer 45-Grad-Schraegen
+    # beruehren sich die verbliebenen Stuecke nur noch ueber Eck -- und ueber
+    # Eck ist keine Wand, sondern eine Luecke. Also kommen gestutzte Zellen
+    # zurueck, die zwei Teile verbinden.
+    #
+    # Das macht das Band an genau diesen Stellen um eine Zelle dicker. Der
+    # Tausch ist richtig: eine Wand mit Luecke faellt sofort ins Auge, eine
+    # Kachel mehr an einer Ecke nicht.
+    #
+    # Restore connectivity: at hoehe=2 on a 45-degree wall the remaining
+    # pieces only touch at a corner, and a corner is a gap, not a wall.
+    for _runde in range(8):
+        teile = np.zeros(maske.shape, dtype=np.int32)
+        nr = 0
+        for sy, sx in zip(*np.nonzero(behalten)):
+            if teile[sy, sx]:
+                continue
+            nr += 1
+            rand2 = [(int(sx), int(sy))]
+            teile[sy, sx] = nr
+            while rand2:
+                weiter = []
+                for x, y in rand2:
+                    for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                        cx, cy = x + dx, y + dy
+                        if (0 <= cx < w and 0 <= cy < h and behalten[cy, cx]
+                                and not teile[cy, cx]):
+                            teile[cy, cx] = nr
+                            weiter.append((cx, cy))
+                rand2 = weiter
+        if nr <= 1:
+            break
+        # Eine gestutzte Zelle, die an zwei verschiedene Teile grenzt,
+        # verbindet sie.
+        bruecke = False
+        for y, x in zip(*np.nonzero(maske & ~behalten)):
+            nachbarn = set()
+            for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                cx, cy = x + dx, y + dy
+                if 0 <= cx < w and 0 <= cy < h and teile[cy, cx]:
+                    nachbarn.add(int(teile[cy, cx]))
+            if len(nachbarn) >= 2:
+                behalten[y, x] = True
+                bruecke = True
+        if not bruecke:
+            break
+    return behalten
 
 
 def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,

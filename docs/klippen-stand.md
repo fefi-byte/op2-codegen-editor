@@ -1873,11 +1873,45 @@ dort setzen die Bloecke, und die Gruppen fassen sie nicht an.
 23,1, 1:1 runter 22,9 → 24,8). Die Originalkarten liegen bei 24, 24,8 ist also
 kein Ausreisser. Regelwidrig bleibt ueberall 0.
 
+### Die Bruecke beim Stutzen — und drei Fehldiagnosen davor
+
+`2:1 hoch` war mit `hoehe=3` schlechter (8,0 %) als ohne (3,3 %). Drei
+Vermutungen dazu, alle falsch:
+
+1. **„Die Reihenfolge stimmt nicht, erst stutzen dann Gruppen."** Falsch —
+   gestutzt wird bereits vor dem Setzen der Gruppen.
+2. **„Das Stutzen reisst Loecher."** Auch falsch. Die vermeintlichen Loecher
+   (`....|....|..#.`) sind die Ecke des Bandes, die ins Fenster ragt — gueltige
+   Ansichten, die das Modell nur nicht hat, weil ihre Fuellungen seltener als
+   zehnmal vorkommen. Das ist die Deckungsgrenze, kein Fehler.
+3. **„Unerreichbare Zellen stehenzulassen ist das Problem."** Aenderte keine
+   einzige Kennzahl.
+
+Gefunden hat den echten Fehler erst die auf `hoehe` erweiterte
+Zusammenhangspruefung: **bei `hoehe=2` auf der 45-Grad-Schraegen zerfaellt die
+Wand in zwei Stuecke.** Die verbliebenen Teile beruehren sich nur noch ueber
+Eck, und ueber Eck ist keine Wand, sondern eine Luecke. Der Fehler stand seit
+dem Bau von `hoehe` drin; die Pruefung lief nur ohne Hoehenangabe und sah ihn
+nie.
+
+`klippe_hoehe_begrenzen` holt jetzt gestutzte Zellen zurueck, die zwei Teile
+verbinden. Das macht das Band an diesen Stellen um eine Zelle dicker, und die
+Bruecken-Zellen sitzen naturgemaess im Inneren: „Uebergaenge mitten in der
+Wand" stieg bei `hoehe=2` von 0,7 auf 3,1 %.
+
+**Das ist ein Tausch, kein Versehen.** Eine Wand mit Luecke faellt sofort ins
+Auge, eine Uebergangskachel eine Zelle zu weit innen nicht. Ein Versuch, auch
+das zu reparieren — „Bodenkante mit Klippe dahinter" als vierter Mangel —
+fasste jede Innennaht an und warf sechs Pruefungen zu Ecke und Fortsetzung um;
+zurueckgenommen. Die Schwelle der Pruefung steht jetzt bei 4 % mit dieser
+Begruendung im Quelltext.
+
 ### Stand (03.08.2026)
 
-Modell gebaut, Lader mit Formindex, am Setzer angeschlossen, drei Pruefungen in
-`mapgen_test.py`. `cliff_patches` und `klippe_feinsetzen` stehen noch da und
-werden von `kacheln_feinsetzen=True` benutzt.
+Modell gebaut, Lader mit Formindex, am Setzer angeschlossen. Die
+Zusammenhangspruefung deckt jetzt auch `hoehe` ab — 30 Faelle ueber mud und
+san. `cliff_patches` und `klippe_feinsetzen` stehen noch da und werden von
+`kacheln_feinsetzen=True` benutzt.
 
 ### Offen
 
