@@ -1955,9 +1955,39 @@ einer Vermutung. Der Rueckfall bleibt ebenfalls: er macht die Fortsetzung
 unabhaengig davon, ob ein Block ueberlebt hat, und das ist unabhaengig vom
 Radius ein Gewinn.
 
-**Was wirklich fehlt**, ist eine Reparatur fuer „Bodenkante mit Klippe
-dahinter". Ein Versuch fasste jede Innennaht an und warf sechs Pruefungen um;
-sie muesste auf die wenigen Zellen zielen, die es wirklich betrifft.
+### Die Reparatur fuer „Bodenkante mit Klippe dahinter"
+
+Der Spiegelfall zu `klippe_raender_setzen`: dort darf eine Seite, hinter der
+offener Boden liegt, keinen Fels zeigen; hier darf eine Seite, hinter der
+KLIPPE steht, keinen Boden zeigen. Sonst steht eine Uebergangskachel mitten in
+der Wand statt an ihrem Rand. Das ist die Zahl, an der diese ganze Reihe misst
+— und sie wurde bis hierher nur gemessen, nie behoben.
+
+**Ein eigener Durchgang, nicht ein vierter Begriff.** Der erste Versuch haengte
+das Mass in `klippe_regeln_durchsetzen` ein; damit aenderte es die Rangfolge
+fuer JEDE besuchte Zelle statt nur fuer die schadhaften, und sechs Pruefungen
+zu Ecke, Abschluss und Fortsetzung fielen um. `klippe_innenkanten_bessern`
+besucht nur die Zellen, die den Mangel tragen — auf einer Wand von 154 Zellen
+sind das etwa 12 — und ersetzt nur bei strikter Verbesserung, nie um den Preis
+eines regelwidrigen Paares, eines harten Uebergangs oder eines Lochs.
+
+| Zug | `hoehe` | vorher | nachher |
+|---|---|---|---|
+| waagerecht | — | 0,9 % | 0,9 % |
+| senkrecht | — | 0,0 % | 0,0 % |
+| 2:1 runter | — | 4,8 % | **2,0 %** |
+| 2:1 runter | 3 | 1,2 % | **0,6 %** |
+| 2:1 hoch | — | 3,3 % | **1,9 %** |
+| 2:1 hoch | 3 | **8,0 %** | **2,6 %** |
+| 1:1 runter | — | **14,9 %** | **3,5 %** |
+| 1:1 runter | 3 | 3,0 % | **2,2 %** |
+
+Originalkarten: 0,72 bis 0,89 %. Vorher lag der Setzer beim 4- bis 17-fachen,
+jetzt beim 2- bis 4-fachen.
+
+`INNEN_ECKENSCHUTZ = 3` ist der kleinste Radius, bei dem die Suite haelt: bei 0
+fallen sechs Pruefungen, bei 2 noch zwei. Die Reparatur fasst Zellen mitten in
+der Wand an, also dort, wo die Bloecke ihren Kern haben.
 
 san und sno sind noch nicht von Hand zugeordnet — dort aendert der Einbau
 nichts, `kennt()` sagt Nein und wer nichts weiss, darf nichts verbieten. `san

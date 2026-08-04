@@ -5003,6 +5003,19 @@ REGELN_ECKENSCHUTZ = 0
 # Bloecke auffindbar bleiben.
 HART_ECKENSCHUTZ = 1
 
+# Schutzradius fuer die INNENkantenreparatur (`klippe_innenkanten_bessern`).
+#
+# Sie fasst Zellen MITTEN in der Wand an, also dort, wo die Bloecke ihren Kern
+# haben. Abgetastet gegen die Suite:
+#
+#     Radius   Suite
+#       0      6 rot (Fortsetzung, Ecke, Abschluss)
+#       2      2 rot
+#       3      gruen
+#
+# 3 ist der kleinste Radius, bei dem die Bloecke auffindbar bleiben.
+INNEN_ECKENSCHUTZ = 3
+
 
 def _unbekannte_paare(grid: np.ndarray, maske: np.ndarray, tt):
     """Zellen, die an einem in den Originalen unbelegten Paar haengen."""
@@ -6088,6 +6101,131 @@ def klippe_raender_setzen(grid: np.ndarray, maske: np.ndarray,
         if not diesmal:
             break
     return geaendert
+
+
+def klippe_innenkanten_bessern(grid: np.ndarray, maske: np.ndarray,
+                               familie: str, rng: np.random.Generator,
+                               frei: np.ndarray | None = None,
+                               runden: int = 3) -> int:
+    """Bodenkanten beseitigen, hinter denen Klippe steht -> Zahl der behobenen.
+
+    Der Spiegelfall zu `klippe_raender_setzen`: dort darf eine Seite, hinter
+    der offener Boden liegt, keinen Fels zeigen. Hier darf eine Seite, hinter
+    der KLIPPE steht, keinen Boden zeigen -- sonst steht eine Uebergangskachel
+    mitten in der Wand statt an ihrem Rand.
+
+    Die Originalkarten liegen bei 0,72 bis 0,89 %, gleich auf geraden wie auf
+    schraegen Stellen. Erzeugt lag es je nach Zug zwischen 0 und 15 %.
+
+    Warum ein eigener Durchgang: als vierter Begriff in
+    `klippe_regeln_durchsetzen` eingehaengt aenderte er die Rangfolge fuer jede
+    besuchte Zelle, nicht nur fuer die schadhaften, und warf sechs Pruefungen
+    zu Ecke und Fortsetzung um. Hier werden nur die Zellen angefasst, die den
+    Mangel tragen -- auf einer Wand von 154 Zellen sind das etwa 12.
+
+    Ersetzt wird nur bei strikter Verbesserung, und nie um den Preis eines
+    regelwidrigen Paares, eines harten Uebergangs oder eines Lochs.
+
+    The mirror of the edge pass: a side with cliff behind it must not show
+    ground, or a transition tile stands mid-wall instead of at its rim.
+    """
+    try:
+        from cliff_kanten import BIOM, FELS, modell as _km
+        from cliff_tiles import VERSATZ, modell as _tm
+        tt = _tm()
+        ke = _km()
+    except Exception:                                    # noqa: BLE001
+        return 0
+    try:
+        from cliff_pixels import modell as _pm
+        px = _pm()
+    except Exception:                                    # noqa: BLE001
+        px = None
+    if not maske.any():
+        return 0
+    tm = model()
+    if familie not in tm.families:
+        return 0
+    fi = tm.families.index(familie)
+    eigen = [int(t) for t, f in zip(tt.kacheln, tt.familie)
+             if int(f) == fi and ke.kennt(int(t))]
+    if not eigen:
+        return 0
+    h, w = grid.shape
+
+    def zeigt(t, r, was):
+        v = ke.seite(t, r)
+        return v is not None and sum(1 for u in v if u == was) >= 3
+
+    def urteil(t, x, y):
+        """-> (innen, rw, hart, loch, unbelegt, Naht). Klein ist gut."""
+        innen = rw = hart = loch = ub = 0
+        naht = n = 0.0
+        for r in ("N", "O", "S", "W"):
+            dx, dy = VERSATZ[r]
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < w and 0 <= ny < h):
+                continue
+            if not maske[ny, nx]:
+                if zeigt(t, r, FELS):
+                    hart += 1
+                continue
+            if zeigt(t, r, BIOM):
+                innen += 1
+            b = int(grid[ny, nx])
+            if ke.loch(t, b, r):
+                loch += 1
+            if not tt.passt(t, b, r):
+                ub += 1
+                if not ke.passt(t, b, r):
+                    rw += 1
+            if px is not None:
+                d = px.naht(t, b, r)
+                if d is not None:
+                    naht += d
+                    n += 1
+        return innen, rw, hart, loch, ub, (naht / n if n else 0.0)
+
+    def schlechte():
+        aus = []
+        for y in range(h):
+            for x in range(w):
+                if not maske[y, x]:
+                    continue
+                if frei is not None and not frei[y, x]:
+                    continue
+                for r in ("N", "O", "S", "W"):
+                    dx, dy = VERSATZ[r]
+                    nx, ny = x + dx, y + dy
+                    if (0 <= nx < w and 0 <= ny < h and maske[ny, nx]
+                            and zeigt(int(grid[y, x]), r, BIOM)):
+                        aus.append((x, y))
+                        break
+        return aus
+
+    behoben = 0
+    for _runde in range(runden):
+        schlecht = schlechte()
+        if not schlecht:
+            break
+        geaendert = 0
+        for x, y in schlecht:
+            alt = int(grid[y, x])
+            beste = urteil(alt, x, y)
+            gewaehlt = None
+            for t in eigen:
+                if t == alt:
+                    continue
+                u = urteil(t, x, y)
+                if u < beste:
+                    beste, gewaehlt = u, t
+            if gewaehlt is not None:
+                grid[y, x] = gewaehlt
+                geaendert += 1
+        if not geaendert:
+            break
+        behoben += geaendert
+    return behoben
 
 
 def klippe_regeln_durchsetzen(grid: np.ndarray, maske: np.ndarray,
@@ -7283,6 +7421,16 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str,
             # allen vier Seiten Fels) kann dort nicht stehen.
             klippe_raender_setzen(grid, maske, familie, rng,
                                   frei=None if hoehe else hart_schutz)
+            # Danach der Spiegelfall: eine Bodenkante, hinter der Klippe
+            # steht. Das ist die Zahl, an der die ganze Reihe misst.
+            innen_schutz = schutz.copy()
+            for ex, ey in gezeichnet:
+                r = INNEN_ECKENSCHUTZ
+                y0, y1 = max(0, ey - r), ey + r + 1
+                x0, x1 = max(0, ex - r), ex + r + 1
+                innen_schutz[y0:y1, x0:x1] = False
+            klippe_innenkanten_bessern(grid, maske, familie, rng,
+                                       frei=innen_schutz)
             klippe_regeln_durchsetzen(grid, maske, familie, rng, frei=schutz,
                                       hart_frei=hart_schutz)
     return maske, zellen
