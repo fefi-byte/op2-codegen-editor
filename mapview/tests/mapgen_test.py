@@ -1281,6 +1281,10 @@ def check_wand_haengt_zusammen():
                 ("schraeg 2:1", [[(6, 10), (52, 33)]]),
                 ("schraeg 1:1", [[(8, 8), (38, 38)]]),
                 ("mit Knick", [[(8, 10), (30, 21), (52, 32)]]),
+                # Ein V -- runter und wieder hoch. Genau dort zerfiel die
+                # Wand bei hoehe=2 in zwei Stuecke (84 und 10 Zellen), weil
+                # die Bruecke im Stutzen nur Luecken von einer Zelle schloss.
+                ("V", [[(8, 10), (30, 21), (52, 10)]]),
                 ("zwei Zuege", [[(8, 10), (30, 21)], [(30, 21), (52, 32)]])):
             # Auch mit vorgegebener Hoehe. Das Stutzen entfernt Zellen, und
             # eine Zelle zuviel entfernt reisst die Wand auseinander -- ohne

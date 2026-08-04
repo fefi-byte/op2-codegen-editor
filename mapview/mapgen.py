@@ -6482,7 +6482,33 @@ def klippe_hoehe_begrenzen(maske: np.ndarray, punkte, hand: int,
                 behalten[y, x] = True
                 bruecke = True
         if not bruecke:
-            break
+            # Keine Zelle grenzt an zwei Teile -- die Luecke ist breiter als
+            # eine Zelle. Dann eine Zelle setzen, die an ein Teil grenzt und
+            # dem naechsten am naechsten liegt, und in der naechsten Runde
+            # weitersehen.
+            #
+            # Ohne diesen zweiten Anlauf zerfiel ein V-foermiger Zug bei
+            # hoehe=2 in zwei Stuecke (84 und 10 Zellen); die einfache
+            # Bruecke greift nur bei einer Luecke von genau einer Zelle.
+            gross = [int(np.count_nonzero(teile == i)) for i in range(nr + 1)]
+            haupt = int(np.argmax(gross[1:])) + 1 if nr else 0
+            ziel = [(int(x), int(y))
+                    for y, x in zip(*np.nonzero((teile > 0)
+                                                & (teile != haupt)))]
+            kand = None
+            for y, x in zip(*np.nonzero(maske & ~behalten)):
+                nah_haupt = any(
+                    0 <= x + dx < w and 0 <= y + dy < h
+                    and teile[y + dy, x + dx] == haupt
+                    for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)))
+                if not nah_haupt or not ziel:
+                    continue
+                d = min(abs(x - zx) + abs(y - zy) for zx, zy in ziel)
+                if kand is None or d < kand[0]:
+                    kand = (d, int(x), int(y))
+            if kand is None:
+                break
+            behalten[kand[2], kand[1]] = True
     return behalten
 
 

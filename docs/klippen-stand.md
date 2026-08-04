@@ -2063,3 +2063,84 @@ Nach den Reparaturen (Raender, Innenkanten, Regeln):
 
 Sechs der sieben Entwuerfe sind vollstaendig mangelfrei; nur „Zacken" behaelt
 3 Innenkanten (2,3 %). **Auf jeder Kennzahl besser als die Originalkarten.**
+
+## 15. Die Flaeche einer Kachel, und was daran Regel ist
+
+Aus den Kachelbildern laesst sich die Fels-Boden-Flaeche berechnen: je Pixel der
+Abstand zur Grundkachel der Familie, dann geglaettet. Das ist dieselbe Aussage
+wie die Kantenzuordnung, nur in 32x32 statt in vier Seiten mal vier
+Abschnitten.
+
+**Stand: 95,2 % Deckung mit der Handzuordnung, 10,6 % Streit an den Naehten.**
+Die Handzuordnung liegt bei 0,15 % — die Flaeche ersetzt sie nicht, aber sie
+zeigt, wo man hinsehen muss.
+
+### Was gemessen wurde und nicht half
+
+**Der Farbabstand liess sich nicht nach unten anpassen.** Zwischen 1 und 8 hat
+er keine Wirkung: 62 % der Pixel liegen bei Abstand genau 0, der Rest bei 6 oder
+mehr. Dazwischen liegt kein einziges Pixel.
+
+**Die Durchschnittshelligkeit taugt nicht als Gegenprobe.** Sie sagt den
+Felsanteil einer Kachel mit Korrelation -0,99 voraus — und genau deshalb kann
+sie nichts bestaetigen: beide kommen aus denselben Pixeln. Der erste Anlauf
+mass sogar verkehrt herum (auffaellige Kacheln hatten die BESSERE Deckung),
+weil die Gerade an der rohen Karte angepasst und daran die geglaettete Flaeche
+gemessen wurde.
+
+**Die Sprungmessung an zusammengelegten Kacheln ist gestrichen.** Viermal
+nachgebessert, viermal fand sie dieselben Faelle, in denen die Frage nicht
+gilt: volle Felskacheln haben keine Fels-Boden-Grenze, und wer dort eine sucht,
+findet Textur. 30 der 38 beteiligten Kachelplaetze waren „voll", ihre Flaechen
+durchweg richtig.
+
+### Was half
+
+**Der Mehrheitsfilter statt des Farbabstands.** 5x5 ab 6 von 25 (nicht ab 13 —
+an einer Kante ist ein Pixel nur halb von Fels umgeben, wer die Mehrheit
+verlangt, frisst die Kontur).
+
+**Das Scannen** (Idee des Nutzers): Linien durch die Kachel ziehen und die
+Wechsel zaehlen. Es trennt die Rollen — bei „oben+unten" haben 53 % der
+senkrechten Linien zwei Wechsel, bei den Kanten 7 %. Damit stieg diese Gruppe
+von 84,6 auf 93,4 %.
+
+**Die LAGE der Uebergaenge statt ihrer Zahl.** Die Spanne — von wo bis wo die
+Linien mit Wechsel reichen — trennt Kante von Ecke sauber (Median 100 % gegen
+75 %), wo die Wechselzahl ueberlappte.
+
+**Die Nahtprobe gegen die Originalkarten.** Die einzige Gegenprobe, die wirklich
+trennt: Kacheln mit wenig Nahtstreit haben 98,3 % Deckung, die mit viel 88,7 %.
+Sie funktioniert, weil die Karten etwas wissen, das in keinem Pixel steht —
+welche Kacheln tatsaechlich aneinanderliegen.
+
+### Die Regeln, und wo sie gelten
+
+    Fels    genau EIN Bereich, und er beruehrt den Rand
+    Boden   JEDER Bereich beruehrt den Rand
+
+Erst hiess die zweite „hoechstens ZWEI Bodenbereiche". Auf einer einzelnen
+Kachel stimmt das; im 2x2-Verbund aus den Originalkarten faellt es durch —
+`130` mit fuenf und `199` mit sieben Bodenbereichen stehen 386 und 308 mal in
+den Karten. Neu gefasst besteht der Verbund vollstaendig: 24 von 24 statt 18.
+
+**Auf der KARTE gilt die Bodenregel nicht.** cm02 hat fuenf eingeschlossene
+Bodenbereiche, der groesste mit 83 Zellen — ein Hochplateau. Die Regel gehoert
+in die Kachel, nicht in den Setzer.
+
+### Was daraus in den Setzer ging
+
+Nur eines, und es kam aus der Messung nebenbei: **ein V-foermiger Zug zerfiel
+bei `hoehe=2` in zwei Stuecke** (84 und 10 Zellen). Die Bruecke in
+`klippe_hoehe_begrenzen` schloss nur Luecken von genau einer Zelle; bei
+breiteren setzt sie jetzt schrittweise eine Zelle in Richtung des anderen
+Teils. Alle 27 geprueften Zuege haengen danach zusammen, und der V-Fall steht
+in der Suite.
+
+### Stand (03.08.2026)
+
+Die Flaechenberechnung liegt vollstaendig im Scratchpad und haengt an nichts.
+Was sie fuer san leisten koennte: eine Vorbelegung, die bei drei von vier
+Kacheln stimmt, plus eine Liste von 15 Kacheln zum Nachsehen — statt 138 von
+Hand durchzugehen. Die Ecken sind dabei die schwache Gruppe: acht der zwoelf
+auffaelligsten Kacheln sind welche.
