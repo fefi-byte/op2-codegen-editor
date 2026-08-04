@@ -1996,3 +1996,70 @@ Bloecke mit 35 % zurueck); das ist der naechste echte Fehler. Ausserdem: der
 zweite Klippenweg (`klippen_laeufer`) hat nichts davon, und `loesen=False` in
 `klippe_aus_linie` steht weiterhin auf aus — der Loeser laeuft also nur, wo er
 ausdruecklich gerufen wird.
+
+## 14. Zehn cm02-Klippen exakt nachbauen — und eigene entwerfen
+
+Die Messlatte: gegeben ist die Klippenmaske, gesucht sind die Kacheln. Wer das
+kann, hat die Gruppen beisammen.
+
+### Was den Nachbau getragen hat
+
+| Schritt | cm02 genau | ganz |
+|---|---|---|
+| Ausgangsmodell (6x4 bis 2x2, ab 10x) | 27,8 % | 1/10 |
+| **Bestfit statt zeilenweise** | 41,1 % | 1/10 |
+| grosse Formen dazu (10x8, 14x10) | 99,4 % | 8/10 |
+| **echte Fenstermaske statt Bauteil** | 99,4 % | 8/10 |
+| 20x14 und 14x20 dazu | **100 %** | **10/10** |
+
+Ueberbleibsel: **0** in allen Faellen ab Bestfit.
+
+Drei Erkenntnisse, jede gegen eine Vermutung von mir:
+
+**Bestfit statt zeilenweise.** Zeilenweise legt der erste Treffer oben links
+alles Folgende fest. Wer zuerst dort setzt, wo am meisten Unbelegtes haengt,
+gewinnt 13 Prozentpunkte — ohne eine einzige neue Gruppe.
+
+**Nicht wuerfeln half NICHT.** Die haeufigste Fuellung statt einer gewuerfelten
+zu nehmen brachte 27,8 auf 28,3 % — nichts. Die Wahl war nie das Problem.
+
+**Abstimmen machte es schlechter.** Jede Zelle von allen passenden Gruppen
+waehlen zu lassen fiel von 99,5 auf 87,1 %: die Mehrheit ueberschreibt richtige,
+aber seltenere Kacheln.
+
+**Und ein Fehler in meiner Messung**, nicht im Modell: der Ausschnitt enthielt
+nur die eine Zusammenhangskomponente. In der Karte stehen im selben Fenster
+weitere Klippenzellen, und genau die haben die Gruppen beim Lernen gesehen.
+
+### Die ehrliche Zahl
+
+| | cm02 genau | ganz |
+|---|---|---|
+| mit cm02 gelernt | 100 % | 10/10 |
+| **OHNE cm02 gelernt** | **70,5 %** | **0/10** |
+
+Das 10/10 ist zum Teil Auswendiglernen — bei Schwelle 1 und 20x14-Fenstern
+steht cm02 selbst im Vorrat. Bewiesen ist damit die Maschinerie (Formindex,
+Bestfit, Groessenleiter, null Ueberbleibsel), nicht die Verallgemeinerung.
+
+### Eigene Entwuerfe
+
+Sieben Formen, die in keiner Originalkarte stehen: Bogen, S-Kurve, Halbinsel,
+zwei Treppen, Zacken, langer Lauf.
+
+**Hier ist der kleinere Vorrat besser.** Schwelle 3 (248556 Gruppen) schlaegt
+Schwelle 1 (2294222) fast ueberall — beim langen Lauf 0/0/0/0 gegen 2/9/4/0.
+Die seltenen Gruppen sind ueberangepasst: sie helfen beim Nachbauen der Karte,
+aus der sie stammen, und schaden bei allem anderen.
+
+Nach den Reparaturen (Raender, Innenkanten, Regeln):
+
+| | roh | fertig | Originalkarten |
+|---|---|---|---|
+| hart | 2,01 % | **0,00 %** | 0,47 % |
+| innen | 1,54 % | **0,20 %** | 0,72–0,89 % |
+| Loch | 2 | **0** | 0,46 % |
+| regelwidrig | 32 | **0** | — |
+
+Sechs der sieben Entwuerfe sind vollstaendig mangelfrei; nur „Zacken" behaelt
+3 Innenkanten (2,3 %). **Auf jeder Kennzahl besser als die Originalkarten.**
