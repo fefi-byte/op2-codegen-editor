@@ -7,12 +7,26 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Cliffs are drawn as an **edge**, not painted as an area. Everything the
-generator places is taken from the original maps rather than guessed: the
-blocks are the tile groups the developers themselves painted with, and which
-block may follow which — with what offset — is counted across 107 stock maps.
+Nothing yet.
 
-### Added
+## [0.5.0-alpha] - 2026-08-05
+
+The editor grew a **map side**. Until now it edited missions on maps that
+already existed; it can now generate terrain, paint it, and draw cliffs — and
+write the result back as a playable `.map`.
+
+Everything the terrain code places is taken from the original maps rather than
+invented. Which tile may sit next to which is counted across the 107 stock
+maps, and the cliff tiles carry a by-hand assignment of what each of their four
+sides shows: rock or ground.
+
+### Added — terrain and maps
+- **Map generator**: terrain templates, features (mountain, valley, narrows,
+  clearing), symmetry, spawn points, volcanoes with lava zones — and the result
+  is written back as a playable `.map`.
+- **Terrain painting**: ground families, lava, building ground and volcanoes
+  are painted as intent into layers; the tiles are derived from them, including
+  the transitions between grounds.
 - **Cliff brush**: each click sets a point of the edge, then you choose which
   side is high and place it. Runs, corners and end pieces are assembled from
   whole tile groups; a corner is picked by the sides its wall has to show *and*
@@ -23,12 +37,45 @@ block may follow which — with what offset — is counted across 107 stock maps
   will land, and the cross wall stays intact.
 - **Erasing cliffs**: the *Lowland* brush lowers the ground again and takes the
   cliff with it.
-- **Map generator**: terrain templates, features (mountain, valley, narrows,
-  clearing), symmetry, spawn points, volcanoes with lava zones — and the result
-  is written back as a playable `.map`.
-- **Terrain painting**: ground families, lava, building ground and volcanoes
-  are painted as intent into layers; the tiles are derived from them, including
-  the transitions between grounds.
+- **Cliffs from the terrain instead of from blocks** (new switch *Terrain, not
+  blocks*, on by default): rather than laying down ready-made blocks and
+  repairing afterwards, every tile is derived from what the terrain requires at
+  that spot. The terrain is described four times finer than the tile grid, and
+  only a tile whose hand-assigned edges show exactly that is placed. A tile
+  showing rock into open ground is therefore never chosen — hard transitions
+  are ruled out rather than repaired.
+
+  The wall also stopped looking like a staircase. Its height varies instead of
+  being fixed, and the number of solid fill tiles is capped, which brings in the
+  tiles whose slope is only a small corner. Measured against the 51 stock maps:
+
+  |                            | drawn walls   | stock maps |
+  |----------------------------|---------------|------------|
+  | hard transitions           | 0             | —          |
+  | severed seams              | 0             | —          |
+  | same tile repeated in a row| 1.00 – 1.04   | 1.01       |
+  | wall height                | 3.54 – 3.63   | 3.54       |
+  | seam mismatch (pixels)     | 20.8 – 22.0   | 18.4       |
+
+  This path needs the by-hand tile-edge assignment and currently covers *dirt*
+  only; on sand and snow the editor quietly falls back to blocks.
+- **Lava brush** with a variable, round brush size instead of dragging
+  rectangles.
+
+### Added — missions
+- **Briefing** as a real pre-game dialog, using the technique from *Rising From
+  The Ashes*, plus a new *Show dialog* action for a message box over the running
+  game.
+- **Variable text and target players** for messages and dialogs.
+- **Action designer** for building your own actions, with export/import as
+  `.op2action` files so they can be shared.
+- **Hand-written C++** can be added alongside the generated code.
+- **Unit orders**: production in factories and rocket launches at the spaceport.
+- **Campaign missions**: positive `missionType` and the `e##`/`p##` naming
+  scheme.
+- **Demo mission** *(Demo Showcase)*: a tour through the editor's features.
+- **Code editors** with word completion, syntax highlighting and automatic
+  indentation.
 
 ### Changed
 - **The highland brush is gone.** Deriving a cliff from a painted area was the
@@ -38,6 +85,24 @@ block may follow which — with what offset — is counted across 107 stock maps
 - The terrain tab preselects *Dirt* instead of *Highland*, so the first click
   cannot take anything away.
 - The eyedropper picks the ground even on highland.
+- The action menu is grouped into submenus instead of one long flat list.
+- **TitanAPI removed completely** — the classic Outpost 2 Mission SDK is now the
+  only backend.
+- `codegen.py` split into four modules (2713 lines → five files of roughly 200
+  to 1000).
+
+### Fixed
+- `forEach` loops over buildings found no units.
+- `PlayerBuildingEnum(mapAny)` returns nothing; the generator uses a loop over
+  building types instead.
+- `<loop:outer>` inside a simple loop dropped the order.
+- Loop validation checked fields that were not in use.
+- Validation printed a literal `\n` instead of a line break; the tube check was
+  removed.
+- Briefing text was black on black, then white; it is now the Outpost 2 menu
+  green.
+- Nine form labels sat in the `[triggers]` section instead of `[action_editor]`.
+- *(Own action)* and *defendArea* removed from the action-type dropdown.
 
 ## [0.4.0-alpha] - 2026-07-20
 
