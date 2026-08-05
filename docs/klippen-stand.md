@@ -2144,3 +2144,110 @@ Was sie fuer san leisten koennte: eine Vorbelegung, die bei drei von vier
 Kacheln stimmt, plus eine Liste von 15 Kacheln zum Nachsehen — statt 138 von
 Hand durchzugehen. Die Ecken sind dabei die schwache Gruppe: acht der zwoelf
 auffaelligsten Kacheln sind welche.
+
+## 16. Der algorithmische Setzer im Editor
+
+Der Blockweg legt fertige Bloecke an die Kante und bessert hinterher nach.
+`mapview/klippe_algo.py` dreht das um: er fragt nicht, welche Kachel auf welche
+folgen darf, sondern was das GELAENDE an dieser Stelle verlangt.
+
+    1. Das Gelaende wird viermal feiner beschrieben als das Kachelraster --
+       eine Kachel hat vier Abschnitte je Seite, also 4x4 Teilfelder.
+    2. Je Kachel wird an ihren vier Raendern abgelesen, was dort stehen muss:
+       16 Abschnitte, jeder Fels oder Biom.
+    3. Gesetzt wird die Kachel, deren Handzuordnung genau das zeigt.
+
+Damit ist ein harter Uebergang nicht mehr zu reparieren, sondern ausgeschlossen:
+eine Kachel, die Fels ins Biom zeigt, erfuellt die Abfrage nicht.
+
+### Was der Kachelsatz nicht hergibt
+
+Auf Seitenebene (jede Seite ganz Fels oder ganz Biom) haben **4 der 16 Faelle
+keine einzige Kachel**: 5 und 10 (eine Zelle breite Wand), 8, und **11 --
+Klippe oben, Boden unten**, also die Unterkante. Und das Seitenraster wirft 100
+der 156 mud-Kacheln weg, weil ihre Seiten halb Fels und halb Biom sind. Darum
+laeuft der Setzer auf ABSCHNITTS-Ebene, nicht auf Seitenebene.
+
+### Vier Gelaenderegeln, jede aus einer Messung
+
+**Beim Zusammenstoss gehoert die Randlinie dem Biom.** Ohne sie: hart 114. Der
+Uebergang braucht Platz INNERHALB der Kachel. Auf einer Schraege wandert die
+Grenze durch alle Zwischenlagen und trifft die Kachelkante regelmaessig --
+dort sassen die letzten 13 harten Stellen, alle auf N- und S-Seiten.
+
+**Zwei benachbarte Klippenzellen teilen an ihrer Naht Fels.** Das Loch galt mir
+als unmoeglich -- zu Unrecht. Eine Naht hat zwei Seiten, und das sind
+verschiedene Teilfelder; beide koennen Biom sein, waehrend beide Zellen
+anderswo Fels tragen. Gemessen: auf einer senkrechten Wand genau eine Stelle.
+
+**Gelaende an den Kachelsatz angleichen.** Wo keine Kachel den verlangten Rand
+zeigt, wird nicht die Regel gelockert, sondern das Gelaende berichtigt.
+
+**Die drei muessen ABWECHSELND laufen.** Die Berichtigung kann eine duenne
+Randzelle ganz leeren; danach steht die Nachbarzelle mit Fels an einer Naht,
+hinter der nun Biom liegt. Ohne den Wechsel blieb auf einer 2:1-Schraege genau
+eine harte Stelle.
+
+### Gegen die Treppe
+
+"Es sind Treppen" wurde erst messbar, als klar war, was das heisst: die
+Originalkarten setzen **zu 99 % keine zwei gleichen Kacheln nebeneinander**
+(Lauflaenge 1,01, laengster Lauf 3). Die gerade Wand hatte einen Lauf ueber
+**51 Zellen** und 48 % Fuellkacheln gegen 16,4 % in den Originalen.
+
+    Hoehe schwankt    Ober- und Unterkante haben je einen eigenen langsamen
+                      Verlauf (2,5 bis 4,5), damit sie nicht gemeinsam springen
+    Fuellregel        bei Hoehe 2 null bis eine Fuellkachel, bei Hoehe 3 eine
+                      bis zwei, ab Hoehe 4 weiter eins bis zwei. Ueberzaehlige
+                      Vollzellen bekommen eine Ecke Boden gekerbt und fragen
+                      damit nach den 36 Kacheln mit winziger Eckschraege
+    keine Wiederholung bei praktisch gleicher Naht (Spielraum 3) gewinnt die
+                      Kachel, die sich vom Nachbarn unterscheidet
+
+Der Deckel bei zwei ist gemessen: "h-2 bis h-1" weitergeschrieben erlaubte bei
+Hoehe 4 schon zwei bis drei und trieb den Fuellanteil auf 28,6 %.
+
+### Stand gegen die Originale
+
+                          eigene Waende        Originalkarten
+    hart                  0                    --
+    Loch                  0                    --
+    Lauflaenge            1,00 bis 1,04        1,01
+    Wandhoehe             3,54 bis 3,63        3,54
+    Fuellanteil           21 bis 33 %          16,4 %
+    kleine Eckschraege    10 bis 22 %          22,8 %
+    regelwidrige Paare    0,9 bis 5,1 %        0,0 %
+    Naht                  20,8 bis 22,0        18,4
+
+Die Naht war zuvor bei 27 bis 31. Sie wurde zum Auswahlkriterium unter den
+Kacheln, die das Gelaende ohnehin erlauben -- **regelwidrig fiel dabei um zwei
+Drittel**, und das ist die eigentliche Bestaetigung: der Setzer kennt die
+Paartabelle nicht, sie ist also eine unabhaengige Auskunft.
+
+Die frueher genannten 24 als Zielwert waren falsch. Mit demselben Code
+nachgemessen liegen die Originale bei 18,4 (Median 17,3); aufgeteilt: voll/voll
+23,9, gemischt 20,1, Uebergang/Uebergang 17,1.
+
+### Grenzen
+
+Der laengste Lauf von 8 auf einer geraden Wand bleibt: dort hat **jede Zelle
+genau eine passende Kachel**. Das ist eine Grenze des Kachelsatzes.
+
+`verfuegbar()` traegt vorerst nur `mud` -- san und sno haben keine
+Handzuordnung. Der Editor faellt dort still auf den Blockweg zurueck; der
+Schalter "Gelaende statt Bloecke" im Gelaendefeld stellt beides um.
+
+### Falle bei der Hochseite
+
+"oben" und "unten" sind bildschirmfest, "links" und "rechts" beziehen sich auf
+die ZEICHENRICHTUNG. Nach unten gezeichnet liegt links im Osten. Wer das
+gleichsetzt, baut die Wand auf der falschen Seite -- genau das tat der erste
+Einbau, und es fiel erst am Einrasttest der Oberflaeche auf, nicht an den
+Klippenpruefungen.
+
+### Stand (05.08.2026)
+
+`mapview/klippe_algo.py`, angeschlossen in `paint_layers._klippe_belegen`,
+Schalter in `terrain_panel`. `check_klippe_algo` in der mapgen-Suite prueft
+hart und Loch auf vier Zuegen, dass die Pruefung ohne die Randregel durchfaellt,
+und dass san und sno sich sauber verweigern. Alle drei Suiten gruen.

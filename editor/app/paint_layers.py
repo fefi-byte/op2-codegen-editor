@@ -37,6 +37,11 @@ import celltypes    # noqa: E402
 import mapgen       # noqa: E402
 import shapegen     # noqa: E402
 
+try:
+    import klippe_algo  # noqa: E402
+except Exception:                                        # noqa: BLE001
+    klippe_algo = None
+
 # Pinselarten. `tief` senkt ab, die naechsten setzen das Biom, der Rest sind
 # Sonderflaechen.
 #
@@ -124,6 +129,10 @@ class PaintLayers:
         # in the map: an overlapped block is partly overwritten and no longer
         # matches, while a remembered point stays findable.
         self.klippen_enden: list[tuple[int, int]] = []
+        # Welcher Weg die Klippenkante belegt. Der algorithmische ist die
+        # Voreinstellung, wo die Handzuordnung ihn traegt; sonst faellt
+        # `_klippe_belegen` von selbst auf die Bloecke zurueck.
+        self.klippen_algorithmisch = True
         self._aus_karte()
 
     # ------------------------------------------------------------------
@@ -249,9 +258,8 @@ class PaintLayers:
         fi = int(self.familie[max(0, min(h - 1, y0)), max(0, min(w - 1, x0))])
         familie = (self.tm.families[fi] if 0 <= fi < len(self.tm.families)
                    else "san")
-        maske, zellen = mapgen.klippe_aus_linie(gitter, list(punkte),
-                                                hoch_seite, self.tm, self.rng,
-                                                familie)
+        maske, zellen = self._klippe_belegen(gitter, list(punkte), hoch_seite,
+                                             familie)
         if not maske.any():
             return []
         aenderungen = []
@@ -269,6 +277,33 @@ class PaintLayers:
                 if tuple(p) not in self.klippen_enden:
                     self.klippen_enden.append((int(p[0]), int(p[1])))
         return aenderungen
+
+    def _klippe_belegen(self, gitter, punkte, hoch_seite, familie):
+        """Welcher Weg belegt die Kante -- algorithmisch oder mit Bloecken?
+
+        Der algorithmische Weg (`klippe_algo`) leitet jede Kachel aus dem
+        Gelaende ab und laesst harte Uebergaenge gar nicht erst zu. Er braucht
+        die Handzuordnung der Kachelraender und kann darum vorerst nur `mud`;
+        fuer die anderen Familien bleibt der Blockweg zustaendig.
+
+        Which path covers the edge -- algorithmic or block-based? The
+        algorithmic one needs the hand-assigned tile edges and currently only
+        covers `mud`; the others keep the block path.
+        """
+        if self.klippen_algorithmisch and klippe_algo is not None:
+            try:
+                if klippe_algo.verfuegbar(self.tm, familie):
+                    maske, zellen = klippe_algo.klippe_aus_linie(
+                        gitter, punkte, hoch_seite, self.tm, self.rng,
+                        familie)
+                    if maske.any():
+                        return maske, zellen
+            except Exception:                            # noqa: BLE001
+                # Ein Fehler im neuen Weg darf den Editor nicht lahmlegen --
+                # dann eben mit Bloecken.
+                pass
+        return mapgen.klippe_aus_linie(gitter, punkte, hoch_seite, self.tm,
+                                       self.rng, familie)
 
     def klippen_anker(self, x: int, y: int, umkreis: int = 5, ausser=()):
         """Naechstes offenes Klippenende im Umkreis -> (x, y) oder None.

@@ -1363,6 +1363,99 @@ def check_regeltreu():
               f"{nach} Paare")
 
 
+def check_klippe_algo():
+    """Der algorithmische Weg laesst harte Uebergaenge gar nicht erst zu.
+
+    Der Blockweg repariert sie hinterher; hier kann eine Kachel, die Fels ins
+    Biom zeigt, die Gelaendeabfrage nicht erfuellen und wird nicht gewaehlt.
+    Geprueft wird beides -- dass nichts hart bleibt UND dass die Pruefung
+    ueberhaupt etwas misst: ohne die Regel "beim Zusammenstoss gehoert die
+    Randlinie dem Biom" muss sie durchfallen.
+    """
+    try:
+        import klippe_algo as KA
+        from cliff_kanten import BIOM, FELS, modell as _km
+        from cliff_tiles import VERSATZ
+    except Exception as e:                               # noqa: BLE001
+        check("Klippe algorithmisch", False, str(e))
+        return
+    K = _km()
+    tm = mapgen.model()
+    if not KA.verfuegbar(tm, "mud"):
+        check("Klippe algorithmisch -- mud zugeordnet", False,
+              "Handzuordnung traegt mud nicht")
+        return
+    gr = next(t for t in range(2048)
+              if tm.family_of[t] == tm.families.index("mud")
+              and tm.placeable[t])
+    vor = KA.vorrat(tm, "mud")
+
+    def zeigt(t, r, was):
+        v = K.seite(t, r)
+        return v is not None and sum(1 for u in v if u == was) >= 3
+
+    def maengel(g, m):
+        h, w = g.shape
+        hart = lo = 0
+        for y in range(h):
+            for x in range(w):
+                if not m[y, x]:
+                    continue
+                for r in ("N", "O", "S", "W"):
+                    dx, dy = VERSATZ[r]
+                    nx, ny = x + dx, y + dy
+                    if not (0 <= nx < w and 0 <= ny < h) or not m[ny, nx]:
+                        if zeigt(int(g[y, x]), r, FELS):
+                            hart += 1
+                        continue
+                    if r not in ("O", "S"):
+                        continue
+                    sa = K.seite(int(g[y, x]), r)
+                    sb = K.seite(int(g[ny, nx]), {"O": "W", "S": "N"}[r])
+                    if sa and sb and all(u == BIOM and v == BIOM
+                                         for u, v in zip(sa, sb)):
+                        lo += 1
+        return hart, lo
+
+    zuege = (("waagerecht", [(4, 14), (57, 14)], "oben"),
+             ("2:1 schraeg", [(4, 20), (57, 8)], "oben"),
+             ("mit Knick", [(4, 20), (30, 10), (57, 20)], "oben"),
+             ("senkrecht", [(20, 4), (20, 28)], "links"))
+    for name, punkte, seite in zuege:
+        g = np.full((32, 64), gr, dtype=np.int32)
+        m, _z = KA.klippe_aus_linie(g, punkte, seite, tm,
+                                    np.random.default_rng(7), "mud")
+        check(f"algorithmisch setzt ueberhaupt ({name})", int(m.sum()) > 40,
+              f"{int(m.sum())} Kacheln")
+        hart, lo = maengel(g, m)
+        check(f"algorithmisch ohne harte Uebergaenge ({name})", hart == 0,
+              f"{hart} Stellen")
+        check(f"algorithmisch ohne Loch ({name})", lo == 0,
+              f"{lo} Nahtstellen")
+
+    # Gegenprobe: ohne die Randregel muss die Pruefung durchfallen.
+    g = np.full((32, 64), gr, dtype=np.int32)
+    fein, achse = KA.band_aus_linie([(4, 20), (57, 8)], "oben", 64, 32,
+                                    np.random.default_rng(7))
+    fein, _b = KA.fuellregel(fein, achse, np.random.default_rng(7))
+    fein, _b = KA.angleichen(fein, vor)          # Randregel absichtlich weg
+    m, _b = KA.setzen(g, fein, vor)
+    hart, _lo = maengel(g, m)
+    check("ohne die Randregel bleiben harte Uebergaenge -- die Pruefung "
+          "misst etwas", hart > 0, f"{hart} Stellen")
+
+    # Familien, die die Handzuordnung noch nicht traegt, muessen sich sauber
+    # verweigern statt Unsinn zu setzen.
+    for fam in ("san", "sno"):
+        if fam not in tm.families:
+            continue
+        g = np.full((32, 64), gr, dtype=np.int32)
+        m, _z = KA.klippe_aus_linie(g, [(4, 14), (57, 14)], "oben", tm,
+                                    np.random.default_rng(7), fam)
+        check(f"algorithmisch verweigert sich bei {fam}", not m.any(),
+              f"{int(m.sum())} Kacheln gesetzt")
+
+
 def main() -> int:
     if not mapgen.MODEL_PATH.exists():
         print("tiles_model.npz fehlt -> zuerst 'python mapview/learn_tiles.py'")
@@ -1380,6 +1473,7 @@ def main() -> int:
     check_gruppen_nach_form()
     check_wand_haengt_zusammen()
     check_regeltreu()
+    check_klippe_algo()
     check_cliffs()
     check_min_biome()
     check_details()
