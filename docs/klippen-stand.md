@@ -2251,3 +2251,92 @@ Klippenpruefungen.
 Schalter in `terrain_panel`. `check_klippe_algo` in der mapgen-Suite prueft
 hart und Loch auf vier Zuegen, dass die Pruefung ohne die Randregel durchfaellt,
 und dass san und sno sich sauber verweigern. Alle drei Suiten gruen.
+
+## 17. san und sno: was messbar war, und was nicht
+
+Der algorithmische Setzer braucht die Handzuordnung der Kachelraender. mud hat
+sie (156 Kacheln), san und sno nicht. Der Versuch, sie fuer beide aus der
+gemessenen Felsflaeche ABZULEITEN, ist an einer klaren Zahl gescheitert -- und
+das Scheitern ist das Ergebnis dieses Abschnitts.
+
+### sno kann gar nicht
+
+    222 sno-Kacheln, davon platzierbar          0
+    sno-Zellen in allen 54 Karten          11 225
+    davon "Huegel/Eis/Vulkan (unpassierbar)" 11 161  (99,4 %)
+    davon Klippenzellen                        63
+    sno-Klippenkacheln im Pixelmodell           9
+
+**sno ist kein Biom, sondern unpassierbares Eis.** Es gibt keinen sno-Boden,
+in dem eine Klippe stehen koennte, und darum auch keine Bodenkachel als
+Vergleich -- die mitgelieferte Vorbelegung setzt fuer sno mangels Vergleich
+schlicht alles auf Fels. Mit neun Kacheln laege sno ausserdem weit unter den
+40, die `klippe_algo.MINDEST_KACHELN` verlangt; die Abfrage nach einem genauen
+16-Abschnitte-Rand fande fast nie einen Treffer. Fuer sno bleibt der Blockweg
+zustaendig, und das ist kein Provisorium.
+
+### san: abgeleitet reicht nicht
+
+Gemessen an mud, wo die Handzuordnung als Wahrheit danebenliegt, streng
+gezaehlt (EGAL gilt NICHT als Treffer):
+
+                                       Abschnitte  Kacheln ganz richtig
+    Vorbelegung im Pixelmodell            92,9 %          38,5 %
+    Ableitung ueber die ganze Flaeche     95,9 %          67,3 %
+
+Die Ableitung ist also deutlich besser als die mitgelieferte Vorbelegung --
+89 statt 153 falsche Abschnitte. Aber sie ist keine Handqualitaet. Die
+unabhaengige Probe an den Originalkarten, die keine der Einstellungen je
+gesehen hat: zwei Kacheln, die dort aneinanderstossen, muessen sich an ihrer
+gemeinsamen Naht einig sein.
+
+                          Nahtstreit    hart      Loch
+    mud, Handzuordnung        0,08 %   1,58 %    0,56 %
+    mud, abgeleitet           8,77 %   7,99 %    1,29 %
+    san, abgeleitet           7,80 %  20,01 %    0,37 %
+
+Rund einer von zwoelf Nahtabschnitten widerspricht sich selbst -- was zu den
+4 % falschen Abschnitten passt, denn an einer Naht treffen zwei davon
+aufeinander. Die Handzuordnung ist deshalb so einig, weil sie MIT der
+Nahtprobe gebaut wurde.
+
+### Drei Versuche, es besser zu machen -- alle gemessen gescheitert
+
+**Breitere Bodenpalette** (bis zu 24 Bodenkacheln statt einer): schlechter,
+64,7 % gegen 67,3 % ganz richtige Kacheln. Mehr Bodenfarben fressen die
+Felsflaeche an.
+
+**Nachbarn abstimmen lassen** -- wer von seinen Nachbarn geschlossen
+ueberstimmt wird, dreht sich um. Sah zunaechst nach einem Sprung auf 82 % aus;
+streng nachgemessen war das die EGAL-Aufblaehung: 470 Abschnitte wurden auf
+EGAL gesetzt, und meine Auswertung liess das als Treffer durchgehen. Wirklich
+gemessen sinken die falschen Abschnitte von 89 auf 52, dafuer werden 181
+aufgegeben -- fehlerfreie Kacheln fallen von 67,3 % auf 25,0 %.
+
+**Verdachtsrangliste**, damit man nur die zweifelhaften Kacheln nachsieht:
+1,38x gegen Zufall bei den ersten zwanzig, danach praktisch 1,0x. Auch die
+Liste der Kacheln mit Nahtstreit taugt nicht als Auswahl -- sie trifft bei mud
+94 % der Kacheln, wo die Zuordnung nachweislich stimmt.
+
+**Damit gibt es keinen belastbaren Weg, die falschen san-Kacheln zu benennen.**
+Wer sie sucht, muss alle 138 ansehen.
+
+### Was eingebaut wurde
+
+In `cliff_kanten.json` steht fuer san (138) und sno (9) jetzt die abgeleitete
+Vorbelegung statt der schwaecheren aus dem Pixelmodell -- 91 Eintraege haben
+sich geaendert, mud ist unberuehrt. `bearbeitet` bleibt bei 156: der Lader gibt
+die ungeprueften Werte NICHT heraus, `verfuegbar()` sagt fuer san und sno
+weiter nein, und der Editor bleibt dort beim Blockweg.
+
+Der Nutzen ist der Startpunkt des Handwerkzeugs: es liest `kanten` und beginnt
+damit bei rund 96 % statt bei 93 %. Freigegeben wird eine Kachel dort, wo sie
+angesehen wurde -- das Werkzeug traegt sie beim Durchsehen selbst in
+`bearbeitet` ein.
+
+Sicherung der vorherigen Datei: `cliff_kanten.json.vor_vorbelegung`.
+
+### Stand (05.08.2026)
+
+san wartet auf einen Handdurchgang ueber 138 Kacheln. sno ist erledigt: dort
+gibt es nichts zuzuordnen.
