@@ -74,6 +74,13 @@ HOEHE_MIN = 1.5
 HOEHE_MAX = 2.5
 UNRUHE = 0.35                  # wie stark die Oberkante wandert, in Kacheln
 
+# Faellt die Wand nach NORDEN, sieht man keine Felswand, nur die Abbruchkante:
+# in cm02 ist das eine Zelle (Zelltyp N; Spaltenmuster "N" 162x, "NN" 77x),
+# gegen "HLL"/"HHLL" bei der Suedwand. Die N-Kacheln tragen innen eine einzige
+# Felslinie, ein bis zwei Teilfelder dick. Dicke hier in Kacheln.
+NORD_MIN = 0.25
+NORD_MAX = 0.5
+
 _zwischen: dict = {}
 
 
@@ -193,8 +200,11 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
         return fein, achse
     wandern = _glatt(schritte, rng, unruhe, 6 * FEIN)
     dicke_r = _glatt(schritte, rng, 1.0, 10 * FEIN)
-    dicke = hoehe_min + (hoehe_max - hoehe_min) * (0.5 + 0.5 * np.tanh(dicke_r))
+    anteil = 0.5 + 0.5 * np.tanh(dicke_r)
+    dicke = hoehe_min + (hoehe_max - hoehe_min) * anteil
+    dicke_nord = NORD_MIN + (NORD_MAX - NORD_MIN) * anteil
 
+    nordlinie = np.zeros_like(fein)
     s = 0
     for i in range(len(punkte) - 1):
         x0, y0 = punkte[i]
@@ -207,6 +217,10 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
             py = (y0 + (y1 - y0) * u + 0.5) * FEIN
             w = wandern[min(s, schritte - 1)] * FEIN
             d = dicke[min(s, schritte - 1)] * FEIN
+            nord = art == "v" and ri < 0
+            if nord:
+                # Hochland im Sueden: die Wand faellt nach Norden.
+                d = dicke_nord[min(s, schritte - 1)] * FEIN
             s += 1
             if art == "v":
                 fx = int(px)
@@ -219,6 +233,8 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
                 if v1 > v0:
                     fein[v0:v1, fx] = True
                     achse[v0 // FEIN:(v1 - 1) // FEIN + 1, fx // FEIN] = 1
+                    if nord:
+                        nordlinie[v0:v1, fx] = True
             else:
                 fy = int(py)
                 if not 0 <= fy < hoehe * FEIN:
@@ -230,8 +246,61 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
                 if v1 > v0:
                     fein[fy, v0:v1] = True
                     achse[fy // FEIN, v0 // FEIN:(v1 - 1) // FEIN + 1] = 2
+    _nordlinie_durchziehen(fein, achse, nordlinie)
     return fein, achse
 
+
+def _nordlinie_durchziehen(fein, achse, nordlinie):
+    """Die Nordkante liegt IN einer Zelle, nicht auf ihrer Grenze.
+
+    Die Nordkante ist nur ein bis zwei Teilfelder dick. Auf der ersten oder
+    letzten Teilfeldzeile einer Kachel steht sie auf der Grenze: dann
+    verlangt das Gelaende eine Kachel mit Fels nur an der Unterkante und
+    darunter eine mit Fels nur an der Oberkante -- solche Kacheln gibt es
+    nicht, und der Loeser fand auf einer waagerechten Nordkante bis
+    Abweichung 4 keine Belegung. Die N-Kacheln in cm02 tragen ihre Linie in
+    der zweiten Teilfeldzeile und wechseln die Zellreihe nur schraeg.
+
+    Darum: je Teilfeldspalte die Linie von der Grenze weg ins Innere
+    schieben, und wo sie danach von Spalte zu Spalte springt, senkrecht
+    verbinden -- das ist der schraege Uebergang in die Nachbarreihe.
+    """
+    fh, fw = fein.shape
+    spalten = {}
+    for x in range(fw):
+        ys = np.nonzero(nordlinie[:, x])[0]
+        if not len(ys):
+            continue
+        y0, y1 = int(ys.min()), int(ys.max())
+        fein[y0:y1 + 1, x] = False
+        if y0 // FEIN == y1 // FEIN:
+            if y0 % FEIN == 0 and y1 + 1 < fh:
+                y0, y1 = y0 + 1, min(y1 + 1, (y0 // FEIN) * FEIN + FEIN - 2)
+            elif y1 % FEIN == FEIN - 1 and y0 > 0:
+                y0, y1 = max(y0 - 1, (y1 // FEIN) * FEIN + 1), y1 - 1
+        else:
+            # Liegt quer ueber der Grenze: in die Zelle mit dem groesseren
+            # Teil, und dort ins Innere.
+            grenze = (y1 // FEIN) * FEIN
+            if grenze - y0 >= y1 - grenze + 1:
+                y0, y1 = grenze - 3, grenze - 2
+            else:
+                y0, y1 = grenze + 1, grenze + 2
+            y0, y1 = max(0, y0), min(fh - 1, y1)
+        spalten[x] = (y0, y1)
+    vorher = None
+    for x in sorted(spalten):
+        y0, y1 = spalten[x]
+        if vorher is not None and vorher[0] == x - 1:
+            p0, p1 = vorher[1]
+            if y0 > p1 + 1:
+                y0 = p1 + 1
+            elif y1 < p0 - 1:
+                y1 = p0 - 1
+        fein[y0:y1 + 1, x] = True
+        for yy in range(y0 // FEIN, y1 // FEIN + 1):
+            achse[yy, x // FEIN] = 1
+        vorher = (x, (y0, y1))
 
 def rand_dem_biom(fein: np.ndarray, runden: int = 3):
     """Stoesst Klippe an Biom, gehoert die Randlinie dem Biom.
@@ -875,6 +944,11 @@ LOESER_STUFEN = (
     (False, 2, 1.0),
     (False, 3, 1.0),
     (False, 4, 1.0),
+    # Fuer die waagerechte Nordkante: dort greift erst 4 bis 5 (gemessen an
+    # drei Saaten), sonst faellt sie auf `setzen` zurueck -- 54 % unpassende
+    # Paare.
+    (False, 5, 1.0),
+    (False, 6, 1.0),
 )
 
 

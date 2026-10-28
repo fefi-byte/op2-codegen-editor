@@ -2364,3 +2364,26 @@ Treppen. `HOEHE_MIN/MAX` jetzt 1,5/2,5 (Tabelle am Wert). Zellen je Spalte
 - Waagerecht wiederholt sich ein "Buckel"-Motiv, obwohl die Kacheln
   verschieden sind -- vermutlich optisch aehnliche Kacheln.
 - Vollfels noch 21 % gegen 6,7 %.
+
+### Nachtrag: Klippen, die nach Norden fallen (28.10.2026)
+
+In cm02 ist eine nordwaerts fallende Klippe keine Wand, sondern eine
+Abbruchkante von EINER Zelle (Zelltyp N; Spaltenmuster "N" 162x, "NN" 77x,
+gegen "HLL" 184x und "HHLL" 77x bei der Suedwand). Die N-Kacheln (19 im
+mud-Vorrat, 389 Vorkommen in cm02) tragen innen eine einzige Felslinie in
+der zweiten Teilfeldzeile. Bisher wurde die Nordwand genauso dick gebaut
+wie die Suedwand.
+
+- `band_aus_linie`: faellt die Wand nach Norden (`art == "v"`, `ri < 0`),
+  ist das Felsband `NORD_MIN`..`NORD_MAX` = 0,25..0,5 Kacheln dick.
+- `_nordlinie_durchziehen`: die Linie wird je Teilfeldspalte von der
+  Zellgrenze ins Zellinnere geschoben und bei Reihenwechsel senkrecht
+  verbunden. Auf der Grenze hatte `rand_dem_biom` sie halb geloescht (274 ->
+  134 Teilfelder), und es gab keine Kacheln fuer "Fels nur am Rand".
+- `LOESER_STUFEN` um Abweichung 5 und 6 erweitert: die waagerechte Nordkante
+  loest erst ab 4 bis 5.
+
+Neue Testzuege im Bildvergleich: 2:1 schraeg/fallend, Knick und 1:1 jeweils
+mit `hoch_seite="unten"`. Alle 13 ohne unpassende Paare, ohne Loch.
+Die Pruefung im Spiel steht weiter aus -- insbesondere, ob die Zelltypen
+der Nordkante als N gesetzt werden (`celltypes.default_cell_type`).
