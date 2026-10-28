@@ -2343,3 +2343,24 @@ Abweichung innen, dann Beleg.
     Naht                                   22,8          23,8          25,0
 
 Die Naht wird dabei etwas schlechter; im Bild ist der Knick dafuer glatt.
+
+### Nachtrag: Wiederholung und Wanddicke (28.10.2026)
+
+**Wiederholung.** Der Loeser prueft jetzt auch die Kachel ZWEI Zellen weiter
+(A-B-A-B) und stellt Wiederholung direkt hinter die Randabweichung
+(`wdh_stufe=1`). Gleiche Kachel im Abstand 2: 8,8 % -> 1,2 % (cm02 0,8 %),
+direkter Nachbar 5,5 % -> 1,5 % (cm02 3,9 %). Innenabweichung 0,97 -> 1,07.
+
+**Wanddicke.** Gegen cm02 nachgerendert: die Originale sind ein duennes
+Felsband, das sich diagonal durch die Kacheln schlaengelt. Vollfels-Kacheln:
+cm02 6,7 %, bisher 43 %. Das dicke Band war die eigentliche Quelle der
+Treppen. `HOEHE_MIN/MAX` jetzt 1,5/2,5 (Tabelle am Wert). Zellen je Spalte
+3,0 -- wie cm02 in jeder Richtung (gemessen nach Wandwinkel, 2 bis 4).
+
+### Offen (nach Ansicht im Bild)
+
+- Restliche Treppenabsaetze auf 2:1-Schraegen.
+- Wandenden: oft ein dicker Klumpen.
+- Waagerecht wiederholt sich ein "Buckel"-Motiv, obwohl die Kacheln
+  verschieden sind -- vermutlich optisch aehnliche Kacheln.
+- Vollfels noch 21 % gegen 6,7 %.

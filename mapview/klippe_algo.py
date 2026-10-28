@@ -56,8 +56,22 @@ NAHT_RUNDEN = 4
 
 # Wandhoehe. Fest gewaehlt sah die Wand aus wie eine Treppe, weil Ober- und
 # Unterkante im Gleichschritt sprangen.
-HOEHE_MIN = 2.5
-HOEHE_MAX = 4.5
+#
+# Die Dicke des FELSES, nicht der Zellen. Mit 2,5 bis 4,5 waren 43 % der
+# gesetzten Kacheln Vollfels, in cm02 sind es 6,7 % -- die Originale sind ein
+# duennes Felsband mit Uebergaengen drumherum, und das dicke Band zwang den
+# Loeser, waagerechte Vollfelskacheln zu stapeln: die Treppe. Gemessen ueber
+# 14 Waende (Zellen je Lauf, Vollfels, unbelegt, Faden = Querschnitt unter
+# einer Kachel Fels):
+#
+#   2,5-4,5    4,45   43 %    5,0 %    0,9 %
+#   1,5-2,5    3,00   21 %    3,5 %    1,5 %   <- gewaehlt
+#   1,25-2,25  2,78   17 %   11,2 %    5,3 %
+#   1,0-2,0    2,49   12 %   21,5 %   14,7 %   (waagerecht reisst zum Faden)
+#
+# cm02 hat in jeder Richtung rund 3 Zellen je Spalte.
+HOEHE_MIN = 1.5
+HOEHE_MAX = 2.5
 UNRUHE = 0.35                  # wie stark die Oberkante wandert, in Kacheln
 
 _zwischen: dict = {}
@@ -574,7 +588,8 @@ LOESER_ZEIT = 3.0
 def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
            zeit: float = LOESER_ZEIT, abweichung: int = 0,
            gelaende_zuerst: bool = True, loch_erlaubt: bool = False,
-           nur_belegt: bool = False, innen_gewicht: bool = True):
+           nur_belegt: bool = False, innen_gewicht: bool = True,
+           wdh_stufe: int = 1):
     """Gelaende -> Kacheln, aber GESUCHT statt gesetzt.
 
     `setzen` waehlt je Zelle eine Kachel, die das Gelaende erfuellt, und
@@ -685,13 +700,20 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
         x, y = p
         gesetzt = [(r, belegt[q]) for r, q in nachbarn[p] if q in belegt]
         nb_kacheln = {t for _r, t in gesetzt}
+        # Auch zwei Zellen weiter: A-B-A-B ist ebenso Wiederholung.
+        weiter = set()
+        for r in SEITEN:
+            dx, dy = VERSATZ[r]
+            q = belegt.get((x + 2 * dx, y + 2 * dy))
+            if q is not None:
+                weiter.add(q)
 
         fehl = fehl_von[p]
 
         def schluessel(i_t):
             i, t = i_t
             rang = 0 if all(tt.passt(t, b, r) for r, b in gesetzt) else 1
-            gleich = 1 if t in nb_kacheln else 0
+            gleich = (2 if t in nb_kacheln else 0) + (1 if t in weiter else 0)
             s = n = 0.0
             for r, b in gesetzt:
                 d = PX.naht(t, b, r)
@@ -699,10 +721,16 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
                     s += d
                     n += 1
             inn = innen_von[p][t] if innen_gewicht else 0
-            stufen = ((fehl[t], inn, rang) if gelaende_zuerst
-                      else (rang, fehl[t], inn))
+            if wdh_stufe == 2:
+                stufen = (gleich, fehl[t], inn, rang)
+            elif wdh_stufe == 1:
+                stufen = (fehl[t], gleich, inn, rang)
+            else:
+                stufen = (fehl[t], inn, rang, gleich)
+            if not gelaende_zuerst:
+                stufen = (rang,) + stufen
             # Der Rang im Gelaende (Felsanteil) bricht Gleichstand.
-            return stufen + (gleich, s / n if n else 0.0, i)
+            return stufen + (s / n if n else 0.0, i)
 
         return [t for _i, t in sorted(enumerate(kand), key=schluessel)]
 
