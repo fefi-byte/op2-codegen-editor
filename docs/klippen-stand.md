@@ -2323,3 +2323,23 @@ Paare" auf vier Zuegen, mit Gegenprobe ohne Loeser (14 Paare).
   Bild ist angesehen.
 - Naht als Teil der Ordnung frueher gewichten.
 - san und sno: weiterhin ohne Handzuordnung, also ohne `vorrat`.
+
+### Nachtrag: das Innere der Kachel (28.10.2026)
+
+Im Bild fiel am Knick eine Treppe auf, obwohl jede Kachel am Rand stimmte.
+Grund: die Handzuordnung beschreibt nur die RAENDER. Eine Kachel mit
+waagerechtem Felsband erfuellt dieselben Raender wie eine mit schraegem --
+erst recht mit `egal`-Abschnitten und der Abweichung 4 aus der ersten Stufe,
+die bei 22 von 27 Waenden greift.
+
+`innenbilder()` liest je Kachel ihr Inneres als 4x4 aus den Pixeln
+(Helligkeit unter 80 = Fels; gegen die Handzuordnung der Raender 93 %
+Uebereinstimmung). Der Loeser ordnet danach: erst Abweichung am Rand, dann
+Abweichung innen, dann Beleg.
+
+    Innenabweichung je Kachel (von 16)    gierig 1,68   Loeser 1,71   + innen 0,98
+    regelwidrig                            6,5 %         0 %           0 %
+    unbelegt                               41,7 %        2,6 %         2,5 %
+    Naht                                   22,8          23,8          25,0
+
+Die Naht wird dabei etwas schlechter; im Bild ist der Knick dafuer glatt.

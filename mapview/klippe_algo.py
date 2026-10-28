@@ -530,6 +530,43 @@ def setzen(grid: np.ndarray, fein: np.ndarray, vor: dict,
     return maske, ber
 
 
+# Ab dieser Helligkeit (Mittel der drei Kanaele) gilt ein Pixel als Boden.
+# Gemessen gegen die Handzuordnung der Raender: 50 -> 72 %, 60 -> 83 %,
+# 70 -> 90 %, 80 -> 93 % Uebereinstimmung.
+FELS_HELLIGKEIT = 80
+
+
+def innenbilder() -> dict:
+    """Je Klippenkachel ihr Inneres als 4x4 Fels/Biom, aus den Pixeln.
+
+    Die Handzuordnung beschreibt nur die RAENDER. Eine Kachel, deren Rand
+    passt, kann innen ganz anders aussehen -- ein waagerechtes Felsband statt
+    eines schraegen. Genau das gab auf Schraegen die Treppe: jede Kachel war
+    am Rand richtig, innen aber flach.
+    """
+    if "innen" in _zwischen:
+        return _zwischen["innen"]
+    aus = {}
+    try:
+        from cliff_pixels import MODELL_PFAD as _pfad
+    except ImportError:                                  # noqa: BLE001
+        _pfad = None
+    try:
+        import os
+        pfad = _pfad or os.path.join(os.path.dirname(__file__),
+                                     "cliff_pixels_model.npz")
+        d = np.load(pfad)
+        k = 32 // FEIN
+        for i, t in enumerate(d["kacheln"]):
+            hell = d["bilder"][i].astype(float).mean(axis=2)
+            aus[int(t)] = ((hell < FELS_HELLIGKEIT)
+                           .reshape(FEIN, k, FEIN, k).mean(axis=(1, 3)) > 0.5)
+    except Exception:                                    # noqa: BLE001
+        aus = {}
+    _zwischen["innen"] = aus
+    return aus
+
+
 # Der Loeser darf so lange suchen, dann faellt er auf `setzen` zurueck.
 LOESER_ZEIT = 3.0
 
@@ -537,7 +574,7 @@ LOESER_ZEIT = 3.0
 def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
            zeit: float = LOESER_ZEIT, abweichung: int = 0,
            gelaende_zuerst: bool = True, loch_erlaubt: bool = False,
-           nur_belegt: bool = False):
+           nur_belegt: bool = False, innen_gewicht: bool = True):
     """Gelaende -> Kacheln, aber GESUCHT statt gesetzt.
 
     `setzen` waehlt je Zelle eine Kachel, die das Gelaende erfuellt, und
@@ -579,6 +616,8 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
     zellen = []
     dom: dict = {}
     fehl_von: dict = {}
+    innen_von: dict = {}
+    innen = innenbilder()
     for y in range(h):
         for x in range(w):
             a = fein[y * FEIN:(y + 1) * FEIN, x * FEIN:(x + 1) * FEIN]
@@ -593,6 +632,7 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
                 if not (0 <= nx < w and 0 <= ny < h) or not hat[ny, nx]:
                     offen.add(r)
             kand = []
+            blk = a
             for t, (s, fa) in vor.items():
                 # Hart: kein Fels zum offenen Boden hin.
                 if any(u == FELS for r in offen for u in s[r]):
@@ -601,13 +641,16 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
                            if u != EGAL and u != v)
                 if fehl > abweichung:
                     continue
-                kand.append((fehl, abs(fa - anteil), t))
+                ib = innen.get(t)
+                inn = int((ib != blk).sum()) if ib is not None else FEIN * FEIN
+                kand.append((fehl, inn, abs(fa - anteil), t))
             if not kand:
                 return None
             kand.sort()
             zellen.append((x, y))
-            dom[(x, y)] = [t for _f, _d, t in kand]
-            fehl_von[(x, y)] = {t: f for f, _d, t in kand}
+            dom[(x, y)] = [t for _f, _i, _d, t in kand]
+            fehl_von[(x, y)] = {t: f for f, _i, _d, t in kand}
+            innen_von[(x, y)] = {t: i for _f, i, _d, t in kand}
     if not zellen:
         return None
     drin = set(zellen)
@@ -655,7 +698,9 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
                 if d is not None:
                     s += d
                     n += 1
-            stufen = (fehl[t], rang) if gelaende_zuerst else (rang, fehl[t])
+            inn = innen_von[p][t] if innen_gewicht else 0
+            stufen = ((fehl[t], inn, rang) if gelaende_zuerst
+                      else (rang, fehl[t], inn))
             # Der Rang im Gelaende (Felsanteil) bricht Gleichstand.
             return stufen + (gleich, s / n if n else 0.0, i)
 
