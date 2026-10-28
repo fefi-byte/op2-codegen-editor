@@ -1483,15 +1483,41 @@ def check_klippe_algo():
     check("ohne die Randregel bleiben harte Uebergaenge -- die Pruefung "
           "misst etwas", hart > 0, f"{hart} Stellen")
 
-    # Familien, die die Handzuordnung noch nicht traegt, muessen sich sauber
-    # verweigern statt Unsinn zu setzen.
-    for fam in ("san", "sno"):
-        if fam not in tm.families:
-            continue
+    # san traegt die automatische Zuordnung (cliff_kanten_auto.json): die
+    # Wand muss stehen, ohne Paar, das weder belegt noch erlaubt ist, und
+    # ohne Loch. sno hat nur 9 Kacheln und muss sich weiter verweigern.
+    if "san" in tm.families:
+        from cliff_kanten import modell as _kma
+        ka = _kma(auto=True)
+        gs = next(t for t in range(2048)
+                  if tm.family_of[t] == tm.families.index("san")
+                  and tm.placeable[t])
+        for name, punkte, seite in zuege + (
+                ("waagerecht Nord", [(4, 14), (57, 14)], "unten"),):
+            g = np.full((32, 64), gs, dtype=np.int32)
+            m, _z = KA.klippe_aus_linie(g, punkte, seite, tm,
+                                        np.random.default_rng(7), "san")
+            h, w = g.shape
+            rw = lo = 0
+            for y in range(h):
+                for x in range(w):
+                    for r, dx, dy in (("O", 1, 0), ("S", 0, 1)):
+                        nx, ny = x + dx, y + dy
+                        if nx >= w or ny >= h or not (m[y, x] and m[ny, nx]):
+                            continue
+                        a, b = int(g[y, x]), int(g[ny, nx])
+                        if not (tt.passt(a, b, r) or ka.passt(a, b, r)):
+                            rw += 1
+                        if ka.loch(a, b, r):
+                            lo += 1
+            check(f"san algorithmisch ({name})",
+                  m.sum() > 20 and rw == 0 and lo == 0,
+                  f"{int(m.sum())} Kacheln, {rw} unpassend, {lo} Loch")
+    if "sno" in tm.families:
         g = np.full((32, 64), gr, dtype=np.int32)
         m, _z = KA.klippe_aus_linie(g, [(4, 14), (57, 14)], "oben", tm,
-                                    np.random.default_rng(7), fam)
-        check(f"algorithmisch verweigert sich bei {fam}", not m.any(),
+                                    np.random.default_rng(7), "sno")
+        check("algorithmisch verweigert sich bei sno", not m.any(),
               f"{int(m.sum())} Kacheln gesetzt")
 
 

@@ -98,7 +98,7 @@ _zwischen: dict = {}
 
 def _modelle():
     if "K" not in _zwischen:
-        _zwischen["K"] = kantenmodell()
+        _zwischen["K"] = kantenmodell(auto=True)
         _zwischen["PX"] = pixelmodell()
     return _zwischen["K"], _zwischen["PX"]
 
@@ -667,6 +667,20 @@ def innenbilder() -> dict:
                            .reshape(FEIN, k, FEIN, k).mean(axis=(1, 3)) > 0.5)
     except Exception:                                    # noqa: BLE001
         aus = {}
+    # Die Helligkeitsschwelle ist an mud gemessen. Bei san sind Sand und
+    # Fels fast gleich hell (Mediane 76 gegen 54, beide unter 80) -- dort
+    # waere jede Kachel "voll Fels". Fuer alles ausser mud trennen darum die
+    # Farbzentren aus `cliff_kanten_auto`.
+    try:
+        import cliff_kanten_auto as _ka
+        _b, fam = _ka._bilder()
+        k = 32 // FEIN
+        for t in list(aus):
+            if fam.get(t, "mud") != "mud":
+                aus[t] = (_ka.felsmaske(t).reshape(FEIN, k, FEIN, k)
+                          .mean(axis=(1, 3)) > 0.5)
+    except Exception:                                    # noqa: BLE001
+        pass
     _zwischen["innen"] = aus
     return aus
 
@@ -724,12 +738,10 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
     import sys
     import time
 
-    from cliff_kanten import modell as _km
     from cliff_tiles import modell as _tm
 
-    _K, PX = _modelle()
+    ke, PX = _modelle()
     tt = _tm()
-    ke = _km()
     h, w = grid.shape
 
     hat = _zellen(fein)

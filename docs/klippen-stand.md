@@ -2410,3 +2410,66 @@ und stellt das als ERSTE Vorliebe vor alles andere.
     als Vorliebe   offene Seiten mit Bild-Fels 364 -> 102 (39 Waende, 3 Saaten)
                    je Saat 2,8 % der offenen Seiten; cm02 hat 16,0 %
     weiterhin      0 unpassende Paare, 0 Loch, 0 hart
+
+## 18. san ohne Handzuordnung: die automatische Kantenzuordnung (28.10.2026)
+
+`mapview/cliff_kanten_auto.py` leitet fuer jede nicht von Hand bearbeitete
+Kachel die vier Abschnitte je Seite ab -- aus den Kachelbildern und der
+Paartabelle, beide im Repo. Ergebnis: `cliff_kanten_auto.json`, neu erzeugt
+mit `python mapview/cliff_kanten_auto.py`.
+
+    Pixel       Fels/Boden je Pixel (zwei Farbzentren je Familie, k-means
+                auf geglaetteten Pixeln; Boden = heller), je Abschnitt die
+                Mehrheit der aeussersten zwei Pixelreihen
+    Mehrheit    Abschnitt uebernimmt, was die Partner in den Karten zu
+                >= 80 % verlangen
+    zerrissen   verlangen die Partner beides (je >= 10 Vorkommen) -> EGAL
+
+### An mud gegen die Handzuordnung gemessen
+
+    Abschnitte wie von Hand            96,8 % (Helligkeit), 96,1 % (k-means)
+    Widersprueche gegen die Karten      0,0 %
+    nicht belegte Paare: erlaubt, wo die Hand verbietet   16,5 %
+                         verbietet, wo die Hand erlaubt   12,7 %
+
+Die automatische Zuordnung ist also nachgiebiger als die Hand: sie setzt
+514 Abschnitte auf EGAL, die Hand 341. Versucht, das einzuschraenken (alle
+gemessen, alle verworfen):
+
+- strengere Zerriss-Schwelle (20, 40): der Loeser findet seltener eine
+  Belegung, faellt auf `setzen` zurueck -- schlechter.
+- EGAL nur, wo die Pixel selbst unklar sind: 8 % falsch erlaubt, aber
+  33-40 % falsch verboten; 20 von 39 Waenden ohne Loesung.
+- Pixelnaht als Schiedsrichter: nimmt falsche Erlaubnisse nur gegen ein
+  Vielfaches an richtigen weg.
+- laengeres Bleiben bei "nur belegt" (Abweichung bis 8): loest nicht mehr.
+
+Im Bild (mud, Hand gegen automatisch nebeneinander) sind die Suedwaende
+praktisch gleich; strittig waren die Treppenuebergaenge der Nordkante.
+
+### san
+
+Helligkeit trennt dort nicht: orangefarbener Sand und rotbrauner Fels sind
+fast gleich hell (Mediane 76 gegen 54) -- daher die Farbzentren. Auch
+`klippe_algo.innenbilder` nimmt fuer alles ausser mud die Farbzentren.
+
+    san: 138 Kacheln, Widersprueche gegen die Karten 6,2 %
+    39 Pruefwaende (13 Zuege, 3 Saaten): kein Rueckfall, 0 Loch, 0 hart,
+    unbelegte Paare 47,5 % (mud mit Hand 26,2 %)
+
+sno ist NICHT dabei: 9 Kacheln, 63 Vorkommen in allen Karten, 63,8 %
+Widersprueche -- und `MINDEST_KACHELN` = 40 ohnehin unerreichbar.
+
+### Wo sie gilt
+
+Nur im Gelaende-Loeser: `cliff_kanten.modell(auto=True)`. Der Blockweg in
+`mapgen` bleibt bei der Hand -- mit der automatischen fielen dort fuenf
+san-Pruefungen (Fortsetzung, Eckblock, T-Stoss) und "laesst die belegten
+Paare durch" (98,7 %). Der Editor schaltet san ueber `verfuegbar()` von
+selbst auf den Gelaende-Weg.
+
+### Offen
+
+- Im Spiel ansehen -- besonders san.
+- Wer san doch von Hand nachsehen will: die automatische Zuordnung ist ein
+  guter Startwert fuer `kanten_zuordnen.py`.
