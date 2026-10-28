@@ -81,6 +81,18 @@ UNRUHE = 0.35                  # wie stark die Oberkante wandert, in Kacheln
 NORD_MIN = 0.25
 NORD_MAX = 0.5
 
+# Wandenden. In cm02 laeuft eine Wand ueber zwei bis drei Kacheln spitz bzw.
+# rund zu; bisher war sie bis zum letzten Punkt voll dick und hoerte als
+# Klumpen auf. `ENDE_LAENGE` ist die Strecke in Kacheln, auf der die Dicke
+# von `ENDE_REST` (Anteil) auf voll waechst -- mit Wurzelverlauf, also rund
+# statt keilfoermig. 2,5/0,15 liess die Enden sichtbar stumpf; 3,5/0 laeuft
+# spitz aus. Alle 39 Pruefwaende (13 Zuege, 3 Saaten) bleiben bei jeder
+# gemessenen Einstellung ohne unpassende Paare, Loch und harte Stelle.
+# Die Nordkante wird nicht verjuengt -- sie ist schon eine Linie und zerfiel
+# dabei.
+ENDE_LAENGE = 3.5
+ENDE_REST = 0.0
+
 _zwischen: dict = {}
 
 
@@ -180,7 +192,8 @@ def _wand_achse(x0, y0, x1, y1, hoch_seite: str):
 
 def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
                    rng, hoehe_min: float = HOEHE_MIN,
-                   hoehe_max: float = HOEHE_MAX, unruhe: float = UNRUHE):
+                   hoehe_max: float = HOEHE_MAX, unruhe: float = UNRUHE,
+                   enden: bool = True):
     """Streckenzug -> (Teilfeldkarte, Achsenkarte je Zelle).
 
     Die Hoehe steht nicht fest: Oberkante und Dicke bekommen jede ihren
@@ -217,9 +230,17 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
             py = (y0 + (y1 - y0) * u + 0.5) * FEIN
             w = wandern[min(s, schritte - 1)] * FEIN
             d = dicke[min(s, schritte - 1)] * FEIN
+            # Abstand zum naechsten Ende des ganzen Zuges, in Kacheln.
+            rand_ab = min(s, schritte - 1 - s) / FEIN
+            ende = 1.0
+            if enden and rand_ab < ENDE_LAENGE:
+                ende = ENDE_REST + (1 - ENDE_REST) * (rand_ab / ENDE_LAENGE) ** 0.5
+            d *= ende
             nord = art == "v" and ri < 0
             if nord:
                 # Hochland im Sueden: die Wand faellt nach Norden.
+                # Die Nordkante ist schon eine Linie; verjuengt zerfiel sie
+                # (2:1 Nord bis Abweichung 8 unloesbar).
                 d = dicke_nord[min(s, schritte - 1)] * FEIN
             s += 1
             if art == "v":

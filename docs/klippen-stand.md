@@ -2387,3 +2387,12 @@ Neue Testzuege im Bildvergleich: 2:1 schraeg/fallend, Knick und 1:1 jeweils
 mit `hoch_seite="unten"`. Alle 13 ohne unpassende Paare, ohne Loch.
 Die Pruefung im Spiel steht weiter aus -- insbesondere, ob die Zelltypen
 der Nordkante als N gesetzt werden (`celltypes.default_cell_type`).
+
+### Nachtrag: Wandenden (28.10.2026)
+
+In cm02 laufen Waende ueber zwei bis drei Kacheln spitz oder rund zu; bei
+uns waren sie bis zum letzten Punkt voll dick (Klumpen). `band_aus_linie`
+verjuengt die Dicke jetzt zu beiden Enden des Zuges (`ENDE_LAENGE` 3,5
+Kacheln, `ENDE_REST` 0, Wurzelverlauf). Abschaltbar mit `enden=False`.
+Die Nordkante bleibt unverjuengt -- verjuengt zerfiel sie, und 2:1 Nord war
+bis Abweichung 8 unloesbar. Alle 39 Pruefwaende sauber.
