@@ -671,6 +671,21 @@ def innenbilder() -> dict:
     return aus
 
 
+# Ab so vielen Fels-Teilfeldern (von 4) am Rand gilt eine Seite laut Bild als
+# Fels -- und darf dann nicht an offenen Boden grenzen.
+OFFEN_FELS_MAX = 2
+
+
+def _innenrand(ib: np.ndarray, r: str) -> np.ndarray:
+    if r == "N":
+        return ib[0, :]
+    if r == "S":
+        return ib[-1, :]
+    if r == "W":
+        return ib[:, 0]
+    return ib[:, -1]
+
+
 # Der Loeser darf so lange suchen, dann faellt er auf `setzen` zurueck.
 LOESER_ZEIT = 3.0
 
@@ -722,6 +737,7 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
     dom: dict = {}
     fehl_von: dict = {}
     innen_von: dict = {}
+    ofs_von: dict = {}
     innen = innenbilder()
     for y in range(h):
         for x in range(w):
@@ -742,20 +758,32 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
                 # Hart: kein Fels zum offenen Boden hin.
                 if any(u == FELS for r in offen for u in s[r]):
                     continue
+                # Auch nicht, wo die Handzuordnung `egal` sagt, das Bild aber
+                # Fels zeigt: am Ende einer waagerechten Wand stand so eine
+                # Kachel mit Fels unten rechts, und darunter war nichts --
+                # im Bild fehlte dort sichtbar eine Kachel.
+                #
+                # Als Verbot gemessen zu streng: 17 von 39 Pruefwaenden wurden
+                # unloesbar. Darum als erste Vorliebe: wo es geht, nie.
+                ib = innen.get(t)
+                ofs = 0 if ib is None else sum(
+                    1 for r in offen
+                    if int(_innenrand(ib, r).sum()) >= OFFEN_FELS_MAX)
                 fehl = sum(1 for r in SEITEN for u, v in zip(s[r], soll[r])
                            if u != EGAL and u != v)
                 if fehl > abweichung:
                     continue
                 ib = innen.get(t)
                 inn = int((ib != blk).sum()) if ib is not None else FEIN * FEIN
-                kand.append((fehl, inn, abs(fa - anteil), t))
+                kand.append((ofs, fehl, inn, abs(fa - anteil), t))
             if not kand:
                 return None
             kand.sort()
             zellen.append((x, y))
-            dom[(x, y)] = [t for _f, _i, _d, t in kand]
-            fehl_von[(x, y)] = {t: f for f, _i, _d, t in kand}
-            innen_von[(x, y)] = {t: i for _f, i, _d, t in kand}
+            dom[(x, y)] = [t for _o, _f, _i, _d, t in kand]
+            fehl_von[(x, y)] = {t: f for _o, f, _i, _d, t in kand}
+            innen_von[(x, y)] = {t: i for _o, _f, i, _d, t in kand}
+            ofs_von[(x, y)] = {t: o for o, _f, _i, _d, t in kand}
     if not zellen:
         return None
     drin = set(zellen)
@@ -819,6 +847,7 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
                 stufen = (fehl[t], inn, rang, gleich)
             if not gelaende_zuerst:
                 stufen = (rang,) + stufen
+            stufen = (ofs_von[p][t],) + stufen
             # Der Rang im Gelaende (Felsanteil) bricht Gleichstand.
             return stufen + (s / n if n else 0.0, i)
 

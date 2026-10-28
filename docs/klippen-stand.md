@@ -2396,3 +2396,17 @@ verjuengt die Dicke jetzt zu beiden Enden des Zuges (`ENDE_LAENGE` 3,5
 Kacheln, `ENDE_REST` 0, Wurzelverlauf). Abschaltbar mit `enden=False`.
 Die Nordkante bleibt unverjuengt -- verjuengt zerfiel sie, und 2:1 Nord war
 bis Abweichung 8 unloesbar. Alle 39 Pruefwaende sauber.
+
+### Nachtrag: Fels laut Bild zum offenen Boden (28.10.2026)
+
+Am Ende einer waagerechten Wand stand eine Kachel mit Fels unten rechts,
+darunter nichts -- im Bild fehlte sichtbar eine Kachel. Die Handzuordnung
+hatte die Seite `egal`, die harte Regel ("kein FELS zum Boden") griff darum
+nicht. Jetzt zaehlt der Loeser zusaetzlich, an wie vielen offenen Seiten das
+Bild (`innenbilder`, ab `OFFEN_FELS_MAX` = 2 von 4 Teilfeldern) Fels zeigt,
+und stellt das als ERSTE Vorliebe vor alles andere.
+
+    als Verbot     17 von 39 Pruefwaenden unloesbar -> verworfen
+    als Vorliebe   offene Seiten mit Bild-Fels 364 -> 102 (39 Waende, 3 Saaten)
+                   je Saat 2,8 % der offenen Seiten; cm02 hat 16,0 %
+    weiterhin      0 unpassende Paare, 0 Loch, 0 hart
