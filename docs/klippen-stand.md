@@ -2473,3 +2473,24 @@ selbst auf den Gelaende-Weg.
 - Im Spiel ansehen -- besonders san.
 - Wer san doch von Hand nachsehen will: die automatische Zuordnung ist ein
   guter Startwert fuer `kanten_zuordnen.py`.
+
+## 19. Flache Schraegen: Plateau und 45 Grad statt gleichmaessig (28.10.2026)
+
+Mit `maps.vol` vom Nutzer-PC lassen sich jetzt alle 54 Originalkarten mit
+echtem Boden rendern. Gesucht: abfallende Suedwaende mit 4 bis 9 Zellen
+Hoehenunterschied auf 14 Spalten -- 20 Fundstellen (cm03, cm04, eden03,
+mp4_03, mp4_06, mp4_12, mp6_01, ply05, ...).
+
+**Keine einzige laeuft gleichmaessig.** Jede ist eine Folge aus waagerechtem
+Plateau und kurzem 45-Grad-Abstieg von zwei bis drei Zellen, dazwischen ein
+schmales Band H ueber L. Unser Gelaende legte die Linie gleichmaessig 2:1 --
+die Kacheln machten daraus eine Treppe aus Ein-Zellen-Versaetzen.
+
+`_schraege_profil` zerlegt jetzt jedes flache Stueck einer Suedwand
+(`art == "v"`, `ri > 0`, Neigung unter 0,9) in Plateaus und 45-Grad-Stuecke:
+Stueckzahl = Hoehenunterschied / Zufall(2..3), die Plateaulaengen aus einer
+Dirichlet-Verteilung, die Gesamtneigung bleibt genau. Abschaltbar mit
+`SCHRAEGE_ZERLEGEN = False`. Nordkanten bleiben unberuehrt.
+
+78 Pruefwaende (mud und san, 13 Zuege, 3 Saaten): kein Rueckfall, 0
+unpassend, 0 Loch, 0 hart. Bildvergleich gegen sechs Originale im Chat.

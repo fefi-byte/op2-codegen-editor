@@ -190,6 +190,38 @@ def _wand_achse(x0, y0, x1, y1, hoch_seite: str):
     return ("h", -1 if lx > 0 else 1)
 
 
+# Flache Schraegen wie in den Originalen: waagerechte Laeufe, verbunden durch
+# kurze 45-Grad-Abstiege. Gemessen an 20 abfallenden Suedwaenden aus allen 54
+# Karten (cm03, cm04, eden03, mp4_03, mp4_06, mp4_12, ...): keine einzige
+# laeuft gleichmaessig 2:1 -- jede ist eine Folge aus Plateau und 45-Grad-
+# Stueck von zwei bis drei Zellen. Gleichmaessig gelegt wurde daraus bei den
+# Kacheln eine Treppe aus Ein-Zellen-Versaetzen.
+SCHRAEGE_ZERLEGEN = True
+SCHRAEGE_STUECK = (2.0, 3.0)      # Laenge eines 45-Grad-Stuecks in Kacheln
+
+
+def _schraege_profil(lx: float, ly: float, rng):
+    """Flache Schraege -> (Stuetzstellen x, y) aus Plateaus und 45-Grad.
+
+    `lx` ist die waagerechte Laenge, `ly` (<= lx) der Hoehenunterschied, beide
+    in Kacheln und positiv. Die Gesamtneigung bleibt genau erhalten.
+    """
+    if ly < 0.75 or ly >= 0.9 * lx:
+        return np.array([0.0, lx]), np.array([0.0, ly])
+    k = max(1, int(round(ly / rng.uniform(*SCHRAEGE_STUECK))))
+    stueck = ly / k
+    flach = (lx - ly) * rng.dirichlet(np.full(k + 1, 2.0))
+    xs, ys = [0.0], [0.0]
+    for i in range(k + 1):
+        xs.append(xs[-1] + flach[i])
+        ys.append(ys[-1])
+        if i < k:
+            xs.append(xs[-1] + stueck)
+            ys.append(ys[-1] + stueck)
+    xs[-1] = lx
+    return np.array(xs), np.array(ys)
+
+
 def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
                    rng, hoehe_min: float = HOEHE_MIN,
                    hoehe_max: float = HOEHE_MAX, unruhe: float = UNRUHE,
@@ -224,10 +256,18 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
         x1, y1 = punkte[i + 1]
         art, ri = _wand_achse(x0, y0, x1, y1, hoch_seite)
         n = int(max(abs(x1 - x0), abs(y1 - y0)) * FEIN) + 1
+        profil = None
+        if (SCHRAEGE_ZERLEGEN and art == "v" and ri > 0
+                and abs(y1 - y0) > 0):
+            profil = _schraege_profil(abs(x1 - x0), abs(y1 - y0), rng)
         for k in range(n):
             u = k / max(1, n - 1)
             px = (x0 + (x1 - x0) * u + 0.5) * FEIN
-            py = (y0 + (y1 - y0) * u + 0.5) * FEIN
+            if profil is None:
+                py = (y0 + (y1 - y0) * u + 0.5) * FEIN
+            else:
+                hy = float(np.interp(abs(x1 - x0) * u, *profil))
+                py = (y0 + np.sign(y1 - y0) * hy + 0.5) * FEIN
             w = wandern[min(s, schritte - 1)] * FEIN
             d = dicke[min(s, schritte - 1)] * FEIN
             # Abstand zum naechsten Ende des ganzen Zuges, in Kacheln.
