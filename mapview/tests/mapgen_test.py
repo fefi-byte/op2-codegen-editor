@@ -1433,6 +1433,45 @@ def check_klippe_algo():
         check(f"algorithmisch ohne Loch ({name})", lo == 0,
               f"{lo} Nahtstellen")
 
+    # Der Loeser: jedes Nachbarpaar belegt oder nach der Kantenzuordnung
+    # erlaubt. Der gierige Setzer lag hier bei 0,9 bis 8,6 % regelwidrig --
+    # die Gegenprobe zeigt, dass die Pruefung das auch sieht.
+    from cliff_tiles import modell as _ttm
+    tt = _ttm()
+
+    def regelwidrig(g, m):
+        h, w = g.shape
+        n = 0
+        for y in range(h):
+            for x in range(w):
+                for r, dx, dy in (("O", 1, 0), ("S", 0, 1)):
+                    nx, ny = x + dx, y + dy
+                    if nx >= w or ny >= h or not (m[y, x] and m[ny, nx]):
+                        continue
+                    a, b = int(g[y, x]), int(g[ny, nx])
+                    if not (tt.passt(a, b, r) or K.passt(a, b, r)):
+                        n += 1
+        return n
+
+    alt = KA.LOESER
+    try:
+        for name, punkte, seite in zuege:
+            KA.LOESER = True
+            g = np.full((32, 64), gr, dtype=np.int32)
+            m, _z = KA.klippe_aus_linie(g, punkte, seite, tm,
+                                        np.random.default_rng(7), "mud")
+            check(f"Loeser ohne regelwidrige Paare ({name})",
+                  m.sum() > 40 and regelwidrig(g, m) == 0,
+                  f"{regelwidrig(g, m)} Paare, {int(m.sum())} Kacheln")
+        KA.LOESER = False
+        g = np.full((32, 64), gr, dtype=np.int32)
+        m, _z = KA.klippe_aus_linie(g, [(4, 14), (57, 14)], "oben", tm,
+                                    np.random.default_rng(7), "mud")
+        check("ohne Loeser bleiben regelwidrige Paare -- die Pruefung misst "
+              "etwas", regelwidrig(g, m) > 0, f"{regelwidrig(g, m)} Paare")
+    finally:
+        KA.LOESER = alt
+
     # Gegenprobe: ohne die Randregel muss die Pruefung durchfallen.
     g = np.full((32, 64), gr, dtype=np.int32)
     fein, achse = KA.band_aus_linie([(4, 20), (57, 8)], "oben", 64, 32,

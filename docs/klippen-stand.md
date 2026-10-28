@@ -2251,3 +2251,75 @@ Klippenpruefungen.
 Schalter in `terrain_panel`. `check_klippe_algo` in der mapgen-Suite prueft
 hart und Loch auf vier Zuegen, dass die Pruefung ohne die Randregel durchfaellt,
 und dass san und sno sich sauber verweigern. Alle drei Suiten gruen.
+
+## 17. Der Gelaende-Loeser: suchen statt setzen
+
+Der Setzer aus Abschnitt 16 waehlt je Zelle eine Kachel, die das Gelaende
+erfuellt -- ob zwei Nachbarn zueinander passen, ist dort keine Bedingung. Der
+Blockloeser `mapgen.klippe_loesen` wiederum sucht passende Paare, kennt aber
+das Gelaende nicht. `klippe_algo.loesen` verbindet beides.
+
+### Was der gierige Setzer wirklich liefert
+
+Auf 45 Waenden (neun Zuege, fuenf Saaten) ueber `klippe_aus_linie` gemessen:
+
+    regelwidrig (weder belegt noch erlaubt)    6,5 %
+    unbelegt (in keiner der 54 Karten)          41,9 %
+    Loch                                        3
+
+Das sind die Kacheln, die "nicht zueinander passen". Die 0,9 bis 5,1 % aus
+Abschnitt 16 waren zu optimistisch.
+
+### Warum der erste Loeser NICHTS fand
+
+Mit dem Gelaende als harter Bedingung war jede der neun Waende unloesbar --
+erschoepfend durchsucht in Millisekunden. Der Grund: `verlangt` liest den Rand
+einer Kachel aus ihrem EIGENEN aeussersten Teilfeld. Links und rechts einer
+Naht sind das zwei verschiedene Spalten, und an **23 bis 29 % der Naehte**
+weichen sie ab. Das Gelaende verlangt dann von zwei Nachbarn Raender, die
+nicht zusammenpassen.
+
+### Was half (alles gemessen)
+
+| Schritt | geloest | unbelegt |
+|---|---|---|
+| Gelaende hart, wie es ist | 0/27 | -- |
+| `naht_teilen` (Fels, wo eine Seite Fels hat) | 12/27 | 8,5 % |
+| dasselbe mit Boden statt Fels | 0/9 | -- |
+| Berichtigung schreibt beide Nahtseiten | schlechter (4/9) | -- |
+| **Abweichung vom Gelaende 0 bis 4 Abschnitte, stufenweise** | **27/27** | 15 % |
+| **zuerst nur belegte Paare, Abweichung 4** | 23/27 | **0 %** |
+
+Hart bleiben dabei drei Dinge: **kein Fels zum offenen Boden** (hart = 0),
+**kein Loch** (`ke.loch` als Paarverbot -- ohne das stiegen die Loecher mit
+der Abweichung auf 12 bis 29), und **jedes Paar belegt oder erlaubt**. Das
+Gelaende ist nur noch Vorlage: Abweichungen kosten, verbieten aber nichts.
+
+### Stand gegen vorher (45 Waende, `klippe_aus_linie`)
+
+                    bisher    Loeser    Originalkarten
+    regelwidrig     6,5 %     0 %       0 %
+    unbelegt        41,9 %    1,6 %     --
+    hart            0         0         --
+    Loch            3         0         --
+    gleiche Nachbarn 2,0 %    2,2 %     ~1 %
+    Naht            22,9      23,9      18,4
+    Zeit je Wand    0,13 s    0,25 s (max 1,7 s)
+
+Die Naht ist leicht schlechter: der Loeser ordnet erst nach Gelaende und
+Beleg, dann nach Naht. Das ist der naechste Hebel.
+
+### Wo es steht
+
+`klippe_algo.loesen`, `loesen_stufenweise`, `naht_teilen`,
+`gelaende_angleichen`; Schalter `LOESER` (an), Stufen in `LOESER_STUFEN`.
+Findet keine Stufe etwas, faellt `klippe_aus_linie` auf `setzen` mit dem
+ungeteilten Gelaende zurueck. In der mapgen-Suite: "Loeser ohne regelwidrige
+Paare" auf vier Zuegen, mit Gegenprobe ohne Loeser (14 Paare).
+
+### Offen
+
+- **Im Spiel ansehen.** Alle Zahlen sind gegen die Tabellen gemessen, kein
+  Bild ist angesehen.
+- Naht als Teil der Ordnung frueher gewichten.
+- san und sno: weiterhin ohne Handzuordnung, also ohne `vorrat`.

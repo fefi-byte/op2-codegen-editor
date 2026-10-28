@@ -530,6 +530,296 @@ def setzen(grid: np.ndarray, fein: np.ndarray, vor: dict,
     return maske, ber
 
 
+# Der Loeser darf so lange suchen, dann faellt er auf `setzen` zurueck.
+LOESER_ZEIT = 3.0
+
+
+def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
+           zeit: float = LOESER_ZEIT, abweichung: int = 0,
+           gelaende_zuerst: bool = True, loch_erlaubt: bool = False,
+           nur_belegt: bool = False):
+    """Gelaende -> Kacheln, aber GESUCHT statt gesetzt.
+
+    `setzen` waehlt je Zelle eine Kachel, die das Gelaende erfuellt, und
+    schaut erst danach auf die Naht. Ob die beiden Nachbarn ueberhaupt
+    zueinander passen, ist dort keine Bedingung -- jede Kachel liest ihren
+    EIGENEN Rand des Gelaendes, und links und rechts einer Naht sind das
+    verschiedene Teilfelder. Daher die 0,9 bis 5,1 % regelwidrigen Paare.
+
+    Hier sind beide Auskuenfte hart:
+
+        Gelaende    jede Zelle nur aus den Kacheln, die ihren Rand zeigen
+                    (wie `setzen` -- hart und Loch bleiben ausgeschlossen)
+        Paar        jedes gerade Nachbarpaar ist in den 54 Karten belegt
+                    ODER nach der Kantenzuordnung erlaubt
+
+    Gesucht wird mit Rueckverfolgung: immer die Zelle mit den wenigsten
+    Moeglichkeiten zuerst, und nach jeder Wahl werden die Nachbarn
+    nachgefiltert -- laeuft einer leer, wird sofort zurueckgenommen.
+
+    Reihenfolge der Kandidaten, wie im Blockloeser gemessen: erst die an allen
+    gesetzten Nachbarn BELEGTEN (belegt ist mehr wert als erlaubt), dann keine
+    Wiederholung des Nachbarn, dann die Naht.
+
+    -> (maske, Bericht) oder None, wenn innerhalb von `zeit` nichts gefunden
+    wurde. Dann ist `grid` unveraendert.
+    """
+    import sys
+    import time
+
+    from cliff_kanten import modell as _km
+    from cliff_tiles import modell as _tm
+
+    _K, PX = _modelle()
+    tt = _tm()
+    ke = _km()
+    h, w = grid.shape
+
+    hat = _zellen(fein)
+    zellen = []
+    dom: dict = {}
+    fehl_von: dict = {}
+    for y in range(h):
+        for x in range(w):
+            a = fein[y * FEIN:(y + 1) * FEIN, x * FEIN:(x + 1) * FEIN]
+            if not hat[y, x]:
+                continue
+            soll = verlangt(fein, x, y)
+            anteil = float(a.mean())
+            offen = set()
+            for r in SEITEN:
+                dx, dy = VERSATZ[r]
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h) or not hat[ny, nx]:
+                    offen.add(r)
+            kand = []
+            for t, (s, fa) in vor.items():
+                # Hart: kein Fels zum offenen Boden hin.
+                if any(u == FELS for r in offen for u in s[r]):
+                    continue
+                fehl = sum(1 for r in SEITEN for u, v in zip(s[r], soll[r])
+                           if u != EGAL and u != v)
+                if fehl > abweichung:
+                    continue
+                kand.append((fehl, abs(fa - anteil), t))
+            if not kand:
+                return None
+            kand.sort()
+            zellen.append((x, y))
+            dom[(x, y)] = [t for _f, _d, t in kand]
+            fehl_von[(x, y)] = {t: f for f, _d, t in kand}
+    if not zellen:
+        return None
+    drin = set(zellen)
+
+    nachbarn = {}
+    for (x, y) in zellen:
+        nb = []
+        for r in SEITEN:
+            dx, dy = VERSATZ[r]
+            p = (x + dx, y + dy)
+            if p in drin:
+                nb.append((r, p))
+        nachbarn[(x, y)] = nb
+
+    _ok: dict = {}
+
+    def ok(a, b, r):
+        """Darf b in Richtung r neben a liegen? (belegt oder erlaubt)"""
+        k = (a, b, r)
+        v = _ok.get(k)
+        if v is None:
+            v = ((tt.passt(a, b, r) or (not nur_belegt and ke.passt(a, b, r)))
+                 and (loch_erlaubt or not ke.loch(a, b, r)))
+            _ok[k] = v
+        return v
+
+    belegt: dict = {}
+    start = time.time()
+    schritte = [0]
+
+    def ordnen(kand, p):
+        x, y = p
+        gesetzt = [(r, belegt[q]) for r, q in nachbarn[p] if q in belegt]
+        nb_kacheln = {t for _r, t in gesetzt}
+
+        fehl = fehl_von[p]
+
+        def schluessel(i_t):
+            i, t = i_t
+            rang = 0 if all(tt.passt(t, b, r) for r, b in gesetzt) else 1
+            gleich = 1 if t in nb_kacheln else 0
+            s = n = 0.0
+            for r, b in gesetzt:
+                d = PX.naht(t, b, r)
+                if d is not None:
+                    s += d
+                    n += 1
+            stufen = (fehl[t], rang) if gelaende_zuerst else (rang, fehl[t])
+            # Der Rang im Gelaende (Felsanteil) bricht Gleichstand.
+            return stufen + (gleich, s / n if n else 0.0, i)
+
+        return [t for _i, t in sorted(enumerate(kand), key=schluessel)]
+
+    def schritt():
+        if time.time() - start > zeit:
+            raise TimeoutError
+        schritte[0] += 1
+        beste = None
+        for p in zellen:
+            if p in belegt:
+                continue
+            k = dom[p]
+            if beste is None or len(k) < len(dom[beste]):
+                beste = p
+                if len(k) <= 1:
+                    break
+        if beste is None:
+            return True
+        p = beste
+        for t in ordnen(dom[p], p):
+            belegt[p] = t
+            # Vorausschau: die freien Nachbarn auf das einschraenken, was
+            # neben t stehen darf. Laeuft einer leer, gleich weiter.
+            alt = []
+            tot = False
+            for r, q in nachbarn[p]:
+                if q in belegt:
+                    continue
+                neu = [u for u in dom[q] if ok(t, u, r)]
+                alt.append((q, dom[q]))
+                dom[q] = neu
+                if not neu:
+                    tot = True
+                    break
+            if not tot and schritt():
+                return True
+            for q, d in alt:
+                dom[q] = d
+            del belegt[p]
+        return False
+
+    alt_grenze = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(alt_grenze, len(zellen) + 500))
+    try:
+        gefunden = schritt()
+    except TimeoutError:
+        gefunden = False
+    finally:
+        sys.setrecursionlimit(alt_grenze)
+    if not gefunden:
+        return None
+    maske = np.zeros(grid.shape, dtype=bool)
+    for (x, y), t in belegt.items():
+        grid[y, x] = t
+        maske[y, x] = True
+    ber = Counter(gesetzt=len(belegt), Suchschritte=schritte[0])
+    return maske, ber
+
+
+def naht_teilen(fein: np.ndarray) -> np.ndarray:
+    """Beide Kacheln an einer Naht sollen dasselbe lesen.
+
+    `verlangt` liest den Rand einer Kachel aus ihrem EIGENEN aeussersten
+    Teilfeld. Links und rechts einer Naht sind das zwei verschiedene Spalten,
+    und gemessen weichen sie an 23 bis 29 % der Naehte voneinander ab. Dann
+    verlangt das Gelaende von zwei Nachbarn Raender, die nicht
+    zusammenpassen -- und keine Wahl kann beides erfuellen. Der Loeser fand
+    darum auf keinem der neun Testzuege eine Belegung.
+
+    Hier wird an jeder Naht zwischen zwei Klippenzellen beidseits dasselbe
+    eingetragen, und zwar Fels, wo eine der beiden Fels hat. Gemessen gegen
+    "Boden, wo eine Boden hat": damit loeste der Loeser 0 von 9, mit Fels 6
+    von 9 ohne jede weitere Hilfe. Die Wand haengt so eher zusammen, statt an
+    der Naht zu reissen.
+    """
+    fein = fein.copy()
+    fh, fw = fein.shape
+    h, w = fh // FEIN, fw // FEIN
+    hat = _zellen(fein)
+    for y in range(h):
+        for x in range(w):
+            if not hat[y, x]:
+                continue
+            for r, geg in (("O", "W"), ("S", "N")):
+                dx, dy = VERSATZ[r]
+                nx, ny = x + dx, y + dy
+                if not (nx < w and ny < h) or not hat[ny, nx]:
+                    continue
+                a = _randlinie(fein, x, y, r)
+                b = _randlinie(fein, nx, ny, geg)
+                v = a | b
+                a[:] = v
+                b[:] = v
+    return fein
+
+
+def gelaende_angleichen(fein: np.ndarray, vor: dict,
+                        teilen: bool = False) -> np.ndarray:
+    """Randregel, Naht und Berichtigung im Wechsel, bis nichts mehr aendert.
+
+    Die Regeln muessen abwechselnd laufen. Die Berichtigung kann eine duenne
+    Randzelle ganz leeren; danach steht die Nachbarzelle mit Fels an einer
+    Naht, hinter der nun Biom liegt -- die Randregel hatte zu diesem Zeitpunkt
+    noch Klippe gesehen. Ohne den Wechsel blieb auf einer 2:1-Schraege genau
+    eine harte Stelle stehen.
+
+    `teilen` nimmt `naht_teilen` dazu -- fuer den Loeser. Der gierige Setzer
+    bekommt es nicht: dort brachte es harte Uebergaenge (Zickzack 2,
+    senkrecht 3 bis 5), weil er an den Naehten nicht nachfragt.
+    """
+    for _r in range(8 if teilen else 4):
+        vorher = fein
+        fein, _b = rand_dem_biom(fein)
+        fein, _b = naht_haelt(fein)
+        if teilen:
+            fein = naht_teilen(fein)
+        fein, _b = angleichen(fein, vor)
+        if np.array_equal(fein, vorher):
+            break
+    return fein
+
+
+# Den Loeser benutzen; ohne Loesung faellt `klippe_aus_linie` auf `setzen`
+# zurueck.
+LOESER = True
+
+# Die Stufen, in denen gesucht wird: (nur belegte Paare?, Abweichung vom
+# Gelaende in Abschnitten, Zeit in Sekunden). Die erste, die eine Belegung
+# findet, gilt. Gemessen auf 27 Waenden (neun Zuege, drei Saaten):
+#
+#   nur belegt, Abweichung 4        23 von 27, 0 % unbelegte Paare
+#   belegt oder erlaubt, 0 bis 4    27 von 27, 15 % unbelegt
+#   zum Vergleich `setzen`          38 % unbelegt, 0,9 bis 5,1 % regelwidrig
+#
+# Nur-belegt mit WENIGER Abweichung loest weniger (1: 12, 2: 16, 3: 20) und
+# laeuft dabei oft in die Zeitgrenze; mit mehr (6) ebenfalls, weil die
+# Domaenen zu gross werden. 4 ist der gemessene Sattel.
+LOESER_STUFEN = (
+    (True, 4, 1.5),
+    (False, 0, 1.0),
+    (False, 1, 1.0),
+    (False, 2, 1.0),
+    (False, 3, 1.0),
+    (False, 4, 1.0),
+)
+
+
+def loesen_stufenweise(grid: np.ndarray, fein: np.ndarray, vor: dict,
+                       stufen=LOESER_STUFEN):
+    """`loesen` ueber die Stufen in `LOESER_STUFEN` -> (maske, Bericht) | None.
+
+    Der Bericht nennt die Stufe, die gegriffen hat.
+    """
+    for i, (nur_belegt, abw, zeit) in enumerate(stufen):
+        r = loesen(grid, fein, vor, zeit=zeit, abweichung=abw,
+                   nur_belegt=nur_belegt)
+        if r is not None:
+            r[1]["Stufe"] = i
+            return r
+    return None
+
+
 def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str, tm,
                      rng, familie: str = "mud",
                      hoehe_min: float = HOEHE_MIN,
@@ -550,19 +840,14 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str, tm,
     if not fein.any():
         return np.zeros(grid.shape, dtype=bool), zellen
     fein, _b = fuellregel(fein, achse, rng)
-    # Die beiden Regeln muessen abwechselnd laufen. Die Berichtigung kann eine
-    # duenne Randzelle ganz leeren; danach steht die Nachbarzelle mit Fels an
-    # einer Naht, hinter der nun Biom liegt -- die Randregel hatte zu diesem
-    # Zeitpunkt noch Klippe gesehen. Ohne den Wechsel blieb auf einer
-    # 2:1-Schraege genau eine harte Stelle stehen.
-    for _r in range(4):
-        vorher = fein
-        fein, _b = rand_dem_biom(fein)
-        fein, _b = naht_haelt(fein)
-        fein, _b = angleichen(fein, vor)
-        if np.array_equal(fein, vorher):
-            break
-    maske, _ber = setzen(grid, fein, vor)
+    maske = None
+    if LOESER:
+        r = loesen_stufenweise(grid, gelaende_angleichen(fein, vor, True),
+                               vor)
+        if r is not None:
+            maske = r[0]
+    if maske is None:
+        maske, _ber = setzen(grid, gelaende_angleichen(fein, vor), vor)
     for y, x in zip(*np.nonzero(maske)):
         zt = celltypes.default_cell_type(int(grid[y, x]))
         if zt is not None:
