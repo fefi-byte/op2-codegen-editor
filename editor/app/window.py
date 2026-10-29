@@ -12,12 +12,15 @@ from .window_project import _ProjectMixin
 from .window_build import _BuildMixin
 from .window_overlays import _OverlaysMixin
 from .window_terrain import _TerrainMixin
+from .window_klippen import _KlippenMixin
+from .window_neukarte import _NeueKarteMixin
 
 
 class EditorWindow(
     _MenuMixin, _SidebarMixin, _OverviewMixin,
     _PlacementMixin, _MapPickMixin, _ProjectMixin,
-    _BuildMixin, _OverlaysMixin, _TerrainMixin, QMainWindow,
+    _BuildMixin, _OverlaysMixin, _TerrainMixin, _KlippenMixin,
+    _NeueKarteMixin, QMainWindow,
 ):
     def __init__(self):
         super().__init__()
