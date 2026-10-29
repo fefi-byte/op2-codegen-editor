@@ -722,7 +722,17 @@ def check_klippe_algo():
                   f"{lo} Nahtstellen")
             # Randkacheln mitten in der Wand. Die Originalkarten liegen bei
             # 1,22 % (mud) und 0,95 % (san); 2 % ist die Schwelle, ab der es
-            # im Bild als Band quer durch den Fels auffaellt.
+            # im Bild als Band quer durch den Fels auffaellt. Ueber drei
+            # Saaten gemittelt: eine einzelne Wand streut stark (san
+            # senkrecht 0,4 bis 3,9 % je Saat), und an einer Saat haengend
+            # kippte die Pruefung bei jeder Aenderung am Gelaende.
+            for saat in (8, 9):
+                g2 = np.full((32, 64), grf, dtype=np.int32)
+                m2, _ = KA.klippe_aus_linie(g2, punkte, seite, tm,
+                                            np.random.default_rng(saat), fam)
+                _h, _l, i2, s2 = maengel(g2, m2, fam)
+                innen += i2
+                seiten += s2
             anteil = 100 * innen / max(1, seiten)
             check(f"keine Randkacheln mitten in der Wand ({fam} {name})",
                   anteil <= 2.0, f"{innen} von {seiten} ({anteil:.2f} %)")

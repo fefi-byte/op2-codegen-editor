@@ -2715,3 +2715,14 @@ geprueft: gesetzte Wand kachelgleich zur Vorschau.
   (rund 2 s), damit die erste Mausbewegung nicht einfriert.
 - Seitenwechsel rechnet neu; Setzen, Verwerfen, anderer Pinsel und das
   Verlassen des Gelaende-Reiters nehmen die Vorschau weg.
+
+**Gerade Stuecke gerade (29.10.2026).** Im Editor war die Wand zwischen zwei
+Punkten auf derselben Hoehe wellig: Oberkante und Dicke wanderten frei, und
+die Unterkante sprang von Zelle zu Zelle um eine Reihe. Auf waagerecht oder
+senkrecht gezeichneten Abschnitten wandert die Kante jetzt nicht mehr
+(`GERADE_UNRUHE` = 0) und die Dicke streut nur noch zu 15 %
+(`GERADE_DICKE`); an Knicks zu schraegen Stuecken wird ueber zwei Kacheln
+uebergeblendet. Schraegen bleiben unveraendert. Nebenbei sinken die
+Randkacheln mitten in der Wand (san senkrecht im Mittel 2,4 -> 0,6 %). Die
+Suite-Pruefung dazu mittelt jetzt ueber drei Saaten, weil eine einzelne Wand
+je Saat zwischen 0,4 und 3,9 % streute.

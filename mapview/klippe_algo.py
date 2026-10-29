@@ -78,6 +78,24 @@ HOEHE_MIN = 1.5
 HOEHE_MAX = 2.5
 UNRUHE = 0.35                  # wie stark die Oberkante wandert, in Kacheln
 
+# Gerade gezeichnete Abschnitte (waagerecht oder senkrecht) sollen auch gerade
+# aussehen. Mit voller Unruhe und voller Dickenstreuung sprang die Unterkante
+# einer waagerechten Wand von Zelle zu Zelle um eine Reihe -- im Editor sah
+# die Linie zwischen zwei Punkten auf derselben Hoehe wellig aus. Auf geraden
+# Stuecken wird die Unruhe deshalb mit `GERADE_UNRUHE` und die Streuung der
+# Dicke um ihre Mitte mit `GERADE_DICKE` gestaucht; an Knicks zu einem
+# schraegen Stueck wird ueber `GERADE_UEBERGANG` Kacheln uebergeblendet, damit
+# dort kein Absatz entsteht.
+#
+# Gemessen ueber 10 Saaten (Randkacheln mitten in der Wand, Mittel/Max):
+#   Unruhe/Dicke  1,0/1,0 (vorher)  san senkrecht 2,4 / 4,3 %   mud 0,8 / 5,2 %
+#                 0/0,3             san senkrecht 1,2 / 3,9 %   mud 0,2 / 0,7 %
+#                 0/0,15            san senkrecht 0,6 / 0,7 %   mud 0,0 / 0,0 %
+# Unpassend, Loch, hart bleiben 0; gleiche Nachbarn mud 1,5 -> 1,3 %.
+GERADE_UNRUHE = 0.0
+GERADE_DICKE = 0.15
+GERADE_UEBERGANG = 2.0
+
 # Faellt die Wand nach NORDEN, sieht man keine Felswand, nur die Abbruchkante:
 # in cm02 ist das eine Zelle (Zelltyp N; Spaltenmuster "N" 162x, "NN" 77x),
 # gegen "HLL"/"HHLL" bei der Suedwand. Die N-Kacheln tragen innen eine einzige
@@ -250,6 +268,25 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
     wandern = _glatt(schritte, rng, unruhe, 6 * FEIN)
     dicke_r = _glatt(schritte, rng, 1.0, 10 * FEIN)
     anteil = 0.5 + 0.5 * np.tanh(dicke_r)
+    # Je Schritt: liegt er auf einem geraden Abschnitt? 1 = schraeg, 0 = gerade,
+    # dazwischen weich uebergeblendet.
+    schraeg = np.ones(schritte)
+    s = 0
+    for i in range(len(punkte) - 1):
+        x0, y0 = punkte[i]
+        x1, y1 = punkte[i + 1]
+        n = int(max(abs(x1 - x0), abs(y1 - y0)) * FEIN) + 1
+        if x0 == x1 or y0 == y1:
+            schraeg[s:s + n] = 0.0
+        s += n
+    if not schraeg.all() and schraeg.any():
+        b = max(1, int(GERADE_UEBERGANG * FEIN))
+        schraeg = np.convolve(np.pad(schraeg, b, mode="edge"),
+                              np.ones(2 * b + 1) / (2 * b + 1),
+                              mode="same")[b:b + schritte]
+    wandern = wandern * (GERADE_UNRUHE + (1 - GERADE_UNRUHE) * schraeg)
+    anteil = 0.5 + (anteil - 0.5) * (GERADE_DICKE
+                                     + (1 - GERADE_DICKE) * schraeg)
     dicke = hoehe_min + (hoehe_max - hoehe_min) * anteil
     dicke_nord = NORD_MIN + (NORD_MAX - NORD_MIN) * anteil
 
