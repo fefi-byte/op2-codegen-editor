@@ -123,6 +123,9 @@ class PaintLayers:
         # Cells of the last stroke -- they stay pure ground.
         self.gemalt = np.zeros((h, w), dtype=bool)
         self.letzter_strich = None      # Maske des zuletzt beendeten Strichs
+        # Klippenzellen beim Beginn des Strichs (`strich_beginnen`).
+        self.strich_war_klippe = None
+        self.letzter_war_klippe = None
         # Offene Enden gesetzter Klippen -- daran kann weitergezeichnet werden.
         # Sie werden ausdruecklich gefuehrt statt aus der Karte gesucht: ein
         # ueberlappter Block ist teilweise ueberschrieben und per Mustersuche
@@ -193,6 +196,17 @@ class PaintLayers:
         self.familie = fam.astype(np.int16)
 
     # ------------------------------------------------------------------
+    def strich_beginnen(self) -> None:
+        """Vor dem Strich festhalten, wo Klippen stehen.
+
+        Am Ende kann so unterschieden werden, ob der Strich eine Wand
+        durchschnitten hat oder nur daneben gemalt -- nur im ersten Fall
+        werden die Enden neu geloest.
+        Remember where cliffs stand, to tell a cut from painting next to a wall.
+        """
+        zt = self._rohgitter() & CELL_TYPE_MASK
+        self.strich_war_klippe = np.isin(zt, CLIFF_CELLS)
+
     def strich_beenden(self) -> tuple[int, int, int, int] | None:
         """Schutz aufheben und den Bereich des Strichs zurueckgeben.
 
@@ -223,6 +237,8 @@ class PaintLayers:
         ys, xs = np.nonzero(self.gemalt)
         bereich = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
         self.letzter_strich = self.gemalt.copy()
+        self.letzter_war_klippe = self.strich_war_klippe
+        self.strich_war_klippe = None
         self.gemalt[:, :] = False
         return bereich
 
@@ -239,14 +255,19 @@ class PaintLayers:
         -- painting ground across a wall now makes a proper ramp gap.
         """
         strich = self.letzter_strich
+        war = self.letzter_war_klippe
         self.letzter_strich = None
-        if strich is None or not strich.any():
+        self.letzter_war_klippe = None
+        if strich is None or war is None or not war.any():
             return [], None
         roh = self._rohgitter()
         gitter = ((roh >> CELL_TYPE_BITS) & MAPPING_INDEX_MASK).astype(np.int32)
         zt = roh & CELL_TYPE_MASK
         klippe = np.isin(zt, CLIFF_CELLS)
-        entfernt = strich & ~klippe
+        # Nur, was der Strich tatsaechlich von Klippe zu Boden gemacht hat --
+        # ein Strich, der bloss NEBEN einer Wand malt, schneidet nichts.
+        # Only what the stroke actually turned from cliff into ground.
+        entfernt = strich & war & ~klippe
         if not entfernt.any():
             return [], None
         p = np.pad(entfernt, 1)

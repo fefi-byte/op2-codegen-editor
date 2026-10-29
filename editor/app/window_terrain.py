@@ -294,6 +294,9 @@ class _TerrainMixin:
         self._strich_rechteck = None
         self._strich_rueck = []
         self._strich_offen = True
+        ebenen = self._paint_layers()
+        if ebenen is not None:
+            ebenen.strich_beginnen()
         # Nur der erste Aufruf eines Strichs zaehlt als Klick. Der
         # Klippenpinsel setzt sonst bei jeder Mausbewegung einen Punkt.
         # Only a stroke's first call counts as a click, otherwise the cliff
