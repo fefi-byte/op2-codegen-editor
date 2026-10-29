@@ -16,7 +16,7 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 - **Cliff wall height from the map**: the cliff brush has a "Wall height"
   choice — "like map" (default) measures the walls around the line, else
-  across the whole map, else 3 cells as in the stock maps; or fixed 2–6
+  across the whole map, else 3 cells as in the stock maps; or fixed 3–6
   cells. The measured value is shown in the box and the live preview
   follows it.
 

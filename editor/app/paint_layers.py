@@ -500,9 +500,14 @@ class PaintLayers:
 
         self.klippen_enden = [(ax, ay) for ax, ay in self.klippen_enden
                               if lebt(ax, ay)]
+        # Gemerkte Enden sind genau (der gezeichnete Punkt), die gerasterten
+        # nur auf drei Zellen genau. Liegt ein gerastertes daneben, ist es
+        # dasselbe Ende -- sonst standen an jedem Ende zwei Ringe.
+        # A remembered end is exact; a grid end next to it is the same end.
         for ax, ay in self.klippen_enden:
-            if not any((ax, ay) == (bx, by) for bx, by in enden):
-                enden.append((ax, ay))
+            enden = [(bx, by) for bx, by in enden
+                     if max(abs(bx - ax), abs(by - ay)) > 3]
+        enden.extend(self.klippen_enden)
         # Der Fingerabdruck traegt die Laenge der Liste -- nach dem Aufraeumen
         # also neu bilden, sonst rechnet der naechste Aufruf alles noch einmal.
         # The fingerprint carries the list length, so rebuild it after pruning.

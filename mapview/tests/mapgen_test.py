@@ -744,7 +744,7 @@ def check_klippe_algo():
     grf = next(t for t in range(2048)
                if tm.family_of[t] == tm.families.index("mud")
                and tm.placeable[t])
-    for soll in (2, 3, 5):
+    for soll in (3, 4, 5):
         g = np.full((32, 64), grf, dtype=np.int32)
         hmin, hmax = KA.dicke_aus_hoehe(soll)
         m, z = KA.klippe_aus_linie(g, [(4, 10), (57, 10)], "oben", tm,

@@ -187,11 +187,21 @@ def _glatt(n: int, rng, staerke: float, laenge: int) -> np.ndarray:
     keine Klippe mehr, sondern Rauschen.
     """
     laenge = max(1, laenge)
-    r = rng.normal(0.0, 1.0, n + laenge * 2)
+    # Mindestens acht Glaettungslaengen rechnen und auf DIESE Streuung
+    # normieren. Auf einer kurzen Wand (n kleiner als `laenge`) ist der
+    # Verlauf fast konstant; normiert man ihn auf seine eigene Streuung, wird
+    # aus dem kleinen Rest ein grosser fester Versatz -- die Wand lag dann
+    # bis zu vier Teilfelder neben der gezeichneten Linie.
+    # Normalise over at least eight smoothing lengths: on a short wall the
+    # curve is nearly constant, and normalising it by its own spread turned it
+    # into a large constant offset away from the drawn line.
+    m = max(n, 8 * laenge)
+    r = rng.normal(0.0, 1.0, m + laenge * 2)
     k = np.ones(laenge) / laenge
     g = np.convolve(r, k, mode="same")
-    g = np.convolve(g, k, mode="same")[laenge:laenge + n]
+    g = np.convolve(g, k, mode="same")[laenge:laenge + m]
     s = float(g.std())
+    g = g[:n]
     return g / s * staerke if s > 1e-9 else g
 
 
@@ -1273,8 +1283,13 @@ def loesen_stufenweise(grid: np.ndarray, fein: np.ndarray, vor: dict,
 # (2,0 -> 2,96; 3,0 -> 3,96; 4,0 -> 4,99; 5,0 -> 6,00), bei 0 hart und 0 Loch
 # auf jeder Hoehe. Also Dicke = Zellen - 1.
 WAND_ZELLEN = 3.0              # ohne Messung: wie die Originale
-WAND_ZELLEN_MIN = 2.0
-WAND_ZELLEN_MAX = 7.0
+# Untergrenze 3, nicht 2: vor Ort gemessen kommt oft 2,0 bis 2,6 heraus (cm02
+# an einzelnen Stellen 2,0, cm03 bis 2,1). Das ergab Fels unter 1,5 Kacheln,
+# und so duenn zerfaellt das Band in einzelne Flecken (im Editor gesehen,
+# siehe auch die Tabelle bei `HOEHE_MIN`: 1,0-2,0 reisst zum Faden). Die
+# Messung darf die Wand also hoeher machen, nie duenner als bisher.
+WAND_ZELLEN_MIN = 3.0
+WAND_ZELLEN_MAX = 6.0
 WAND_MESS_MIN = 12             # so viele Laeufe, bevor eine Messung zaehlt
 WAND_UMKREIS = 24              # Zellen um die Linie fuer die Messung vor Ort
 

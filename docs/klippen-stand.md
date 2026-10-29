@@ -2730,7 +2730,7 @@ je Saat zwischen 0,4 und 3,9 % streute.
 ## 25. Wandhoehe aus der Karte (29.10.2026)
 
 Die Wand war fest etwa 3 Zellen hoch. Jetzt richtet sie sich nach der Karte,
-oder nach der Wahl im Editor ("Wandhoehe": wie Karte, 2 bis 6 Zellen).
+oder nach der Wahl im Editor ("Wandhoehe": wie Karte, 3 bis 6 Zellen).
 
 **Gemessen wie in den Originalen** (`wandhoehe_messen`): je Spalte die Laeufe
 von H/L-Zellen, nur wo links und rechts auch Klippe steht -- also quer durch
@@ -2772,3 +2772,24 @@ springt fast immer um EINE Zelle, gleichmaessig verteilt (cm02 212,20:
 
 Sechs steile Zuege x 3 Saaten: unpassend mud 0,9 -> 0 %, unbelegt 27 -> 31 %,
 0 hart, 0 Loch, Median 36 ms. Die 78 Pruefwaende sind unveraendert.
+
+## 27. Kurze und duenne Klippen (29.10.2026)
+
+Zwei Rueckmeldungen aus dem Editor: kurze Klippen gelingen schlecht, und eine
+45-Grad-Linie zerfiel in der Vorschau in blasse Einzelstuecke.
+
+- **Kurze Waende lagen neben der Linie.** `_glatt` normierte den
+  Zufallsverlauf auf seine eigene Streuung. Auf einer Wand, die kuerzer als
+  die Glaettungslaenge ist, ist der Verlauf fast konstant -- aus dem kleinen
+  Rest wurde ein fester Versatz von bis zu vier Teilfeldern (2-Kachel-Schraege:
+  Wand eine Kachel ueber der Linie). Jetzt wird mindestens acht
+  Glaettungslaengen gerechnet und darauf normiert.
+- **Zu duenne Waende aus "wie Karte".** Vor Ort gemessen kommt oft 2,0 bis
+  2,6 heraus (cm02 an einzelnen Stellen 2,0, cm03 bis 2,1, mp4_07 2,0). Das
+  gab Fels unter 1,5 Kacheln, und so duenn zerfaellt das Band in Flecken --
+  das war die blasse, zerrissene 45-Grad-Wand. Untergrenze jetzt 3 Zellen
+  (`WAND_ZELLEN_MIN`), die Messung macht Waende nur noch hoeher; die Auswahl
+  "2 Zellen" ist entfernt.
+- **Doppelte Ringe an den Enden.** Ein gemerktes Ende und das daneben
+  gerasterte wurden beide angezeigt; das gerasterte entfaellt jetzt, wenn ein
+  gemerktes innerhalb von drei Zellen liegt.

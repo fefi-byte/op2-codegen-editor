@@ -109,7 +109,7 @@ class TerrainPanel(QWidget):
         # Wall height: "like map" measures the cliffs already there.
         self.klippen_hoehe_wahl = QComboBox()
         self.klippen_hoehe_wahl.addItem(tr("terrain.klippe_hoehe_karte"), None)
-        for n in (2, 3, 4, 5, 6):
+        for n in (3, 4, 5, 6):
             self.klippen_hoehe_wahl.addItem(tr("terrain.klippe_hoehe_n", n=n), n)
         self.klippen_hoehe_wahl.setToolTip(tr("terrain.klippe_hoehe_hint"))
         kform.addRow(tr("terrain.klippe_hoehe"), self.klippen_hoehe_wahl)
