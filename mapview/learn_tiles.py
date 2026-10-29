@@ -29,7 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from op2map import Op2Map, CELL_TYPE_BITS, MAPPING_INDEX_MASK  # noqa: E402
 import celltypes  # noqa: E402
 
-DEFAULT_GAME_DIR = Path(r"C:\Program Files (x86)\GOG Galaxy\Games\Outpost 2")
+from spielpfad import spielordner  # noqa: E402
+DEFAULT_GAME_DIR = spielordner()
 OUT_PATH = Path(__file__).with_name("tiles_model.npz")
 
 # Nur die Kampagnenkarten anlernen: Mehrspielerkarten sind auf Spielbarkeit

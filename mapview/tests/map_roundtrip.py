@@ -29,7 +29,8 @@ except Exception:
 from op2map import Op2Map  # noqa: E402
 import celltypes  # noqa: E402
 
-DEFAULT_GAME_DIR = Path(r"C:\Program Files (x86)\GOG Galaxy\Games\Outpost 2")
+from spielpfad import spielordner  # noqa: E402
+DEFAULT_GAME_DIR = spielordner()
 
 _failures: list[str] = []
 

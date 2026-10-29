@@ -71,7 +71,8 @@ import celltypes                                   # noqa: E402
 from op2map import Op2Map                          # noqa: E402
 from vol import VolFile                            # noqa: E402
 
-GAME_DIR = Path(r"C:\Program Files (x86)\GOG Galaxy\Games\Outpost 2")
+from spielpfad import spielordner  # noqa: E402
+GAME_DIR = spielordner()
 OUT_PATH = HERE / "cliff_tiles_model.npz"
 
 KLIPPE = (celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,

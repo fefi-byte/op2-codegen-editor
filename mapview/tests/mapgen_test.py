@@ -28,7 +28,8 @@ import celltypes  # noqa: E402
 import mapgen  # noqa: E402
 from op2map import Op2Map  # noqa: E402
 
-GAME = Path(r"C:\Program Files (x86)\GOG Galaxy\Games\Outpost 2")
+from spielpfad import karte_lesen, spielordner  # noqa: E402
+GAME = spielordner()
 _failures: list[str] = []
 
 
@@ -521,11 +522,12 @@ def check_features():
 
 
 def check_writes_map():
-    src = next(GAME.rglob("cm02.map"), None)
-    if not check("Vorlagenkarte gefunden", src is not None):
+    roh = karte_lesen("cm02.map")
+    if not check("Vorlagenkarte gefunden", roh is not None,
+                 f"in {GAME} -- OP2_GAME oder game_path in config.ini setzen"):
         return
     gen = mapgen.generate(mapgen.MapGenParams(width=64, height=64, seed=3))
-    m = mapgen.apply_to_map(Op2Map(src.read_bytes()), gen)
+    m = mapgen.apply_to_map(Op2Map(roh), gen)
     data = m.to_bytes()
     again = Op2Map(data)
     check("erzeugte Karte ist wieder lesbar",
