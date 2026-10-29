@@ -122,6 +122,7 @@ class PaintLayers:
         # Zellen des letzten Strichs -- sie bleiben reiner Boden.
         # Cells of the last stroke -- they stay pure ground.
         self.gemalt = np.zeros((h, w), dtype=bool)
+        self.letzter_strich = None      # Maske des zuletzt beendeten Strichs
         # Offene Enden gesetzter Klippen -- daran kann weitergezeichnet werden.
         # Sie werden ausdruecklich gefuehrt statt aus der Karte gesucht: ein
         # ueberlappter Block ist teilweise ueberschrieben und per Mustersuche
@@ -221,8 +222,72 @@ class PaintLayers:
             return None
         ys, xs = np.nonzero(self.gemalt)
         bereich = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
+        self.letzter_strich = self.gemalt.copy()
         self.gemalt[:, :] = False
         return bereich
+
+    def klippen_schnitte_schliessen(self):
+        """Wo der letzte Strich eine Klippe durchschnitten hat: Enden schliessen.
+
+        -> (aenderungen, bereich) -- bereich ist das Rechteck, das danach noch
+        einmal ohne Schutz gerechnet werden sollte (Boden an den neuen Enden),
+        oder None. Bisher blieb die Wand am Pinselrand offen abgeschnitten;
+        jetzt laufen beide Seiten sauber aus -- so entsteht auch eine Auffahrt
+        (Rampe): einfach Boden quer ueber die Wand malen.
+
+        Where the last stroke cut through a cliff, let both ends finish cleanly
+        -- painting ground across a wall now makes a proper ramp gap.
+        """
+        strich = self.letzter_strich
+        self.letzter_strich = None
+        if strich is None or not strich.any():
+            return [], None
+        roh = self._rohgitter()
+        gitter = ((roh >> CELL_TYPE_BITS) & MAPPING_INDEX_MASK).astype(np.int32)
+        zt = roh & CELL_TYPE_MASK
+        klippe = np.isin(zt, CLIFF_CELLS)
+        entfernt = strich & ~klippe
+        if not entfernt.any():
+            return [], None
+        p = np.pad(entfernt, 1)
+        nachbar = p[:-2, 1:-1] | p[2:, 1:-1] | p[1:-1, :-2] | p[1:-1, 2:]
+        angeschnitten = klippe & nachbar
+        if not angeschnitten.any():
+            return [], None
+        fams = [self.tm.families[int(self.tm.family_of[int(t)])]
+                for t in gitter[angeschnitten]]
+        familie = max(set(fams), key=fams.count)
+        if not klippe_algo.verfuegbar(self.tm, familie):
+            return [], None
+        vorher = gitter.copy()
+        r = klippe_algo.schnitt_schliessen(gitter, entfernt, self.tm, self.rng,
+                                           familie)
+        if r is None:
+            return [], None
+        geaendert, boden = r
+        h, w = gitter.shape
+        nicht_klippe = ~klippe | boden
+        for y, x in zip(*np.nonzero(boden)):
+            # Bodenkachel aus der Nachbarschaft; die Uebergaenge rechnet der
+            # Aufrufer danach ohnehin neu.
+            kandidaten = [int(vorher[yy, xx])
+                          for yy in range(max(0, y - 2), min(h, y + 3))
+                          for xx in range(max(0, x - 2), min(w, x + 3))
+                          if nicht_klippe[yy, xx] and not boden[yy, xx]]
+            if kandidaten:
+                gitter[y, x] = max(set(kandidaten), key=kandidaten.count)
+        aenderungen = []
+        for y, x in zip(*np.nonzero(gitter != vorher)):
+            kachel = int(gitter[y, x])
+            aenderungen.append((int(x), int(y), kachel,
+                                int(celltypes.default_cell_type(kachel))))
+        if not aenderungen:
+            return [], None
+        alle = strich | geaendert | boden
+        ys, xs = np.nonzero(alle)
+        bereich = (max(0, int(xs.min()) - 1), max(0, int(ys.min()) - 1),
+                   min(w - 1, int(xs.max()) + 1), min(h - 1, int(ys.max()) + 1))
+        return aenderungen, bereich
 
     def klippe_zeichnen(self, punkte, hoch_seite: str, wandhoehe=None
                         ) -> list[tuple[int, int, int, int]]:

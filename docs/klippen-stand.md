@@ -2813,3 +2813,25 @@ tieferen Laufs. Bei 45 Grad wird daraus eine durchgehende raue Wand, bei 1:1,5
 eine Kante mit Wandstuecken. Flachere Nordkanten bleiben wie bisher.
 Sechs steile Nordzuege x 3 Saaten, mud: unpassend 6,0 -> 0 %, unbelegt
 62 -> 32 %. Die 78 Pruefwaende: 0 unpassend, 0 Loch, 0 hart.
+
+## 29. Schnitt schliessen: Auffahrten und Entfernen (30.10.2026)
+
+Malt man "Tiefland" quer ueber eine Wand, blieb sie am Pinselrand offen
+abgeschnitten -- Kacheln mit Fels ins Freie (gemessen: 2 harte Stellen an
+einem 3-Zellen-Schnitt einer waagerechten mud-Wand). Jetzt schliesst der
+Strichabschluss die Enden (`klippe_algo.schnitt_schliessen`,
+`PaintLayers.klippen_schnitte_schliessen`):
+
+- Das Gelaende der Wand wird aus den Kachelbildern zurueckgewonnen
+  (`innenbilder`), im Schnitt geleert, am Rand zum Schnitt um eine
+  Teilfeldreihe zurueckgenommen und angeglichen.
+- Neu geloest werden nur die Zellen bis zwei Felder neben dem Schnitt. Alles
+  weiter weg bleibt stehen und ist fuer den Loeser eine feste Nachbarin
+  (`_vorbereiten(..., nur=, fest=)`): deren Kachel muss zu jeder geloesten
+  Zelle daneben passen.
+- Zellen, in denen danach kein Fels mehr steht, werden Boden; die
+  Uebergaenge rechnet der Randnachlauf des Strichs mit.
+
+So entsteht eine Auffahrt (Rampe): Tiefland quer ueber die Wand malen.
+Suite: mud und san, waagerecht und senkrecht -- schliesst, 0 Fels ins Freie.
+Die bisherigen Klippen sind bitgleich (die neuen Parameter sind optional).

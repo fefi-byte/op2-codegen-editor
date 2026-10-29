@@ -689,8 +689,14 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
     naht = tab.naht
 
     dom: dict = {}
+    fest_nb = vb.get("fest_nb", {})
     for k, p in enumerate(zellen):
         moegl = np.nonzero(FE[k] <= abweichung)[0]
+        for r, f in fest_nb.get(p, ()):
+            # Stehenbleibende Nachbarin in Richtung r: nur, was neben ihr
+            # stehen darf. erlaubt[r][u] = was in Richtung r neben u darf.
+            moegl = np.array([u for u in moegl if f in erlaubt[r][int(u)]],
+                             dtype=np.int64)
         if not len(moegl):
             return None
         vorn = OF[k, moegl] + (BI[k, moegl] if INNENKANTE == 1 else 0)
@@ -810,7 +816,8 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
     return maske, ber
 
 
-def _vorbereiten(tab: _Tabelle, fein: np.ndarray, offen_ok: dict | None):
+def _vorbereiten(tab: _Tabelle, fein: np.ndarray, offen_ok: dict | None,
+                 nur: set | None = None, fest: dict | None = None):
     """Alles je Zelle und Kachel, was nicht von der Stufe abhaengt -- einmal.
 
     -> dict mit Zellen (x, y), Nachbarn und den Feldern (Zellen x Kacheln):
@@ -818,9 +825,19 @@ def _vorbereiten(tab: _Tabelle, fein: np.ndarray, offen_ok: dict | None):
     offenen Boden), bin (Seite ohne Fels zu einer Klippennachbarin), anteil
     (Abstand im Felsanteil). Kacheln mit FELS zu einer offenen Seite sind
     ausgeschlossen (fehl = 99).
+
+    `nur` (Menge von (x, y)): nur diese Zellen werden geloest; alle anderen
+    Felszellen zaehlen trotzdem als Klippe (nicht offen). `fest` ((x, y) ->
+    Kachel): Nachbarn, die stehen bleiben -- ihre Kachel muss zu jeder
+    geloesten Nachbarin passen. Beides fuer das Schliessen eines Schnitts in
+    einer vorhandenen Wand (`schnitt_schliessen`).
     """
     hat = _zellen(fein)
     ys, xs = np.nonzero(hat)
+    if nur is not None:
+        auswahl = np.array([(int(x), int(y)) in nur for y, x in zip(ys, xs)],
+                           dtype=bool)
+        ys, xs = ys[auswahl], xs[auswahl]
     if not len(ys):
         return None
     blk = _bloecke(fein)[ys, xs]                          # (m, F, F)
@@ -855,8 +872,20 @@ def _vorbereiten(tab: _Tabelle, fein: np.ndarray, offen_ok: dict | None):
             if q in drin:
                 nb.append((r, q))
         nachbarn[(x, y)] = nb
+    fest_nb = {}
+    if fest:
+        for (x, y) in zellen:
+            liste = []
+            for r in SEITEN:
+                dx, dy = VERSATZ[r]
+                t = fest.get((x + dx, y + dy))
+                if t is not None and int(t) in tab.platz:
+                    liste.append((r, tab.platz[int(t)]))
+            if liste:
+                fest_nb[(x, y)] = liste
     return {"zellen": zellen, "nachbarn": nachbarn, "fehl": fehl,
-            "inn": inn, "ofs": ofs, "bin": bin_, "anteil": anteil}
+            "inn": inn, "ofs": ofs, "bin": bin_, "anteil": anteil,
+            "fest_nb": fest_nb}
 
 def naht_teilen(fein: np.ndarray) -> np.ndarray:
     """Beide Kacheln an einer Naht sollen dasselbe lesen.
@@ -955,12 +984,13 @@ LOESER_STUFEN = (
 
 
 def loesen_stufenweise(grid: np.ndarray, fein: np.ndarray, vor: dict,
-                       stufen=LOESER_STUFEN, offen_ok: dict | None = None):
+                       stufen=LOESER_STUFEN, offen_ok: dict | None = None,
+                       nur: set | None = None, fest: dict | None = None):
     """`loesen` ueber die Stufen in `LOESER_STUFEN` -> (maske, Bericht) | None.
 
     Der Bericht nennt die Stufe, die gegriffen hat.
     """
-    vb = _vorbereiten(_tabelle(vor), fein, offen_ok)
+    vb = _vorbereiten(_tabelle(vor), fein, offen_ok, nur, fest)
     if vb is None:
         return None
     for i, (nur_belegt, abw, zeit) in enumerate(stufen):
@@ -1044,3 +1074,103 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str, tm,
         if zt is not None:
             zellen[y, x] = zt
     return maske, zellen
+
+
+# ---------------------------------------------------------------------------
+# Schnitt in einer vorhandenen Wand schliessen / close a cut in an existing wall
+
+SCHNITT_ZONE = 2        # so viele Zellen neben dem Schnitt werden neu geloest
+
+
+def schnitt_schliessen(grid: np.ndarray, entfernt: np.ndarray, tm, rng,
+                       familie: str = "mud", zone: int = SCHNITT_ZONE):
+    """Die Wand an einem Schnitt sauber enden lassen -> (geaendert, boden) | None.
+
+    Malt man Boden quer ueber eine Klippe, war die Wand dort einfach offen
+    abgeschnitten: die Kacheln neben dem Schnitt zeigen Fels ins Freie. Das ist
+    genau die Stelle fuer eine Auffahrt (Rampe) oder das Ende einer Wand.
+
+    Hier wird das Gelaende der Wand aus den Kachelbildern zurueckgewonnen
+    (`innenbilder`), im Schnitt geleert, am Rand zum Schnitt nachgegeben und
+    nur die Zellen bis `zone` neben dem Schnitt neu geloest. Alles weiter weg
+    bleibt stehen und ist fuer die geloesten Zellen eine feste Nachbarin.
+
+    `entfernt` (bool, wie `grid`): die Zellen, die keine Klippe mehr sind.
+    `geaendert`: Zellen mit neuer Klippenkachel (in `grid` geschrieben).
+    `boden`: Zellen, die bisher Klippe waren und jetzt Boden werden muessen --
+    die Bodenkachel waehlt der Aufrufer.
+
+    None, wenn sich nichts loesen liess; `grid` ist dann unveraendert.
+
+    Rebuild the wall's terrain from the tile images, clear the cut, let the rim
+    give way and re-solve only the cells within `zone` of the cut, with
+    everything further away pinned as fixed neighbours.
+    """
+    vor = vorrat(tm, familie)
+    if len(vor) < MINDEST_KACHELN or not entfernt.any():
+        return None
+    h, w = grid.shape
+    klippe = np.isin(grid, np.array(sorted(vor), dtype=grid.dtype)) & ~entfernt
+    nah = entfernt.copy()
+    for _ in range(zone):
+        p = np.pad(nah, 1)
+        nah = nah | p[:-2, 1:-1] | p[2:, 1:-1] | p[1:-1, :-2] | p[1:-1, 2:]
+    neu_loesen = nah & klippe
+    if not neu_loesen.any():
+        return None
+    ys, xs = np.nonzero(neu_loesen)
+    rand = zone + 2
+    y0, y1 = max(0, ys.min() - rand), min(h, ys.max() + rand + 1)
+    x0, x1 = max(0, xs.min() - rand), min(w, xs.max() + rand + 1)
+    g = grid[y0:y1, x0:x1].copy()
+    kl = klippe[y0:y1, x0:x1]
+    zo = neu_loesen[y0:y1, x0:x1]
+    weg = entfernt[y0:y1, x0:x1]
+    wh, ww = g.shape
+    ib = innenbilder()
+    fein = np.zeros((wh * FEIN, ww * FEIN), dtype=bool)
+    for y, x in zip(*np.nonzero(kl)):
+        m = ib.get(int(g[y, x]))
+        if m is None:
+            m = np.ones((FEIN, FEIN), dtype=bool)
+        fein[y * FEIN:(y + 1) * FEIN, x * FEIN:(x + 1) * FEIN] = m
+    vorher = fein.copy()
+    # Am Schnitt nachgeben: in den neu zu loesenden Zellen die Teilfeldreihe
+    # zum Schnitt hin leeren, damit dort kein Fels ins Freie zeigt.
+    for y, x in zip(*np.nonzero(zo)):
+        for r in SEITEN:
+            dx, dy = VERSATZ[r]
+            qx, qy = x + dx, y + dy
+            if 0 <= qx < ww and 0 <= qy < wh and weg[qy, qx]:
+                blk = fein[y * FEIN:(y + 1) * FEIN, x * FEIN:(x + 1) * FEIN]
+                if r == "N":
+                    blk[0, :] = False
+                elif r == "S":
+                    blk[-1, :] = False
+                elif r == "W":
+                    blk[:, 0] = False
+                else:
+                    blk[:, -1] = False
+    fein, _n = rand_dem_biom(fein)
+    fein = gelaende_angleichen(fein, vor, True)
+    # Ausserhalb der Zone gilt das alte Gelaende -- dort steht ja die alte Kachel.
+    zone_fein = np.repeat(np.repeat(zo, FEIN, axis=0), FEIN, axis=1)
+    fein = np.where(zone_fein, fein, vorher)
+    hat = _zellen(fein)
+    nur = {(int(x), int(y)) for y, x in zip(*np.nonzero(zo & hat))}
+    fest = {(int(x), int(y)): int(g[y, x])
+            for y, x in zip(*np.nonzero(kl & ~zo))}
+    boden_lokal = zo & ~hat
+    if nur:
+        r = loesen_stufenweise(g, fein, vor, nur=nur, fest=fest)
+        if r is None:
+            return None
+        geaendert_lokal = r[0]
+    else:
+        geaendert_lokal = np.zeros_like(zo)
+    grid[y0:y1, x0:x1] = np.where(geaendert_lokal, g, grid[y0:y1, x0:x1])
+    geaendert = np.zeros_like(entfernt)
+    boden = np.zeros_like(entfernt)
+    geaendert[y0:y1, x0:x1] = geaendert_lokal
+    boden[y0:y1, x0:x1] = boden_lokal
+    return geaendert, boden

@@ -336,13 +336,28 @@ class _TerrainMixin:
             # cell ever painted would stay excluded from the blend zone.
             # Afterwards recompute the area once without protection so the
             # border gets a transition tile on its inner side as well.
-            self._rand_nachziehen(ebenen, [])
+            rest = self._rand_nachziehen(ebenen, [])
+            if rest:
+                # Rand und geschlossene Klippenenden ebenfalls rueckgaengig
+                # machbar -- bisher fielen sie aus der Kette.
+                self._push_undo("terrain", TerrainEdit(rest))
 
     def _rand_nachziehen(self, ebenen, gesammelt):
         """Nach dem Strich einmal ohne Schutz rechnen -- fuer die Innenkante."""
         bereich = ebenen.strich_beenden()
         if bereich is None:
             return gesammelt
+        # Hat der Strich eine Klippe durchschnitten, die Enden schliessen,
+        # BEVOR der Rand nachgerechnet wird -- der richtet dann den Boden an den
+        # neuen Enden mit aus.
+        # If the stroke cut through a cliff, close the ends BEFORE recomputing
+        # the rim, which then also fixes the ground at the new ends.
+        schnitt, schnitt_bereich = ebenen.klippen_schnitte_schliessen()
+        if schnitt:
+            gesammelt = self._aenderungen_schreiben(schnitt, gesammelt)
+            bx0, by0, bx1, by1 = bereich
+            sx0, sy0, sx1, sy1 = schnitt_bereich
+            bereich = (min(bx0, sx0), min(by0, sy0), max(bx1, sx1), max(by1, sy1))
         aenderungen = ebenen.synth_region(bereich)
         if not aenderungen:
             return gesammelt
@@ -356,6 +371,19 @@ class _TerrainMixin:
         self._repaint_tiles(coords)
         self._patch_cells(coords)
         self._refresh_terrain_overlay()
+        return gesammelt
+
+    def _aenderungen_schreiben(self, aenderungen, gesammelt):
+        """Kacheln in die Karte schreiben, zeichnen, Rueckgaengig-Daten sammeln."""
+        for x, y, kachel, zelltyp in aenderungen:
+            i = self.map.tile_index(x, y)
+            alt = self.map.tiles[i]
+            self.map.set_tile(x, y, kachel, zelltyp)
+            if self.map.tiles[i] != alt:
+                gesammelt = list(gesammelt) + [(i, alt, self.map.tiles[i])]
+        coords = [(x, y) for x, y, _, _ in aenderungen]
+        self._repaint_tiles(coords)
+        self._patch_cells(coords)
         return gesammelt
 
     def _uebergaenge_aufraeumen(self):

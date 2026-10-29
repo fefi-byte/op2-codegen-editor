@@ -935,6 +935,53 @@ def check_landschaft():
               gen.connected and len(gen.spawns) == 2)
 
 
+def check_schnitt():
+    """Boden quer ueber eine Wand: beide Enden muessen sauber schliessen.
+
+    Bisher blieb die Wand am Pinselrand offen abgeschnitten -- Kacheln mit
+    Fels ins Freie. `schnitt_schliessen` loest die Zellen am Schnitt neu.
+    """
+    import klippe_algo as KA
+    from cliff_kanten import FELS
+    from cliff_tiles import VERSATZ
+    tm = mapgen.model()
+    for fam in ("mud", "san"):
+        if not KA.verfuegbar(tm, fam):
+            continue
+        seiten_von = {t: s for t, (s, _fa) in KA.vorrat(tm, fam).items()}
+        grf = next(t for t in range(2048)
+                   if tm.family_of[t] == tm.families.index(fam)
+                   and tm.placeable[t])
+        for name, punkte, seite, schnitt in (
+                ("waagerecht", [(3, 10), (28, 10)], "oben", (slice(None), slice(14, 17))),
+                ("senkrecht", [(12, 3), (12, 28)], "links", (slice(14, 17), slice(None)))):
+            g = np.full((32, 40), grf, dtype=np.int32)
+            m, _z = KA.klippe_aus_linie(g, punkte, seite, tm,
+                                        np.random.default_rng(7), fam)
+            weg = np.zeros_like(m)
+            weg[schnitt] = m[schnitt]
+            g[weg] = grf
+            r = KA.schnitt_schliessen(g, weg, tm, np.random.default_rng(1), fam)
+            if not check(f"Schnitt schliesst ({fam} {name})", r is not None):
+                continue
+            neu, boden = r
+            g[boden] = grf
+            klippe = (m & ~weg & ~boden) | neu
+            hart = 0
+            for y, x in zip(*np.nonzero(klippe)):
+                sv = seiten_von.get(int(g[y, x]))
+                if sv is None:
+                    continue
+                for rr in ("N", "O", "S", "W"):
+                    dx, dy = VERSATZ[rr]
+                    nx, ny = x + dx, y + dy
+                    if (0 <= nx < 40 and 0 <= ny < 32 and not klippe[ny, nx]
+                            and sum(1 for u in sv[rr] if u == FELS) >= 3):
+                        hart += 1
+            check(f"Schnitt ohne Fels ins Freie ({fam} {name})", hart == 0,
+                  f"{hart} Stellen")
+
+
 def main() -> int:
     if not mapgen.MODEL_PATH.exists():
         print("tiles_model.npz fehlt -> zuerst 'python mapview/learn_tiles.py'")
@@ -949,6 +996,7 @@ def main() -> int:
     check_volcanoes()
     check_kantenzuordnung()
     check_klippe_algo()
+    check_schnitt()
     check_cliffs()
     check_min_biome()
     check_details()
