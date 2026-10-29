@@ -16,13 +16,14 @@ from .window_overlays import _OverlaysMixin
 from .window_terrain import _TerrainMixin
 from .window_klippen import _KlippenMixin
 from .window_neukarte import _NeueKarteMixin
+from .verlauf import _VerlaufMixin
 
 
 class EditorWindow(
     _MenuMixin, _SidebarMixin, _OverviewMixin,
     _PlacementMixin, _MapPickMixin, _ProjectMixin,
     _BuildMixin, _OverlaysMixin, _TerrainMixin, _KlippenMixin,
-    _NeueKarteMixin, QMainWindow,
+    _NeueKarteMixin, _VerlaufMixin, QMainWindow,
 ):
     def _zustand_anlegen(self):
         """Jeden Zustand des Fensters VOR allem anderen anlegen.
@@ -69,6 +70,7 @@ class EditorWindow(
         self._tile_index_grid = None
         self._undo_stack = None
         self._view_menu = None
+        self.verlauf_liste = None
 
     def __init__(self):
         super().__init__()
@@ -154,6 +156,7 @@ class EditorWindow(
         self.groups_panel.load()
         self.conditions_panel.load()
         self._build_overview()
+        self._build_verlauf()
         self._refresh_player_range()
 
         # Klick auf den Zaehler blendet die Validierung ein oder aus.

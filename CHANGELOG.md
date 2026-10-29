@@ -8,6 +8,21 @@ and the project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Ramps and clean cliff removal**: painting "Lowland" across a wall now
+  closes both new ends instead of leaving the wall cut open. The cells next
+  to the cut are re-solved from the wall's recovered terrain, with the rest
+  of the wall pinned as fixed neighbours.
+- **Cliffs on rock, snow, vegetation and lava ground**: these have no cliff
+  tiles of their own; the brush now builds a mud cliff with a two-cell mud
+  rim (as the stock maps do) instead of placing nothing.
+- **History dock** next to the overview: every undo step with its brush and
+  tile count; clicking an entry undoes or redoes up to there.
+- **Build stops on generator gaps**: places the code generator could not
+  translate are marked `// TODO(editor)`; the build asks before continuing.
+- **Load warnings**: project entries that cannot be read are listed instead
+  of being dropped silently (and lost on the next save).
+- `pytest -n auto` runs all three check suites (about 1.5 minutes).
+
 - **Live cliff preview** in the editor: with the cliff brush and at least one
   point placed, the wall for the placed points plus the cursor is computed
   and shown semi-transparent over the map before you click "Set". The random
@@ -21,6 +36,22 @@ and the project follows [Semantic Versioning](https://semver.org/).
   follows it.
 
 ### Changed
+- **UI**: sidebar grouped into "Mission" and "Map"; a badge on the map shows
+  terrain mode and brush; "Clear all" moved from the toolbar into the Edit
+  menu with a confirmation; the error/warning counter toggles the validation
+  dock; window size and dock layout are remembered; calmer passability
+  overlay.
+- **Code structure**: `mapgen.py` split into eight modules, `action_editor.py`
+  into six, `window_terrain.py` into three mixins, `klippe_algo` into terrain
+  and solver, and the action emitter into one function per action kind --
+  outputs verified bit-identical.
+- Game path for tools and tests from `OP2_GAME` or `config.ini` instead of a
+  hard-coded GOG path.
+
+### Fixed
+- Two latent `NameError`s in the code generator ("last command" loop-unit
+  condition, startMining with a loop reference).
+- Rim and cliff-end changes after a stroke are undoable.
 - **Cliffs use only the terrain solver** (`klippe_algo`): editor brush, area
   brush, landscape mode and every generator template. The old block path,
   its toggle, modules (`cliff_walk`, `cliff_columns`, `cliff_patches`,

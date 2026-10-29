@@ -135,7 +135,7 @@ class _KlippenMixin:
         if not rueck:
             return
         self._mark_map_edited()
-        self._push_undo("terrain", TerrainEdit(rueck))
+        self._push_undo("terrain", TerrainEdit(rueck, tr("terrain.brush_klippe")))
         self._refresh_terrain_overlay()
         self.statusBar().showMessage(tr("terrain.klippe_gesetzt", n=len(rueck)))
 

@@ -20,11 +20,13 @@ class _PlacementMixin:
         if len(self._undo_stack) > 200:
             self._undo_stack.pop(0)
         self._redo_stack.clear()
+        self._verlauf_auffrischen()
 
     def _clear_undo(self):
         if hasattr(self, "_undo_stack"):
             self._undo_stack.clear()
             self._redo_stack.clear()
+            self._verlauf_auffrischen()
 
     def undo(self):
         if not self._undo_stack:
@@ -34,6 +36,7 @@ class _PlacementMixin:
         self._apply_inverse(op, obj)
         self._redo_stack.append((op, obj))
         self.klippen_anker_auffrischen()
+        self._verlauf_auffrischen()
 
     def redo(self):
         if not self._redo_stack:
@@ -42,6 +45,7 @@ class _PlacementMixin:
         op, obj = self._redo_stack.pop()
         self._apply_forward(op, obj)
         self._undo_stack.append((op, obj))
+        self._verlauf_auffrischen()
 
     def _apply_inverse(self, op: str, obj):
         if op == "terrain":

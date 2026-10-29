@@ -67,9 +67,10 @@ class TerrainEdit:
 
     display = "Gelände"          # fuer die Statusmeldungen der Undo-Logik
 
-    def __init__(self, changes: list[tuple[int, int, int]]):
+    def __init__(self, changes: list[tuple[int, int, int]], was: str = ""):
         # (tile_index, alter Wert, neuer Wert)
         self.changes = changes
+        self.was = was              # Beschriftung im Verlauf, z.B. "Erde"
 
 
 class _TerrainMixin:
@@ -289,6 +290,9 @@ class _TerrainMixin:
                     zellen.append((x, y))
         return zellen or [(tx, ty)]
 
+    def _pinsel_name(self) -> str:
+        return tr("terrain.brush_" + self.terrain_panel.selected_brush())
+
     def _terrain_strich_beginnen(self):
         """Anfang eines Pinselstrichs."""
         self._strich_rechteck = None
@@ -319,7 +323,7 @@ class _TerrainMixin:
             if ebenen is not None:
                 gesammelt = self._rand_nachziehen(ebenen, gesammelt)
             if gesammelt:
-                self._push_undo("terrain", TerrainEdit(gesammelt))
+                self._push_undo("terrain", TerrainEdit(gesammelt, self._pinsel_name()))
             return
         if ebenen is None:
             return
@@ -343,7 +347,7 @@ class _TerrainMixin:
             if rest:
                 # Rand und geschlossene Klippenenden ebenfalls rueckgaengig
                 # machbar -- bisher fielen sie aus der Kette.
-                self._push_undo("terrain", TerrainEdit(rest))
+                self._push_undo("terrain", TerrainEdit(rest, tr("window.verlauf_rand")))
 
     def _rand_nachziehen(self, ebenen, gesammelt):
         """Nach dem Strich einmal ohne Schutz rechnen -- fuer die Innenkante."""
@@ -445,7 +449,7 @@ class _TerrainMixin:
             # its own undo entry.
             self._strich_rueck = self._strich_rueck + rueck
         else:
-            self._push_undo("terrain", TerrainEdit(rueck))
+            self._push_undo("terrain", TerrainEdit(rueck, was))
         self._refresh_terrain_overlay()
         self.statusBar().showMessage(
             tr("terrain.status_painted", brush=was, n=len(rueck)))
@@ -525,7 +529,7 @@ class _TerrainMixin:
         if not rueck:
             return
         self._mark_map_edited()
-        self._push_undo("terrain", TerrainEdit(rueck))
+        self._push_undo("terrain", TerrainEdit(rueck, self._pinsel_name()))
         self._refresh_terrain_overlay()
         self.statusBar().showMessage(
             tr("terrain.status_painted", brush=tr(f"terrain.brush_{brush}"),
