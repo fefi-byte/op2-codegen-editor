@@ -284,7 +284,7 @@ def _emit_groups(mission: Mission, ctx: dict) -> list[str]:
                 lines.append(f"    {var}.RecordVehReinforceGroup({target_var}, "
                              f"{max(1, int(getattr(t, 'priority', 1000)))});")
             else:
-                lines.append(f"    // TODO ReinforceGroup '{g.name}': target group "
+                lines.append(f"    // TODO(editor) ReinforceGroup '{g.name}': target group "
                              f"'{t.group_name}' not found (check spelling/case)")
 
     for g in fights:

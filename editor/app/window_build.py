@@ -255,6 +255,8 @@ class _BuildMixin:
             self.save_project_as()
         if self.mission_folder is None or not self.mission_folder.is_dir():
             return
+        if not self._luecken_bestaetigt():
+            return
         self._progress = QProgressDialog(tr("window.build_progress"), None, 0, 0, self)
         self._progress.setWindowTitle("Build")
         self._progress.setWindowModality(Qt.WindowModal)
@@ -267,6 +269,37 @@ class _BuildMixin:
         self._worker.ok.connect(self._build_ok)
         self._worker.err.connect(self._build_err)
         self._worker.start()
+
+    def _luecken_bestaetigt(self) -> bool:
+        """Vor dem Bauen: hat der Generator Luecken hinterlassen?
+
+        Was der Codegenerator nicht umsetzen kann (Gruppe nicht angelegt,
+        unbekannte Aktion, ...), wird zu einem `// TODO(editor)`-Kommentar im
+        C++ -- die DLL baut trotzdem, und im Spiel passiert an der Stelle
+        einfach nichts. Deshalb hier anhalten und die Stellen zeigen; bauen
+        nur, wenn man das ausdruecklich will.
+
+        Before building: stop if the generator left gaps (`// TODO(editor)`),
+        show them, and build only on explicit request.
+        """
+        try:
+            cpp = generate_levelmain(self.build_mission())
+        except Exception:
+            return True        # der Build selbst meldet den Fehler ausfuehrlich
+        luecken = [z.strip() for z in cpp.splitlines() if "TODO(editor)" in z]
+        if not luecken:
+            return True
+        liste = "\n".join(f"- {z[:140]}" for z in luecken[:15])
+        if len(luecken) > 15:
+            liste += "\n- ..."
+        box = QMessageBox(QMessageBox.Warning, tr("window.build_gaps_title"),
+                          tr("window.build_gaps_text", n=len(luecken), liste=liste),
+                          parent=self)
+        trotzdem = box.addButton(tr("window.build_gaps_anyway"), QMessageBox.DestructiveRole)
+        abbrechen = box.addButton(QMessageBox.Cancel)
+        box.setDefaultButton(abbrechen)
+        box.exec()
+        return box.clickedButton() is trotzdem
 
     def _build_ok(self, dll):
         self._progress.close()

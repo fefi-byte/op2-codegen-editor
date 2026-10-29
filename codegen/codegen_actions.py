@@ -122,7 +122,7 @@ def _emit_action_condition_expr(c: ActionCondition, depth: int = 0) -> str:
             cmd_name = getattr(c, "command_type", "Move") or "Move"
             expr = f"({uv}.GetLastCommand() == {_CMD_TYPE.get(cmd_name, 'ctMoMove')})"
     else:
-        expr = "true /* TODO: unsupported ActionCondition kind */"
+        expr = "true /* TODO(editor): unsupported ActionCondition kind */"
 
     if getattr(c, "negate", False):
         return f"!({expr})"
@@ -199,7 +199,7 @@ def _emit_action_body(action: TriggerAction, indent: str, ctx: dict, depth: int 
 
 
 def _unbekannt(indent: str, k: str) -> list[str]:
-    return [f"{indent}// TODO unsupported action kind: {k}"]
+    return [f"{indent}// TODO(editor) unsupported action kind: {k}"]
 
 
 def _patrol_locations(action) -> list[str]:

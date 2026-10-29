@@ -206,11 +206,11 @@ def _emit_condition(cond: Condition, is_victory: bool, mission: Mission | None =
         if expr is not None:
             _wrap(expr, _cond_var(cond))
         elif cond.kind in ("attacked", "damaged"):
-            lines.append(f"    // TODO {cond.kind}: group '{getattr(cond, 'group_name', '')}' not declared")
+            lines.append(f"    // TODO(editor) {cond.kind}: group '{getattr(cond, 'group_name', '')}' not declared")
         elif cond.kind == "specialTarget":
-            lines.append(f"    // TODO specialTarget: unit '{getattr(cond, 'target_unit', '')}' not declared")
+            lines.append(f"    // TODO(editor) specialTarget: unit '{getattr(cond, 'target_unit', '')}' not declared")
         else:
-            lines.append(f"    // TODO unsupported condition kind: {cond.kind}")
+            lines.append(f"    // TODO(editor) unsupported condition kind: {cond.kind}")
     return lines
 
 
@@ -277,7 +277,7 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
         if uvar:
             lines.append(f"    if ({uvar}.unitID == 0 || {uvar}.IsLive()) return;")
         else:
-            lines.append(f"    return;  // TODO unitDied: unit '{t.target_unit}' not declared")
+            lines.append(f"    return;  // TODO(editor) unitDied: unit '{t.target_unit}' not declared")
         lines.extend(_emit_action_list(t.actions, "    ", ctx))
         if t.one_shot:
             lines.append(f"    g_save.{helper}_self.Disable();")
@@ -308,7 +308,7 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
             lines.append(f"    g_save.{helper}_self.Disable();")
         lines.append(f"}}")
     else:
-        lines.append(f"Export void {cb_fn}() {{}}  // TODO unsupported condition: {t.condition}")
+        lines.append(f"Export void {cb_fn}() {{}}  // TODO(editor) unsupported condition: {t.condition}")
 
     # --- Helper: erzeugt den Engine-Trigger / creates the engine trigger ---
     lines.append(f"static void {helper}() {{")
@@ -319,11 +319,11 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
         if expr is not None:
             lines.append(f"    {expr};")
         elif t.condition in ("attacked", "damaged"):
-            lines.append(f"    // TODO {t.condition}: group '{getattr(t, 'group_name', '')}' not declared")
+            lines.append(f"    // TODO(editor) {t.condition}: group '{getattr(t, 'group_name', '')}' not declared")
         elif t.condition == "specialTarget":
-            lines.append(f"    // TODO specialTarget: unit '{getattr(t, 'target_unit', '')}' not declared")
+            lines.append(f"    // TODO(editor) specialTarget: unit '{getattr(t, 'target_unit', '')}' not declared")
         else:
-            lines.append(f"    // TODO unsupported trigger condition: {t.condition}")
+            lines.append(f"    // TODO(editor) unsupported trigger condition: {t.condition}")
     lines.append(f"}}")
     return lines
 

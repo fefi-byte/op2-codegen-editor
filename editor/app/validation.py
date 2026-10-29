@@ -3,7 +3,7 @@ from __future__ import annotations
 """Missionvalidierung: prueft das Editor-Modell auf stille Fehler.
 
 Mission validation: checks the editor model for silent errors that would
-otherwise only surface as `// TODO` comments in the generated C++ or as a
+otherwise only surface as `// TODO(editor)` comments in the generated C++ or as a
 mission that does nothing in-game.
 
 Jede Prueffunktion liefert Befunde als (severity, text, target)-Tupel:

@@ -30,7 +30,7 @@ from codegen_actions import (  # noqa: E402
 
 
 def _unbekannt(indent: str, k: str) -> list[str]:
-    return [f"{indent}// TODO unsupported action kind: {k}"]
+    return [f"{indent}// TODO(editor) unsupported action kind: {k}"]
 
 
 def _emit_noop(action: TriggerAction, indent: str, ctx: dict, depth: int, k: str) -> list[str]:
@@ -77,7 +77,7 @@ def _emit_custom(action: TriggerAction, indent: str, ctx: dict, depth: int, k: s
     defs = {d.get("name", ""): d for d in (ctx.get("custom_actions") or [])}
     cdef = defs.get(getattr(action, "custom_name", "") or "")
     if not cdef:
-        return [f"{indent}// TODO custom action "
+        return [f"{indent}// TODO(editor) custom action "
                 f"[{getattr(action, 'custom_name', '?')}] not defined"]
     code = cdef.get("code", "") or ""
     args = getattr(action, "custom_args", None) or {}
@@ -216,7 +216,7 @@ def _emit_createDisaster(action: TriggerAction, indent: str, ctx: dict, depth: i
             f"{indent}GameMap::SetVirusUL("
             f"{_loc_expr(getattr(action, 'x_expr', 0), getattr(action, 'y_expr', 0))}, 0);"
         ]
-    return [f"{indent}// TODO unsupported disaster type: {dtype}"]
+    return [f"{indent}// TODO(editor) unsupported disaster type: {dtype}"]
     return _unbekannt(indent, k)
 
 
@@ -227,7 +227,7 @@ def _emit_createTrigger(action: TriggerAction, indent: str, ctx: dict, depth: in
     target = ctx["trigger_helpers"].get(action.target, None)
     if target:
         return [f"{indent}{target}();"]
-    return [f"{indent}// TODO createTrigger target '{action.target}' not found"]
+    return [f"{indent}// TODO(editor) createTrigger target '{action.target}' not found"]
     return _unbekannt(indent, k)
 
 
@@ -237,7 +237,7 @@ def _emit_recordBuilding(action: TriggerAction, indent: str, ctx: dict, depth: i
     # the group rebuilds it. Classic: BuildingGroup::RecordBuilding.
     var = ctx["group_vars"].get(action.group_name, None)
     if not var:
-        return [f"{indent}// TODO recordBuilding: building group '{action.group_name}' not declared"]
+        return [f"{indent}// TODO(editor) recordBuilding: building group '{action.group_name}' not declared"]
     entries = list(getattr(action, "building_list", None) or [])
     if not entries:
         entries = [{"building_type": action.building_type, "weapon_type": action.weapon_type,
@@ -304,7 +304,7 @@ def _emit_setTargCount(action: TriggerAction, indent: str, ctx: dict, depth: int
     # unit_type/weapon_type/target_count fields for older saves).
     var = ctx["group_vars"].get(action.group_name, None)
     if not var:
-        return [f"{indent}// TODO setTargCount: group '{action.group_name}' not declared"]
+        return [f"{indent}// TODO(editor) setTargCount: group '{action.group_name}' not declared"]
     entries = list(getattr(action, "targ_counts", None) or [])
     if not entries:
         entries = [{"unit_type": action.unit_type, "weapon_type": action.weapon_type,
@@ -330,7 +330,7 @@ def _emit_setTargCount(action: TriggerAction, indent: str, ctx: dict, depth: int
             prio = max(1, int(getattr(action, "reinforce_priority", 1000) or 1000))
             lines.append(f"{indent}{src_var}.RecordVehReinforceGroup({var}, {prio});")
         else:
-            lines.append(f"{indent}// TODO setTargCount: ReinforceGroup '{src_name}' not declared")
+            lines.append(f"{indent}// TODO(editor) setTargCount: ReinforceGroup '{src_name}' not declared")
     return lines
     return _unbekannt(indent, k)
 
@@ -347,10 +347,10 @@ def _emit_assignToGroup(action: TriggerAction, indent: str, ctx: dict, depth: in
     # rebuilt).
     var = ctx["group_vars"].get(action.group_name, None)
     if not var:
-        return [f"{indent}// TODO assignToGroup: target group '{action.group_name}' not declared"]
+        return [f"{indent}// TODO(editor) assignToGroup: target group '{action.group_name}' not declared"]
     armed_var = ctx.get("assign_action_vars", {}).get(id(action))
     if not armed_var:
-        return [f"{indent}// TODO assignToGroup: armed flag not declared"]
+        return [f"{indent}// TODO(editor) assignToGroup: armed flag not declared"]
     return [f"{indent}{armed_var} = true;"]
     return _unbekannt(indent, k)
 
@@ -368,7 +368,7 @@ def _emit_startMining(action: TriggerAction, indent: str, ctx: dict, depth: int,
     var = ctx["group_vars"].get(action.group_name, None)
     spec = ctx.get("mining_group_specs", {}).get(action.group_name)
     if not var or spec is None:
-        return [f"{indent}// TODO startMining: MiningGroup '{action.group_name}' not declared"]
+        return [f"{indent}// TODO(editor) startMining: MiningGroup '{action.group_name}' not declared"]
     mine_ref = getattr(action, "mine_ref", "") or ""
     smelter_ref = getattr(action, "smelter_ref", "") or ""
     if mine_ref in ("<loop>", "<loop:outer>") or smelter_ref in ("<loop>", "<loop:outer>"):
@@ -385,9 +385,9 @@ def _emit_startMining(action: TriggerAction, indent: str, ctx: dict, depth: int,
         smelter_expr = (_resolve_loop_ref(smelter_ref, depth) or ctx.get("unit_vars", {}).get(smelter_ref)
                         if smelter_ref else None) or f"unitOnTile({_xy(action.x2, action.y2)})"
         if mine_ref and not (_resolve_loop_ref(mine_ref, depth) or ctx.get("unit_vars", {}).get(mine_ref)):
-            return [f"{indent}// TODO startMining: mine reference '{mine_ref}' not declared"]
+            return [f"{indent}// TODO(editor) startMining: mine reference '{mine_ref}' not declared"]
         if smelter_ref and not (_resolve_loop_ref(smelter_ref, depth) or ctx.get("unit_vars", {}).get(smelter_ref)):
-            return [f"{indent}// TODO startMining: smelter reference '{smelter_ref}' not declared"]
+            return [f"{indent}// TODO(editor) startMining: smelter reference '{smelter_ref}' not declared"]
         n = _expr_or_int(action.target_count)
         # Spaet importiert: codegen_groups importiert selbst aus codegen_actions.
         # Fehlte bisher ganz -- startMining in einer Schleife brach mit
@@ -405,7 +405,7 @@ def _emit_startMining(action: TriggerAction, indent: str, ctx: dict, depth: int,
     # only sets the flag checked there.
     armed_var = ctx.get("mining_action_vars", {}).get(id(action))
     if not armed_var:
-        return [f"{indent}// TODO startMining: armed flag not declared"]
+        return [f"{indent}// TODO(editor) startMining: armed flag not declared"]
     return [f"{indent}{armed_var} = true;"]
     return _unbekannt(indent, k)
 
@@ -438,7 +438,7 @@ def _emit_sendAttackWave(action: TriggerAction, indent: str, ctx: dict, depth: i
     wave_name = getattr(action, "group_var_name", "") or ""
     fg = ctx["group_vars"].get(wave_name)
     if not fg:
-        return [f"{indent}// TODO sendAttackWave: FightGroup '{wave_name}' not declared"]
+        return [f"{indent}// TODO(editor) sendAttackWave: FightGroup '{wave_name}' not declared"]
 
     lines = [f"{indent}{{",
              f"{indent}    MAP_RECT _r = {geo['idle_rect']};",
@@ -478,7 +478,7 @@ def _emit_sendAttackWave(action: TriggerAction, indent: str, ctx: dict, depth: i
             prio = max(1, int(getattr(action, "reinforce_priority", 1000) or 1000))
             lines.append(f"{indent}    {src_var}.RecordVehReinforceGroup({fg}, {prio});")
         else:
-            lines.append(f"{indent}    // TODO sendAttackWave: ReinforceGroup "
+            lines.append(f"{indent}    // TODO(editor) sendAttackWave: ReinforceGroup "
                          f"'{getattr(action, 'source_group_name', '')}' not declared")
         if auto_attack or geo["has_staging"]:
             # Wenn voll: Angriff bzw. Sammelbereich. Das Polling macht der
@@ -489,7 +489,7 @@ def _emit_sendAttackWave(action: TriggerAction, indent: str, ctx: dict, depth: i
             if armed_var:
                 lines.append(f"{indent}    {armed_var} = true;")
             else:
-                lines.append(f"{indent}    // TODO sendAttackWave: armed flag not declared")
+                lines.append(f"{indent}    // TODO(editor) sendAttackWave: armed flag not declared")
     lines.append(f"{indent}}}")
     return lines
     return _unbekannt(indent, k)
@@ -506,7 +506,7 @@ def _emit_fightGroupCmd(action: TriggerAction, indent: str, ctx: dict, depth: in
     gname = getattr(action, "group_name", "") or ""
     gvar = ctx.get("group_vars", {}).get(gname)
     if not gvar:
-        return [f"{indent}// TODO groupCmd: group '{gname}' not declared"]
+        return [f"{indent}// TODO(editor) groupCmd: group '{gname}' not declared"]
     cmd = getattr(action, "fg_command", "attackArea") or "attackArea"
     rect = _rect(action.x, action.y, action.x2, action.y2)
     # FightGroup-Befehle
@@ -555,7 +555,7 @@ def _emit_fightGroupCmd(action: TriggerAction, indent: str, ctx: dict, depth: in
         tname = getattr(action, "target", "") or ""
         tvar = ctx.get("group_vars", {}).get(tname)
         if not tvar:
-            return [f"{indent}// TODO groupCmd: target group '{tname}' not declared"]
+            return [f"{indent}// TODO(editor) groupCmd: target group '{tname}' not declared"]
         if cmd == "reinforceGroup":
             prio = max(1, int(getattr(action, "reinforce_priority", 1000) or 1000))
             return [f"{indent}{gvar}.RecordVehReinforceGroup({tvar}, {prio});"]
@@ -572,7 +572,7 @@ def _emit_fightGroupCmd(action: TriggerAction, indent: str, ctx: dict, depth: in
         tname = getattr(action, "target", "") or ""
         tvar = _resolve_loop_ref(tname, depth) or ctx.get("unit_vars", {}).get(tname)
         if not tvar:
-            return [f"{indent}// TODO groupCmd: unit '{tname}' not declared"]
+            return [f"{indent}// TODO(editor) groupCmd: unit '{tname}' not declared"]
         method = "TakeUnit" if cmd == "addUnit" else "RemoveUnit"
         return [f"{indent}{gvar}.{method}({tvar});"]
     # Befehle fuer alle Gruppentypen
@@ -582,7 +582,7 @@ def _emit_fightGroupCmd(action: TriggerAction, indent: str, ctx: dict, depth: in
         return [f"{indent}{gvar}.SetLights(0);"]
     if cmd == "clearTargCount":
         return [f"{indent}{gvar}.ClearTargCount();"]
-    return [f"{indent}// TODO groupCmd: unknown command '{cmd}'"]
+    return [f"{indent}// TODO(editor) groupCmd: unknown command '{cmd}'"]
     return _unbekannt(indent, k)
 
 
@@ -596,7 +596,7 @@ def _emit_unitCmd(action: TriggerAction, indent: str, ctx: dict, depth: int, k: 
     uname = getattr(action, "unit_ref", "") or ""
     uvar = _resolve_loop_ref(uname, depth) or ctx.get("unit_vars", {}).get(uname)
     if not uvar:
-        return [f"{indent}// TODO unitCmd: unit '{uname}' not declared"]
+        return [f"{indent}// TODO(editor) unitCmd: unit '{uname}' not declared"]
     cmd = getattr(action, "fg_command", "move") or "move"
     pos = _xy(action.x, action.y)
     simple = {
@@ -652,12 +652,12 @@ def _emit_unitCmd(action: TriggerAction, indent: str, ctx: dict, depth: int, k: 
         tname = getattr(action, "target", "") or ""
         tvar = _resolve_loop_ref(tname, depth) or ctx.get("unit_vars", {}).get(tname)
         if not tvar:
-            return [f"{indent}// TODO unitCmd repair: target unit '{tname}' not declared"]
+            return [f"{indent}// TODO(editor) unitCmd repair: target unit '{tname}' not declared"]
         return [
             f'{indent}op2::log::linef("repair target id=%d owner=%d", {tvar}.unitID, {tvar}.OwnerID());',
             f"{indent}{uvar}.DoRepair({tvar});",
         ]
-    return [f"{indent}// TODO unitCmd: unknown command '{cmd}'"]
+    return [f"{indent}// TODO(editor) unitCmd: unknown command '{cmd}'"]
     return _unbekannt(indent, k)
 
 
@@ -694,7 +694,7 @@ def _emit_repairBuildings(action: TriggerAction, indent: str, ctx: dict, depth: 
     # vehicle preference).
     armed_var = ctx.get("repair_action_vars", {}).get(id(action))
     if not armed_var:
-        return [f"{indent}// TODO repairBuildings: armed flag not declared"]
+        return [f"{indent}// TODO(editor) repairBuildings: armed flag not declared"]
     return [f"{indent}{armed_var} = true;"]
     return _unbekannt(indent, k)
 
@@ -751,7 +751,7 @@ def _emit_setMusic(action: TriggerAction, indent: str, ctx: dict, depth: int, k:
     """Aktion setMusic."""
     songs = [s for s in (getattr(action, "songs", None) or []) if s]
     if not songs:
-        return [f"{indent}// TODO setMusic: no songs selected"]
+        return [f"{indent}// TODO(editor) setMusic: no songs selected"]
     rep = max(0, min(int(getattr(action, "repeat_start", 0) or 0), len(songs) - 1))
     return [
         f"{indent}{{",
@@ -782,7 +782,7 @@ def _emit_modUnitStats(action: TriggerAction, indent: str, ctx: dict, depth: int
     mods = [m for m in (getattr(action, "stat_mods", None) or [])
             if m.get("stat")]
     if not mods:
-        return [f"{indent}// TODO modUnitStats: no stats selected"]
+        return [f"{indent}// TODO(editor) modUnitStats: no stats selected"]
     lines = [f"{indent}{{",
              f"{indent}    UnitInfo _ui({mapid(action.unit_type)});"]
     for m in mods:
@@ -812,7 +812,7 @@ def _emit_addVictory_addDefeat(action: TriggerAction, indent: str, ctx: dict, de
     try:
         cond = Condition(**spec)
     except TypeError:
-        return [f"{indent}// TODO {k}: invalid condition_spec {spec!r}"]
+        return [f"{indent}// TODO(editor) {k}: invalid condition_spec {spec!r}"]
     inner = _emit_condition(cond, k == "addVictory", ctx.get("mission"), ctx)
     done_var = ctx.get("addcond_action_vars", {}).get(id(action))
     if not done_var:
