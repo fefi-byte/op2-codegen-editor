@@ -211,9 +211,15 @@ QPushButton[role="primary"]:pressed {{
     background-color: #2e4d40;
 }}
 /* Bereichsumschalter der Seitenleiste (Raster statt Tab-Leiste) */
+QLabel[role="navgruppe"] {{
+    color: {OVERLAY};
+    font-size: 8pt;
+    font-weight: bold;
+    padding: 2px 2px 0 2px;
+}}
 QPushButton[role="navtab"] {{
     background-color: {BASE};
-    color: {OVERLAY};
+    color: {SUBTEXT};
     border: 1px solid {BORDER};
     border-radius: 3px;
     padding: 5px 6px;

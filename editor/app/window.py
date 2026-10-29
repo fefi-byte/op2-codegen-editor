@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 from .common import *
 from .placed_object import PlacedObject
 from .mapview import MapView
@@ -154,7 +156,14 @@ class EditorWindow(
         self._build_overview()
         self._refresh_player_range()
 
-        self.validation_label = QLabel("")
+        # Klick auf den Zaehler blendet die Validierung ein oder aus.
+        # Clicking the counter shows or hides the validation dock.
+        self.validation_label = QPushButton("")
+        self.validation_label.setFlat(True)
+        self.validation_label.setCursor(Qt.PointingHandCursor)
+        self.validation_label.setToolTip(tr("window.validation_toggle_hint"))
+        self.validation_label.clicked.connect(
+            lambda: self.validation_dock.setVisible(not self.validation_dock.isVisible()))
         self.statusBar().addPermanentWidget(self.validation_label)
         self.zoom_label = QLabel("")
         self.statusBar().addPermanentWidget(self.zoom_label)
@@ -163,7 +172,43 @@ class EditorWindow(
         self.statusBar().showMessage(tr("window.status_ready"))
         self.load_map(self.map_name)
         self._refresh_overview()
+        self._layout_wiederherstellen()
         QTimer.singleShot(0, self._maybe_reopen_last_mission)
+
+    # Fenstergroesse und Docks (sichtbar, Breite, Position) ueberdauern den
+    # Neustart. Window size and docks survive a restart.
+    _LAYOUT_VERSION = 1
+
+    def _einstellungen(self):
+        from PySide6.QtCore import QSettings
+        return QSettings("OP2MissionEditor", "Editor")
+
+    @staticmethod
+    def _layout_merken() -> bool:
+        # Nicht in Tests/ohne Bildschirm: sonst haengt ein Testlauf vom
+        # Fensterlayout des vorigen ab. Not in headless test runs.
+        return QApplication.platformName() != "offscreen"
+
+    def _layout_wiederherstellen(self):
+        if not self._layout_merken():
+            return
+        s = self._einstellungen()
+        geo = s.value("fenster/geometrie")
+        zustand = s.value("fenster/docks")
+        try:
+            if geo is not None:
+                self.restoreGeometry(geo)
+            if zustand is not None:
+                self.restoreState(zustand, self._LAYOUT_VERSION)
+        except Exception as e:                       # kaputter Eintrag: Standard
+            print(f"Fensterlayout nicht wiederhergestellt: {e}", file=sys.stderr)
+
+    def closeEvent(self, event):
+        if self._layout_merken():
+            s = self._einstellungen()
+            s.setValue("fenster/geometrie", self.saveGeometry())
+            s.setValue("fenster/docks", self.saveState(self._LAYOUT_VERSION))
+        super().closeEvent(event)
 
     def showEvent(self, event):
         """Karte erst einpassen, wenn das Fenster seine endgueltige Groesse hat.

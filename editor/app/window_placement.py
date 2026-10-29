@@ -386,6 +386,17 @@ class _PlacementMixin:
                 if isinstance(item, QGraphicsSimpleTextItem):
                     item.setVisible(visible)
 
+    def clear_objects_fragen(self):
+        """Alle Objekte und Gruppen loeschen -- erst nach Rueckfrage."""
+        n = len(self.objects)
+        g = len(self.building_groups) + len(self.reinforce_groups) + len(self.fight_groups)
+        if QMessageBox.question(
+                self, tr("window.clear_confirm_title"),
+                tr("window.clear_confirm_text", n=n, g=g),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        self.clear_objects()
+
     def clear_objects(self):
         for obj in self.objects:
             for it in obj.items:

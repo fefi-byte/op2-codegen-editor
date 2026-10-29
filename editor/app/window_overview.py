@@ -8,6 +8,7 @@ class _OverviewMixin:
     def _build_overview(self):
         self._build_validation_dock()
         dock = QDockWidget(tr("window.dock_overview"), self)
+        dock.setObjectName("dock_overview")
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         panel = QWidget()
         lay = QVBoxLayout(panel)
@@ -60,6 +61,7 @@ class _OverviewMixin:
         # At the bottom instead of the right: the warning list is short and
         # wide; on the right it used to eat half the overview's height.
         dock = QDockWidget(tr("window.dock_validation"), self)
+        dock.setObjectName("dock_validation")
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea)
         self.validation_panel = ValidationPanel(self)
         dock.setWidget(self.validation_panel)

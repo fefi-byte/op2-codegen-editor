@@ -45,7 +45,7 @@ SPEED_COLORS: dict[str, tuple[int, int, int]] = {
     CLIFF:      (170, 130, 240),
     SPECIAL:    (120, 220, 230),
 }
-OVERLAY_ALPHA = 110
+OVERLAY_ALPHA = 75             # war 110: zu bunt, die Kacheln verschwanden
 
 # Groesse der Nachzeichen-Bloecke (in Kacheln bzw. Pixeln) und Obergrenze,
 # ab der sie in die Karte eingebacken werden.
@@ -168,6 +168,37 @@ class _TerrainMixin:
             self._clear_terrain_preview()
             if self._placement_was_active:
                 self._activate_placement()
+        self._gelaende_banner_aktualisieren()
+
+    def _gelaende_banner_aktualisieren(self):
+        """Ein Schild oben links auf der Karte, solange Gelaende gemalt wird.
+
+        Ob man gerade Gelaende veraendert oder Objekte setzt, war nur an der
+        Statuszeile zu erkennen. Das Schild nennt auch den Pinsel.
+        A badge in the map's top-left corner while terrain is being painted,
+        naming the brush.
+        """
+        banner = getattr(self.view, "_gelaende_banner", None)
+        if not self._terrain_active:
+            if banner is not None:
+                banner.hide()
+            return
+        if banner is None:
+            banner = QLabel(self.view)
+            banner.setObjectName("gelaende_banner")
+            banner.setStyleSheet(
+                "QLabel#gelaende_banner { background: rgba(250, 179, 135, 215);"
+                " color: #1e1e2e; font-weight: bold; padding: 4px 10px;"
+                " border-radius: 4px; }")
+            banner.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            banner.move(12, 12)
+            self.view._gelaende_banner = banner
+        pinsel = self.terrain_panel.selected_brush()
+        banner.setText(tr("window.terrain_banner",
+                          brush=tr(f"terrain.brush_{pinsel}")))
+        banner.adjustSize()
+        banner.show()
+        banner.raise_()
 
     # ------------------------------------------------------------------
     # Kachelgrafiken / tile graphics

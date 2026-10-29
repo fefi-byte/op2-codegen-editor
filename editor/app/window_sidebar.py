@@ -16,6 +16,7 @@ class _SidebarMixin:
         # Deliberately not titled "Place": the first tab is already called that,
         # and the title stays put while another tab is active.
         dock = QDockWidget(tr("window.dock_mission"), self)
+        dock.setObjectName("dock_mission")      # fuer saveState
         # Breit genug fuer die Aktions-Formulare; per Splitter frei veraenderbar.
         # Wide enough for the action forms; freely resizable via the splitter.
         dock.setMinimumWidth(390)
@@ -45,14 +46,18 @@ class _SidebarMixin:
         # Reihen zu drei Knoepfen.
         # Six sections do not fit into one tab row -- grid with two rows of
         # three buttons.
+        # Zwei Gruppen: was die Mission tut, und woraus die Karte besteht.
+        # Two groups: what the mission does, and what the map is made of.
         self._sidebar_tabs = SidebarNav(columns=3)
-        self._sidebar_tabs.addTab(place_widget, tr("window.tab_place"))
-        self._sidebar_tabs.addTab(self.trigger_panel, tr("window.tab_triggers"))
-        self._sidebar_tabs.addTab(self.groups_panel, tr("window.tab_groups"))
-        self._sidebar_tabs.addTab(self.objects_panel, tr("window.tab_objects"))
-        self._sidebar_tabs.addTab(self.conditions_panel, tr("window.tab_conditions"))
+        self._sidebar_tabs.gruppe_anlegen("mission", tr("window.nav_mission"))
+        self._sidebar_tabs.gruppe_anlegen("karte", tr("window.nav_karte"))
+        self._sidebar_tabs.addTab(place_widget, tr("window.tab_place"), "mission")
+        self._sidebar_tabs.addTab(self.trigger_panel, tr("window.tab_triggers"), "mission")
+        self._sidebar_tabs.addTab(self.groups_panel, tr("window.tab_groups"), "mission")
+        self._sidebar_tabs.addTab(self.objects_panel, tr("window.tab_objects"), "mission")
+        self._sidebar_tabs.addTab(self.conditions_panel, tr("window.tab_conditions"), "mission")
         self._terrain_tab_index = self._sidebar_tabs.addTab(
-            self.terrain_panel, tr("window.tab_terrain"))
+            self.terrain_panel, tr("window.tab_terrain"), "karte")
         # Das Befahrbarkeits-Overlay haengt am Tab: wer Gelaende malt, will
         # sehen, was er erzeugt.
         # The passability overlay follows the tab: whoever paints terrain

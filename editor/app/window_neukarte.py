@@ -31,7 +31,7 @@ class _NeueKarteMixin:
         from .panels.newmap_panel import NewMapPanel
         panel = NewMapPanel(self)
         self.newmap_panel = panel
-        index = self._sidebar_tabs.addTab(panel, tr("window.tab_newmap"))
+        index = self._sidebar_tabs.addTab(panel, tr("window.tab_newmap"), "karte")
         self._sidebar_tabs.setCurrentIndex(index)
         panel.start()
 

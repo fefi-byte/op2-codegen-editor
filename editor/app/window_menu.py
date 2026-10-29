@@ -47,6 +47,15 @@ class _MenuMixin:
         a = QAction(tr("window.menu_lava_fields"), self)
         a.triggered.connect(self.edit_lava_fields)
         edit_menu.addAction(a)
+        edit_menu.addSeparator()
+        # Stand frueher als "Alles loeschen" in der Werkzeugleiste, direkt neben
+        # Build und Testen -- ein Fehlklick loeschte alle Objekte und Gruppen
+        # samt Rueckgaengig-Verlauf. Jetzt im Menue und mit Rueckfrage.
+        # Used to sit in the toolbar next to Build and Test; one misclick wiped
+        # all objects and groups including the undo history.
+        a = QAction(tr("window.menu_clear_objects"), self)
+        a.triggered.connect(self.clear_objects_fragen)
+        edit_menu.addAction(a)
 
         view_menu = self.menuBar().addMenu(tr("window.menu_view"))
         # Die Dock-Umschalter kommen aus _build_overview (laeuft spaeter).
@@ -101,6 +110,7 @@ class _MenuMixin:
         # "Mission"-Aktionen als obere Werkzeugleiste statt Menue.
         # "Mission" actions as a top toolbar instead of a menu.
         tb = QToolBar("Mission", self)
+        tb.setObjectName("toolbar_mission")
         tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.addToolBar(tb)
         for label, slot in [
@@ -120,10 +130,6 @@ class _MenuMixin:
             act = QAction(label, self)
             act.triggered.connect(slot)
             tb.addAction(act)
-        tb.addSeparator()
-        act = QAction(tr("window.tb_clear"), self)
-        act.triggered.connect(self.clear_objects)
-        tb.addAction(act)
 
     def _escape_pressed(self):
         """Abbruch in der Reihenfolge: Karten-Pick, Bereichsauswahl, Platzieren."""
