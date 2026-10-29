@@ -225,7 +225,7 @@ def _schraege_profil(lx: float, ly: float, rng):
 def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
                    rng, hoehe_min: float = HOEHE_MIN,
                    hoehe_max: float = HOEHE_MAX, unruhe: float = UNRUHE,
-                   enden: bool = True):
+                   enden: bool = True, nordenden: list | None = None):
     """Streckenzug -> (Teilfeldkarte, Achsenkarte je Zelle).
 
     Die Hoehe steht nicht fest: Oberkante und Dicke bekommen jede ihren
@@ -307,24 +307,31 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
                 if v1 > v0:
                     fein[fy, v0:v1] = True
                     achse[fy // FEIN, v0 // FEIN:(v1 - 1) // FEIN + 1] = 2
-    _nordlinie_durchziehen(fein, achse, nordlinie)
+    _nordlinie_durchziehen(fein, achse, nordlinie, nordenden)
     return fein, achse
 
 
-def _nordlinie_durchziehen(fein, achse, nordlinie):
-    """Die Nordkante liegt IN einer Zelle, nicht auf ihrer Grenze.
+# In welcher Teilfeldzeile die Nordkante liegt. In den 54 Karten sind die
+# haeufigsten N-Kacheln 157, 158, 161, 160, 95, 162, 96, 159 (je 500 bis 700
+# Vorkommen in der Mitte einer Kante): alle mit Fels im zweiten Abschnitt der
+# Ostseite, also in der zweiten Zeile, und nur EIN Abschnitt dick. Eine
+# Linie in Zeile 1 und 2 passte nur auf Kachel 211 -- die Kante bestand dann
+# durchgehend aus derselben Kachel (Originale: 1,4 % gleiche Nachbarn).
+NORD_ZEILE = 1
 
-    Die Nordkante ist nur ein bis zwei Teilfelder dick. Auf der ersten oder
-    letzten Teilfeldzeile einer Kachel steht sie auf der Grenze: dann
-    verlangt das Gelaende eine Kachel mit Fels nur an der Unterkante und
-    darunter eine mit Fels nur an der Oberkante -- solche Kacheln gibt es
-    nicht, und der Loeser fand auf einer waagerechten Nordkante bis
-    Abweichung 4 keine Belegung. Die N-Kacheln in cm02 tragen ihre Linie in
-    der zweiten Teilfeldzeile und wechseln die Zellreihe nur schraeg.
 
-    Darum: je Teilfeldspalte die Linie von der Grenze weg ins Innere
-    schieben, und wo sie danach von Spalte zu Spalte springt, senkrecht
-    verbinden -- das ist der schraege Uebergang in die Nachbarreihe.
+def _nordlinie_durchziehen(fein, achse, nordlinie, enden=None):
+    """Die Nordkante: ein Teilfeld dick, in Zeile `NORD_ZEILE` jeder Zelle.
+
+    Je Teilfeldspalte wird die Linie in die Zelle gelegt, in der ihre Mitte
+    liegt, und dort auf Zeile `NORD_ZEILE`. Springt sie von Spalte zu Spalte
+    in die Nachbarreihe, wird senkrecht verbunden -- das ist der schraege
+    Uebergang.
+
+    `enden` (Liste) bekommt je Ende eines Linienzugs (Zelle x, Zelle y,
+    Seite). Dort laeuft die Linie bis an die Kachelkante: in den Karten hoert
+    eine Nordkante an der Kante auf (Westende meist 94, 212, 160, 211, 157,
+    159 -- mit Fels bis an die offene Seite), nicht mit einem Haken.
     """
     fh, fw = fein.shape
     spalten = {}
@@ -332,24 +339,12 @@ def _nordlinie_durchziehen(fein, achse, nordlinie):
         ys = np.nonzero(nordlinie[:, x])[0]
         if not len(ys):
             continue
-        y0, y1 = int(ys.min()), int(ys.max())
-        fein[y0:y1 + 1, x] = False
-        if y0 // FEIN == y1 // FEIN:
-            if y0 % FEIN == 0 and y1 + 1 < fh:
-                y0, y1 = y0 + 1, min(y1 + 1, (y0 // FEIN) * FEIN + FEIN - 2)
-            elif y1 % FEIN == FEIN - 1 and y0 > 0:
-                y0, y1 = max(y0 - 1, (y1 // FEIN) * FEIN + 1), y1 - 1
-        else:
-            # Liegt quer ueber der Grenze: in die Zelle mit dem groesseren
-            # Teil, und dort ins Innere.
-            grenze = (y1 // FEIN) * FEIN
-            if grenze - y0 >= y1 - grenze + 1:
-                y0, y1 = grenze - 3, grenze - 2
-            else:
-                y0, y1 = grenze + 1, grenze + 2
-            y0, y1 = max(0, y0), min(fh - 1, y1)
-        spalten[x] = (y0, y1)
+        fein[int(ys.min()):int(ys.max()) + 1, x] = False
+        mitte = (int(ys.min()) + int(ys.max())) / 2.0
+        zeile = int(mitte) // FEIN * FEIN + NORD_ZEILE
+        spalten[x] = (min(fh - 1, zeile), min(fh - 1, zeile))
     vorher = None
+    laeufe = []
     for x in sorted(spalten):
         y0, y1 = spalten[x]
         if vorher is not None and vorher[0] == x - 1:
@@ -358,10 +353,23 @@ def _nordlinie_durchziehen(fein, achse, nordlinie):
                 y0 = p1 + 1
             elif y1 < p0 - 1:
                 y1 = p0 - 1
+            laeufe[-1].append(x)
+        else:
+            laeufe.append([x])
         fein[y0:y1 + 1, x] = True
         for yy in range(y0 // FEIN, y1 // FEIN + 1):
             achse[yy, x // FEIN] = 1
         vorher = (x, (y0, y1))
+    for lauf in laeufe:
+        for x, seite in ((lauf[0], "W"), (lauf[-1], "O")):
+            zeile = spalten[x][0]
+            zx = x // FEIN
+            if seite == "W":
+                fein[zeile, zx * FEIN:x + 1] = True
+            else:
+                fein[zeile, x:(zx + 1) * FEIN] = True
+            if enden is not None:
+                enden.append((zx, zeile // FEIN, seite, zeile))
 
 def rand_dem_biom(fein: np.ndarray, runden: int = 3):
     """Stoesst Klippe an Biom, gehoert die Randlinie dem Biom.
@@ -763,7 +771,7 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
            zeit: float = LOESER_ZEIT, abweichung: int = 0,
            gelaende_zuerst: bool = True, loch_erlaubt: bool = False,
            nur_belegt: bool = False, innen_gewicht: bool = True,
-           wdh_stufe: int = 1):
+           wdh_stufe: int = 1, offen_ok: dict | None = None):
     """Gelaende -> Kacheln, aber GESUCHT statt gesetzt.
 
     `setzen` waehlt je Zelle eine Kachel, die das Gelaende erfuellt, und
@@ -820,6 +828,9 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
                 nx, ny = x + dx, y + dy
                 if not (0 <= nx < w and 0 <= ny < h) or not hat[ny, nx]:
                     offen.add(r)
+            if offen_ok and (x, y) in offen_ok:
+                # Ende einer Nordkante: die Linie darf an die offene Seite.
+                offen.discard(offen_ok[(x, y)])
             kand = []
             innenkante = {}
             blk = a
@@ -840,8 +851,13 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
                     if int(_innenrand(ib, r).sum()) >= OFFEN_FELS_MAX)
                 # Boden zu einer Nachbarzelle, die selbst Klippe ist: eine
                 # Ober- oder Unterkante mitten in der Wand.
+                # Nur Seiten ganz ohne Fels: eine Nordkante zeigt zur
+                # Nachbarzelle drei Abschnitte Boden und einen Fels -- das ist
+                # ihre Linie und kein Mangel. Mit ">= 3 Boden" blieb fuer sie
+                # nur Kachel 211, die Kante bestand aus einer einzigen Kachel.
                 bin_ = sum(1 for r in SEITEN if r not in offen
-                           and sum(1 for u in s[r] if u == BIOM) >= 3)
+                           and sum(1 for u in s[r] if u == BIOM) >= 3
+                           and not any(u == FELS for u in s[r]))
                 fehl = sum(1 for r in SEITEN for u, v in zip(s[r], soll[r])
                            if u != EGAL and u != v)
                 if fehl > abweichung:
@@ -894,13 +910,16 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
         x, y = p
         gesetzt = [(r, belegt[q]) for r, q in nachbarn[p] if q in belegt]
         nb_kacheln = {t for _r, t in gesetzt}
-        # Auch zwei Zellen weiter: A-B-A-B ist ebenso Wiederholung.
+        # Auch zwei und drei Zellen weiter: A-B-A-B und A-B-C-A-B-C sind
+        # ebenso Wiederholung. Den Dreierrhythmus zeigte die Nordkante, nachdem
+        # sie drei gleichwertige Kacheln hatte (158, 162, 159, 158, ...).
         weiter = set()
         for r in SEITEN:
             dx, dy = VERSATZ[r]
-            q = belegt.get((x + 2 * dx, y + 2 * dy))
-            if q is not None:
-                weiter.add(q)
+            for k in (2, 3):
+                q = belegt.get((x + k * dx, y + k * dy))
+                if q is not None:
+                    weiter.add(q)
 
         fehl = fehl_von[p]
 
@@ -1081,14 +1100,14 @@ LOESER_STUFEN = (
 
 
 def loesen_stufenweise(grid: np.ndarray, fein: np.ndarray, vor: dict,
-                       stufen=LOESER_STUFEN):
+                       stufen=LOESER_STUFEN, offen_ok: dict | None = None):
     """`loesen` ueber die Stufen in `LOESER_STUFEN` -> (maske, Bericht) | None.
 
     Der Bericht nennt die Stufe, die gegriffen hat.
     """
     for i, (nur_belegt, abw, zeit) in enumerate(stufen):
         r = loesen(grid, fein, vor, zeit=zeit, abweichung=abw,
-                   nur_belegt=nur_belegt)
+                   nur_belegt=nur_belegt, offen_ok=offen_ok)
         if r is not None:
             r[1]["Stufe"] = i
             return r
@@ -1110,15 +1129,31 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str, tm,
     vor = vorrat(tm, familie)
     if len(punkte) < 2 or len(vor) < MINDEST_KACHELN:
         return np.zeros(grid.shape, dtype=bool), zellen
+    nordenden: list = []
     fein, achse = band_aus_linie(punkte, hoch_seite, w, h, rng,
-                                 hoehe_min, hoehe_max)
+                                 hoehe_min, hoehe_max, nordenden=nordenden)
     if not fein.any():
         return np.zeros(grid.shape, dtype=bool), zellen
     fein, _b = fuellregel(fein, achse, rng)
     maske = None
     if LOESER:
-        r = loesen_stufenweise(grid, gelaende_angleichen(fein, vor, True),
-                               vor)
+        gel = gelaende_angleichen(fein, vor, True)
+        # Die Enden der Nordkante wieder bis an die Kachelkante ziehen --
+        # `rand_dem_biom` hat sie dort als Fels zum Boden entfernt.
+        offen_ok = {}
+        for zx, zy, seite, zeile in nordenden:
+            blk = gel[zy * FEIN:(zy + 1) * FEIN, zx * FEIN:(zx + 1) * FEIN]
+            if not blk.any():
+                continue
+            spalten = np.nonzero(gel[zeile, zx * FEIN:(zx + 1) * FEIN])[0]
+            if not len(spalten):
+                continue
+            if seite == "W":
+                gel[zeile, zx * FEIN:zx * FEIN + int(spalten.min()) + 1] = True
+            else:
+                gel[zeile, zx * FEIN + int(spalten.max()):(zx + 1) * FEIN] = True
+            offen_ok[(zx, zy)] = seite
+        r = loesen_stufenweise(grid, gel, vor, offen_ok=offen_ok)
         if r is not None:
             maske = r[0]
     if maske is None:

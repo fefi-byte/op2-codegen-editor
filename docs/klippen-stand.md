@@ -2649,3 +2649,27 @@ sind NICHT uebernommen -- gemessen auf dem zusammengefuehrten Stand:
 
 `cliff_kanten_gerechnet.json` lag lokal nur als unversionierte Datei vor; die
 automatische Zuordnung (`cliff_kanten_auto.json`, Abschnitt 20) ersetzt sie.
+
+## 23. Nordkante: Zeile, Enden, Abwechslung (29.10.2026)
+
+Im Editor fiel auf: die Nordkante endete mit einem Haken (Kachel 164) und
+bestand durchgehend aus Kachel 211. Gegen alle 54 Karten gezaehlt:
+
+- **Zeile.** Die haeufigsten N-Kacheln in der Mitte einer Kante (157, 158,
+  161, 160, 95, 162, 96, 159; je 500-700 Vorkommen) tragen die Linie im
+  zweiten Abschnitt der Ostseite und sind EINEN Abschnitt dick. Unsere Linie
+  lag in Zeile 1-2 -- dazu passte nur 211. Jetzt: genau ein Teilfeld, Zeile
+  `NORD_ZEILE` = 1.
+- **Enden.** Im Original hoert die Nordkante an der Kachelkante auf, mit Fels
+  bis an die offene Seite (Westende 94, 212, 160, 211, 157, 159). Unsere Regel
+  "kein Fels zum offenen Boden" liess nur Hakenkacheln zu. Jetzt laeuft die
+  Linie an jedem Ende bis an die Kachelkante, und der Loeser erlaubt dort
+  genau an dieser Seite Fels (`offen_ok`).
+- **Abwechslung.** Die Vorliebe `INNENKANTE` zaehlte eine Seite mit drei
+  Abschnitten Boden und einem Fels als "Randkachel mitten in der Wand" --
+  bei einer Nordkante ist das ihre Linie. Jetzt nur Seiten ganz ohne Fels.
+  Dazu prueft die Wiederholung auch den Abstand 3 (sonst Dreierrhythmus
+  158-162-159).
+
+78 Pruefwaende: 0 unpassend, 0 Loch, 0 hart; gleiche Nachbarn mud 1,8 %
+(Originale 3,9 %), Abstand 2/3 1,9 %; unbelegt mud 25,3 -> 28,1 %.
