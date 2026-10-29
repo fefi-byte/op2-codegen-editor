@@ -115,6 +115,18 @@ lang.en.ini         English UI strings
 4. **MSBuild** compiles that C++ into a 32-bit DLL.
 5. **Test in OP2** launches Outpost 2 with the mission preselected via `op2launcher.exe`.
 
+## Running the checks
+
+```powershell
+pip install -r requirements-dev.txt
+pytest -n auto
+```
+
+This runs the map-generator suite (one test per check group, in parallel), the
+`.map` round trip and the editor smoke test (offscreen Qt), about 1½ minutes.
+Each suite also runs on its own, e.g. `python mapview/tests/mapgen_test.py`.
+The game folder comes from `OP2_GAME`, else `game_path` in `config.ini`.
+
 ## License
 
 *(project-specific — add your preferred license file here)*
