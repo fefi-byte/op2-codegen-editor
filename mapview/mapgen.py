@@ -65,9 +65,9 @@ TEMPLATES: dict[str, dict] = {
     "ice":     {"mix": {"sno": 0.45, "roc": 0.35, "mud": 0.20}, "roughness": 0.45},
     # Landschaftsmodus: nicht Flecken wuerfeln, sondern ein Relief bauen --
     # Hochlandmassiv, Mesas, ausgetrocknete Flussbetten, Klippen als gezeichnete
-    # Linien (Blockweg). Trocken, karg, leicht vulkanisch -- New Terra.
+    # Linien (Gelaende-Loeser). Trocken, karg, leicht vulkanisch -- New Terra.
     # Landscape mode: build a relief instead of rolling patches -- highland
-    # massif, mesas, dry riverbeds, cliffs as drawn lines (block path).
+    # massif, mesas, dry riverbeds, cliffs as drawn lines (terrain solver).
     # Sandanteil bewusst klein: bei 0,28 wuchs auf 128er-Karten regelmaessig
     # ein Sandkontinent, in dem die Flussbetten untergingen.
     # Sand share deliberately small: at 0.28 a sand continent regularly grew
@@ -149,7 +149,7 @@ class MapGenParams:
     # space away from it.
     features: list = field(default_factory=list)
     # Landschaftsmodus: Hochland als EIN Relief (Massiv + Mesas) statt
-    # gestreuter Blobs, Klippen ueber klippe_aus_linie (Blockweg mit Gruppen),
+    # gestreuter Blobs, Klippen ueber klippe_aus_linie (Gelaende-Loeser),
     # ausgetrocknete Flussbetten. Aus, solange keine Vorlage ihn anfordert --
     # die bestehenden Wege bleiben unangetastet.
     # Landscape mode: highland as ONE relief (massif + mesas) instead of
@@ -2115,16 +2115,15 @@ def _hoehenfeld(params: "MapGenParams", rng: np.random.Generator,
 # Massiv an einer Kartenseite plus freistehende Mesas; ausgetrocknete
 # Flussbetten schneiden Schluchten hindurch. Die Klippen entstehen NICHT mehr
 # ueber das Zelltypband (_male_klippen), sondern indem die Hochlandkontur als
-# Linienzug abgelaufen und mit `klippe_aus_linie` gesetzt wird -- derselbe
-# Blockweg wie beim Klippenpinsel im Editor, mit ganzen Gruppen, Ecken,
-# Abschluessen und allen Reparaturen.
+# Linienzug abgelaufen und mit `klippe_algo.klippe_aus_linie` gesetzt wird --
+# derselbe Gelaende-Loeser wie beim Klippenpinsel im Editor.
 #
 # Landscape mode: one relief instead of scattered patches. The highland is a
 # massif anchored at one map side plus free-standing mesas; dry riverbeds cut
 # gorges through it. Cliffs are no longer derived from the cell-type band
 # (_male_klippen) but by walking the highland contour as a polyline and
-# covering it with `klippe_aus_linie` -- the same block path as the editor's
-# cliff brush, with whole groups, corners, end caps and all repairs.
+# covering it with `klippe_algo.klippe_aus_linie` -- the same terrain solver
+# as the editor's cliff brush.
 
 # Moore-Nachbarschaft im Uhrzeigersinn, beginnend im Westen.
 # Moore neighbourhood clockwise, starting west.

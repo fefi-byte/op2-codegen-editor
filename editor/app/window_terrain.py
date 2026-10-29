@@ -26,6 +26,14 @@ import mapgen
 from .paint_layers import PaintLayers, B_ERDE, B_VULKAN, B_KLIPPE
 from .panels.terrain_panel import PUNKT_PINSEL
 
+# Live-Vorschau der Klippe: so lange muss die Maus stillstehen, bevor
+# gerechnet wird. Der Loeser braucht im Median gut 20 ms; ohne Pause wuerde
+# jede Mausbewegung eine Rechnung anstossen, die beim naechsten Pixel schon
+# veraltet ist.
+# Live cliff preview: the mouse has to rest this long before computing.
+KLIPPEN_LIVE_VERZOEGERUNG = 60      # ms
+KLIPPEN_LIVE_DECKKRAFT = 0.85
+
 # Farben des Befahrbarkeits-Overlays je Geschwindigkeitsklasse.
 # Colors of the passability overlay per speed class.
 SPEED_COLORS: dict[str, tuple[int, int, int]] = {
@@ -96,6 +104,13 @@ class _TerrainMixin:
         self._strich_offen = False
         self._klippen_punkte = []
         self._klippen_items = []
+        self._klippen_live_items = []
+        self._klippen_live_ziel = None
+        self._klippen_live_schluessel = None
+        self._klippen_live_timer = QTimer(self)
+        self._klippen_live_timer.setSingleShot(True)
+        self._klippen_live_timer.setInterval(KLIPPEN_LIVE_VERZOEGERUNG)
+        self._klippen_live_timer.timeout.connect(self._klippen_live_rechnen)
         self._klick_neu = False
         self._terrain_brush = 1
         self._overlay_enabled = True
@@ -128,6 +143,8 @@ class _TerrainMixin:
             return
         self._terrain_active = on
         self.view.terrain_paint_enabled = on
+        if not on:
+            self._klippen_live_weg()
         if on:
             # Platzier- und Auswahlzustand merken und beim Verlassen
             # wiederherstellen -- sonst ist nach einem Besuch im Gelaende-Tab
@@ -588,8 +605,11 @@ class _TerrainMixin:
                 self.scene.addItem(ring)
                 self._klippen_items.append(ring)
         punkte = getattr(self, "_klippen_punkte", []) or []
-        if not punkte:
+        if not punkte or self.terrain_panel.selected_brush() != B_KLIPPE:
+            self._klippen_live_weg()
             return
+        if len(punkte) >= 2 and self._klippen_live_ziel is None:
+            self._klippen_live_planen(None)
         farbe = QColor(255, 210, 90)
         for i, (x, y) in enumerate(punkte):
             marke = QGraphicsRectItem((x - 0.5) * SCENE_TILE,
@@ -608,6 +628,129 @@ class _TerrainMixin:
                 strich.setZValue(1001)
                 self.scene.addItem(strich)
                 self._klippen_items.append(strich)
+
+    # ------------------------------------------------------------------
+    # Live-Vorschau der Klippe / live cliff preview
+
+    def _klippen_live_planen(self, ziel, neu: bool = False):
+        """Die Wand fuer die Punkte plus `ziel` (den Zeiger) bald zeigen.
+
+        `ziel` None heisst: nur die gesetzten Punkte. Gerechnet wird erst,
+        wenn die Maus kurz stillsteht (`KLIPPEN_LIVE_VERZOEGERUNG`).
+        Schedule the preview of the placed points plus `ziel` (the cursor).
+        """
+        # Derselbe Zielpunkt wie eben: nicht neu aufziehen. Sonst haelt ein
+        # Strom von Hover-Ereignissen auf derselben Kachel den Zeitgeber
+        # endlos zurueck, und die Vorschau kommt nie.
+        # Same target as before: don't restart, or a stream of hover events on
+        # one tile keeps the timer from ever firing.
+        if (not neu and ziel == self._klippen_live_ziel
+                and (self._klippen_live_timer.isActive()
+                     or self._klippen_live_schluessel is not None)):
+            return
+        self._klippen_live_ziel = ziel
+        self._klippen_live_timer.start()
+
+    def _klippen_live_rechnen(self):
+        """Die Wand ausrechnen und als Bild ueber die Karte legen.
+
+        Geschrieben wird nichts: `klippe_berechnen` arbeitet auf einer Kopie
+        des Kachelgitters. Die Kacheln kommen als ein einziges Pixmap ueber
+        die Karte, unter die Punktmarken.
+        Compute the wall on a copy and lay it over the map as one pixmap.
+        """
+        ebenen = self._paint_layers()
+        punkte = list(getattr(self, "_klippen_punkte", []) or [])
+        if (ebenen is None or self.map is None
+                or not getattr(self, "_terrain_active", False)
+                or self.terrain_panel.selected_brush() != B_KLIPPE):
+            self._klippen_live_weg()
+            return
+        ziel = self._klippen_live_ziel
+        if ziel is not None and (not punkte or tuple(ziel) != tuple(punkte[-1])):
+            punkte.append((int(ziel[0]), int(ziel[1])))
+        seite = self.terrain_panel.klippen_seite()
+        schluessel = (tuple(punkte), seite)
+        if schluessel == self._klippen_live_schluessel:
+            return
+        self._klippen_live_bild_weg()
+        self._klippen_live_schluessel = schluessel
+        if len(punkte) < 2:
+            return
+        try:
+            aenderungen, _, _ = ebenen.klippe_berechnen(punkte, seite)
+        except Exception as e:          # Vorschau darf den Editor nie stoeren
+            print("Klippenvorschau:", e)
+            return
+        if not aenderungen:
+            return
+        xs = [a[0] for a in aenderungen]
+        ys = [a[1] for a in aenderungen]
+        x0, y0 = min(xs), min(ys)
+        bild = QPixmap((max(xs) - x0 + 1) * TILE, (max(ys) - y0 + 1) * TILE)
+        bild.fill(Qt.transparent)
+        maler = QPainter(bild)
+        for x, y, kachel, _zt in aenderungen:
+            kp = self._tile_pixmap(kachel)
+            if kp is not None:
+                maler.drawPixmap((x - x0) * TILE, (y - y0) * TILE, kp)
+        maler.end()
+        item = self.scene.addPixmap(bild)
+        item.setPos(x0 * SCENE_TILE, y0 * SCENE_TILE)
+        if SCENE_TILE != TILE:
+            item.setScale(SCENE_TILE / TILE)
+        item.setOpacity(KLIPPEN_LIVE_DECKKRAFT)
+        item.setZValue(999)             # ueber der Karte, unter den Marken
+        self._klippen_live_items.append(item)
+
+    def _klippen_live_weg(self):
+        """Die Live-Vorschau entfernen und vergessen."""
+        timer = getattr(self, "_klippen_live_timer", None)
+        if timer is not None:
+            timer.stop()
+        self._klippen_live_bild_weg()
+        self._klippen_live_schluessel = None
+        self._klippen_live_ziel = None
+
+    def _klippen_live_bild_weg(self):
+        for item in getattr(self, "_klippen_live_items", []):
+            if item.scene() is self.scene:
+                self.scene.removeItem(item)
+        self._klippen_live_items = []
+
+    def _klippen_vorwaermen(self):
+        """Die Klippenmodelle im Hintergrund laden.
+
+        Die erste Klippe braucht sonst rund zwei Sekunden, bis Kantentabelle,
+        Paartabelle und Kachelbilder geladen sind -- bei der Live-Vorschau
+        hiesse das: die erste Mausbewegung friert ein. Ein Probelauf auf einem
+        kleinen Feld fuellt alle Zwischenspeicher, waehrend man noch den
+        ersten Punkt setzt.
+        Warm the cliff models up in a background thread so the first live
+        preview does not freeze for two seconds.
+        """
+        if getattr(self, "_klippen_warm", False):
+            return
+        ebenen = self._paint_layers()
+        if ebenen is None:
+            return
+        self._klippen_warm = True
+        import threading
+
+        def probe():
+            try:
+                import klippe_algo
+                for fam in ("mud", "san"):
+                    if not klippe_algo.verfuegbar(ebenen.tm, fam):
+                        continue
+                    g = np.zeros((24, 32), dtype=np.int32)
+                    klippe_algo.klippe_aus_linie(
+                        g, [(4, 12), (27, 12)], "oben", ebenen.tm,
+                        np.random.default_rng(0), fam)
+            except Exception as e:      # nur Vorwaermen -- darf scheitern
+                print("Klippen vorwaermen:", e)
+
+        threading.Thread(target=probe, daemon=True).start()
 
     def _stempel_vulkan(self, rechteck, ebenen):
         """Vulkanstempel setzen -- der ist ein festes Bauteil, keine Flaeche."""
@@ -834,6 +977,7 @@ class _TerrainMixin:
         if self.terrain_panel.selected_brush() == B_KLIPPE:
             self._klippen_zielring(tx, ty)
             return
+        self._klippen_live_weg()
         cells = self._terrain_cells(tx, ty)
         if not cells:
             return
@@ -875,6 +1019,11 @@ class _TerrainMixin:
             ax, ay = punkte[-1]
             if (tx, ty) != (ax, ay):
                 bx, by = mapgen.klippe_winkel_rasten(ax, ay, tx, ty)
+                bx = max(0, min(self.map.width - 1, bx))
+                by = max(0, min(self.map.height - 1, by))
+                anker = ebenen.klippen_anker(bx, by, ausser=punkte)
+                self._klippen_live_planen(anker if anker is not None
+                                          else (bx, by))
                 linie = QGraphicsLineItem((ax + 0.5) * SCENE_TILE,
                                           (ay + 0.5) * SCENE_TILE,
                                           (bx + 0.5) * SCENE_TILE,

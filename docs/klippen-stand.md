@@ -2673,3 +2673,45 @@ bestand durchgehend aus Kachel 211. Gegen alle 54 Karten gezaehlt:
 
 78 Pruefwaende: 0 unpassend, 0 Loch, 0 hart; gleiche Nachbarn mud 1,8 %
 (Originale 3,9 %), Abstand 2/3 1,9 %; unbelegt mud 25,3 -> 28,1 %.
+
+## 24. Nur noch der Gelaende-Loeser, und eine Live-Vorschau (29.10.2026)
+
+**Blockweg entfernt.** Editorpinsel, Flaechenpinsel, Landschaftsmodus und
+alle Generatorvorlagen setzen Klippen nur noch ueber
+`klippe_algo.klippe_aus_linie`. Geloescht: der Umschalter "Gelaende statt
+Bloecke", 46 Funktionen und die Block-Methoden des `TileModel` in `mapgen.py`
+(8905 -> 4369 Zeilen), die Module `cliff_walk`, `cliff_columns`,
+`cliff_patches`, `cliff_gruppen` samt Modellen und Trainern, und die fuenf
+Pruefungen, die nur den Blockweg betrafen. Der Flaechenpinsel laesst
+bestehende Klippenzellen stehen, statt sie neu zu bauen. sno hat weiterhin
+keine Kantenzuordnung -- dort wird keine Klippe gesetzt, und der Editor sagt
+das.
+
+**Schneller.** Der Loeser rechnete jede Stufe von vorn und fragte die
+Kantentabelle Kachel fuer Kachel. Jetzt:
+
+- je Familie einmal numpy-Tabellen (`_Tabelle`): Kantenabschnitte, erlaubte
+  Nachbarn je Richtung, Innenbild, Fels zum offenen Boden
+- die Kandidatenwerte (`_vorbereiten`) einmal fuer alle acht Stufen
+- `rand_dem_biom`, `naht_teilen`, `naht_haelt`, `angleichen` vektorisiert
+- gerechnet wird nur im Rechteck um die Linie, nicht auf der ganzen Karte
+- Stufenzeit 0,15 s statt 1 s
+
+Median je Wand 196 -> 24 ms, Mittel 65 ms; auf allen 78 Pruefwaenden
+kachelgleich zum Stand davor.
+
+**Live-Vorschau.** Steht beim Klippenpinsel mindestens ein Punkt, rechnet der
+Editor die Wand fuer die gesetzten Punkte plus den Zeiger (gerastet wie der
+Klick) und legt sie halbdeckend ueber die Karte. Geschrieben wird dabei
+nichts: `PaintLayers.klippe_berechnen` arbeitet auf einer Kopie. Damit die
+Vorschau genau das zeigt, was "Setzen" schreibt, kommt der Zufall aus den
+Punkten und der Seite (crc32) statt aus dem fortlaufenden Generator --
+geprueft: gesetzte Wand kachelgleich zur Vorschau.
+
+- Gerechnet wird, wenn die Maus 60 ms stillsteht; dieselbe Linie wird nicht
+  zweimal gerechnet.
+- Ein Durchlauf im Editor: 33-50 ms, davon 11 ms fuer das Kachelgitter.
+- Beim Waehlen des Klippenpinsels laedt ein Hintergrundfaden die Modelle
+  (rund 2 s), damit die erste Mausbewegung nicht einfriert.
+- Seitenwechsel rechnet neu; Setzen, Verwerfen, anderer Pinsel und das
+  Verlassen des Gelaende-Reiters nehmen die Vorschau weg.

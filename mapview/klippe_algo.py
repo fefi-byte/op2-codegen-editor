@@ -1,7 +1,8 @@
 """Klippen algorithmisch setzen: das Gelaende bestimmt die Kachel.
 
-Der Blockweg (`mapgen.klippe_aus_linie`) legt vorgefertigte Bloecke an die
-Kante und bessert hinterher nach. Dieser Weg dreht das um -- er fragt nicht
+Der fruehere Blockweg legte vorgefertigte Bloecke an die Kante und besserte
+hinterher nach; er ist entfernt (docs/klippen-stand.md, Abschnitt 24). Dieser
+Weg dreht das um -- er fragt nicht
 "welche Kachel darf auf welche folgen", sondern "was verlangt das Gelaende an
 dieser Stelle":
 
@@ -29,9 +30,12 @@ Gemessen an vier Gelaenden gegen die 51 Originalkarten:
     regelwidrige Paare 0,9 bis 5,1 % (Originale 0,0 %)
     Naht 20,8 bis 22,0 (Originale 18,4)
 
-Der Weg braucht die Handzuordnung der Kachelraender und laeuft darum vorerst
-nur fuer `mud` -- `verfuegbar()` gibt Auskunft. Fuer die anderen Familien
-bleibt der Blockweg zustaendig.
+Der Weg braucht eine Kantenzuordnung der Kachelraender: fuer mud von Hand,
+fuer san automatisch (`cliff_kanten_auto`). sno hat zu wenige Klippenkacheln
+-- `verfuegbar()` gibt Auskunft, und ohne Zuordnung wird keine Klippe gesetzt.
+
+Er ist der einzige Klippenweg: Editorpinsel, Live-Vorschau und Kartengenerator
+rufen alle `klippe_aus_linie`.
 """
 from __future__ import annotations
 
@@ -170,7 +174,7 @@ def _wand_achse(x0, y0, x1, y1, hoch_seite: str):
     und "unten" sind bildschirmfest, "links" und "rechts" beziehen sich auf
     die ZEICHENRICHTUNG. Nach unten gezeichnet liegt links im Osten, nach oben
     gezeichnet im Westen. Wer das gleichsetzt, baut die Wand auf der falschen
-    Seite -- gemessen gegen den Blockweg: der legt bei "links" und nach unten
+    Seite -- gemessen gegen den frueheren Blockweg: der legte bei "links" und nach unten
     gezeichnet die Spalten 19 und 20 an eine Linie auf 20, also nach WESTEN.
     """
     dx, dy = x1 - x0, y1 - y0

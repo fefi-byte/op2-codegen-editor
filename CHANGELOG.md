@@ -8,6 +8,23 @@ and the project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Live cliff preview** in the editor: with the cliff brush and at least one
+  point placed, the wall for the placed points plus the cursor is computed
+  and shown semi-transparent over the map before you click "Set". The random
+  state is seeded from the points, so the preview is exactly what gets
+  written. Models are warmed up in the background when the brush is chosen.
+
+### Changed
+- **Cliffs use only the terrain solver** (`klippe_algo`): editor brush, area
+  brush, landscape mode and every generator template. The old block path,
+  its toggle, modules (`cliff_walk`, `cliff_columns`, `cliff_patches`,
+  `cliff_gruppen`), models and checks are removed; `mapgen.py` shrank from
+  8905 to 4369 lines.
+- **Solver about 8x faster** (median 196 -> 24 ms per wall) through numpy
+  tables, candidates computed once for all stages and cropping to the line;
+  results are tile-identical on all 78 test walls.
+- san cliffs use an automatic edge assignment (`cliff_kanten_auto`).
+
 - **Landscape mode** for the map generator (template "Dry landscape",
   `MapGenParams.landschaft`): instead of rolling patches it builds a relief —
   a highland massif anchored at one map side, free-standing mesas, and dry

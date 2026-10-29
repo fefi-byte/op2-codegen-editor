@@ -27,6 +27,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import zlib
+
 import numpy as np
 
 _MAPVIEW = Path(__file__).resolve().parents[2] / "mapview"
@@ -238,23 +240,45 @@ class PaintLayers:
         updated afterwards so the overlay and later strokes know where the
         highland now is.
         """
-        if len(punkte) < 2:
+        aenderungen, maske, zellen = self.klippe_berechnen(punkte, hoch_seite)
+        if not aenderungen:
             return []
+        self._hoehe_aus_klippe(maske, zellen)
+        if not (len(punkte) > 2 and tuple(punkte[0]) == tuple(punkte[-1])):
+            for p in (punkte[0], punkte[-1]):
+                if tuple(p) not in self.klippen_enden:
+                    self.klippen_enden.append((int(p[0]), int(p[1])))
+        return aenderungen
+
+    def klippe_berechnen(self, punkte, hoch_seite: str):
+        """Die Klippe ausrechnen, OHNE etwas zu veraendern.
+
+        -> (aenderungen, maske, zellen). Fuer die Live-Vorschau: sie ruft das
+        bei jeder Mausbewegung, also darf hier weder Hoehe noch Enden noch der
+        Zufallsstand weiterlaufen. Der Zufall kommt deshalb aus den Punkten
+        selbst -- dieselbe Linie gibt dieselbe Wand, und was die Vorschau
+        zeigt, ist genau das, was "Setzen" schreibt.
+
+        Compute the cliff WITHOUT changing anything. The random state is seeded
+        from the points, so the preview shows exactly what "Set" will write.
+        """
+        leer = ([], None, None)
+        if len(punkte) < 2:
+            return leer
         h, w = self.hoehe.shape
-        gitter = np.array([[self.map.tile_mapping_index(x, y)
-                            for x in range(w)] for y in range(h)],
-                          dtype=np.int32)
+        gitter = self._kachelgitter()
         vorher = gitter.copy()
-        # Die Familie am ersten Punkt bestimmt den Kachelsatz der Wand.
-        # The family at the first point picks the wall's tile set.
         x0, y0 = punkte[0]
         fi = int(self.familie[max(0, min(h - 1, y0)), max(0, min(w - 1, x0))])
         familie = (self.tm.families[fi] if 0 <= fi < len(self.tm.families)
                    else "san")
-        maske, zellen = self._klippe_belegen(gitter, list(punkte), hoch_seite,
-                                             familie)
+        saat = zlib.crc32(repr(([tuple(map(int, p)) for p in punkte],
+                                hoch_seite)).encode())
+        maske, zellen = self._klippe_belegen(
+            gitter, [tuple(p) for p in punkte], hoch_seite, familie,
+            np.random.default_rng(saat))
         if not maske.any():
-            return []
+            return leer
         aenderungen = []
         for y, x in zip(*np.nonzero(gitter != vorher)):
             kachel = int(gitter[y, x])
@@ -262,16 +286,16 @@ class PaintLayers:
             aenderungen.append((int(x), int(y), kachel,
                                 zt if zt >= 0
                                 else celltypes.default_cell_type(kachel)))
-        self._hoehe_aus_klippe(maske, zellen)
-        # Enden merken; ein geschlossener Zug hat keine.
-        # Remember the ends; a closed figure has none.
-        if not (len(punkte) > 2 and tuple(punkte[0]) == tuple(punkte[-1])):
-            for p in (punkte[0], punkte[-1]):
-                if tuple(p) not in self.klippen_enden:
-                    self.klippen_enden.append((int(p[0]), int(p[1])))
-        return aenderungen
+        return aenderungen, maske, zellen
 
-    def _klippe_belegen(self, gitter, punkte, hoch_seite, familie):
+    def _kachelgitter(self):
+        """Die Kachelindizes der Karte als Feld (eine frische Kopie)."""
+        h, w = self.hoehe.shape
+        return np.array([[self.map.tile_mapping_index(x, y)
+                          for x in range(w)] for y in range(h)],
+                        dtype=np.int32)
+
+    def _klippe_belegen(self, gitter, punkte, hoch_seite, familie, rng=None):
         """Die Kante mit dem Gelaende-Loeser (`klippe_algo`) belegen.
 
         Der Blockweg ist entfernt. Traegt die Familie keine Kantenzuordnung
@@ -285,7 +309,8 @@ class PaintLayers:
             return (np.zeros(gitter.shape, dtype=bool),
                     np.full(gitter.shape, -1, dtype=np.int16))
         return klippe_algo.klippe_aus_linie(gitter, punkte, hoch_seite,
-                                            self.tm, self.rng, familie)
+                                            self.tm, rng if rng is not None
+                                            else self.rng, familie)
 
     def klippen_anker(self, x: int, y: int, umkreis: int = 5, ausser=()):
         """Naechstes offenes Klippenende im Umkreis -> (x, y) oder None.

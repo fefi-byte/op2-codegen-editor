@@ -110,6 +110,10 @@ class TerrainPanel(QWidget):
         self.btn_klippe_setzen = QPushButton(tr("terrain.klippe_setzen"))
         self.btn_klippe_setzen.setToolTip(tr("terrain.klippe_setzen_hint"))
         self.btn_klippe_setzen.clicked.connect(self._window._klippe_setzen)
+        # Seite gewechselt: die Live-Vorschau neu rechnen.
+        self.klippen_seite_wahl.currentIndexChanged.connect(
+            lambda *_: self._window._klippen_live_planen(
+                self._window._klippen_live_ziel, neu=True))
         apply_role(self.btn_klippe_setzen, "primary")
         knopfreihe.addWidget(self.btn_klippe_setzen, 1)
         self.btn_klippe_weg = QPushButton(tr("terrain.klippe_verwerfen"))
@@ -199,6 +203,8 @@ class TerrainPanel(QWidget):
             btn.setChecked(key == brush)
         self.brush_size.setEnabled(brush not in PUNKT_PINSEL)
         self.klippen_box.setVisible(brush == B_KLIPPE)
+        if brush == B_KLIPPE and hasattr(self._window, "_klippen_vorwaermen"):
+            self._window._klippen_vorwaermen()
         self._update_info()
 
     def selected_brush(self) -> str:

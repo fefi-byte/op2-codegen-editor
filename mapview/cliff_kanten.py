@@ -163,10 +163,9 @@ def modell(pfad: Path | str = MODELL_PFAD, auto: bool = False) -> CliffEdgeModel
     """Das Modell, einmal geladen und dann gemerkt.
 
     `auto` nimmt die automatische Zuordnung (`cliff_kanten_auto.json`) fuer
-    alle nicht von Hand bearbeiteten Kacheln dazu. Nur der Gelaende-Loeser
-    (`klippe_algo`) fragt danach; der Blockweg in `mapgen` bleibt bei der
-    Hand -- mit der automatischen fielen dort fuenf san-Pruefungen
-    (Fortsetzung, Eckblock, T-Stoss).
+    alle nicht von Hand bearbeiteten Kacheln dazu. Der Gelaende-Loeser
+    (`klippe_algo`) fragt so; ohne `auto` gilt nur die Hand -- das brauchen
+    die Pruefwerkzeuge, die die Handzuordnung gegen die Karten messen.
     """
     s = (str(pfad), bool(auto))
     if s not in _zwischen:
