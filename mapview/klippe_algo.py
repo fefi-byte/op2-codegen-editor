@@ -113,6 +113,19 @@ NORD_MAX = 0.5
 # Die Nordkante wird nicht verjuengt -- sie ist schon eine Linie und zerfiel
 # dabei.
 ENDE_LAENGE = 3.5
+# Auf einem kurzen Zug fraessen zwei Enden von je 3,5 Kacheln fast die ganze
+# Wand auf (9 Zeilen steil: 7 davon verjuengt). Jedes Ende hoechstens dieser
+# Anteil der Zuglaenge.
+ENDE_ANTEIL_MAX = 0.25
+
+# Seitenwaende (Hochland im Osten oder Westen, `art == "h"`). In den
+# Originalen ein durchgehendes dunkles Band mit gleichmaessig verteilten
+# Ein-Zellen-Versaetzen (cm02 212,20; 228,160). Mit der vollen Unruhe der
+# Suedwand wurde daraus ein fleckiger Streifen; die Unruhe ist daher
+# gedaempft. Schmaler machen (0,7) wurde probiert und verworfen: unter etwa
+# einer Kachel Fels zerfiel das Band in einzelne Flecken und Vollfelsbloecke.
+SEITE_DICKE = 1.0
+SEITE_UNRUHE = 0.4
 ENDE_REST = 0.0
 
 _zwischen: dict = {}
@@ -220,9 +233,16 @@ def _wand_achse(x0, y0, x1, y1, hoch_seite: str):
 # Kacheln eine Treppe aus Ein-Zellen-Versaetzen.
 SCHRAEGE_ZERLEGEN = True
 SCHRAEGE_STUECK = (2.0, 3.0)      # Laenge eines 45-Grad-Stuecks in Kacheln
+# Steile Seitenwaende genauso, nur gekippt: senkrechte Laeufe, dazwischen
+# Versaetze. In den Originalen sind es fast immer EIN, selten zwei Zellen
+# (cm02 212,20: 0 0 0 1 0 0 1 0 0 1 ...). Gleichmaessig schraeg gelegt riss
+# das Band an der Stelle, wo es eine Zellgrenze kreuzte, quer durch.
+STEIL_STUECK = (1.0, 1.0)
+STEIL_GLEICHMASS = 4.0            # Dirichlet: gross = gleich lange Laeufe
 
 
-def _schraege_profil(lx: float, ly: float, rng):
+def _schraege_profil(lx: float, ly: float, rng, stueck=None,
+                     gleichmass: float = 2.0):
     """Flache Schraege -> (Stuetzstellen x, y) aus Plateaus und 45-Grad.
 
     `lx` ist die waagerechte Laenge, `ly` (<= lx) der Hoehenunterschied, beide
@@ -230,9 +250,9 @@ def _schraege_profil(lx: float, ly: float, rng):
     """
     if ly < 0.75 or ly >= 0.9 * lx:
         return np.array([0.0, lx]), np.array([0.0, ly])
-    k = max(1, int(round(ly / rng.uniform(*SCHRAEGE_STUECK))))
+    k = max(1, int(round(ly / rng.uniform(*(stueck or SCHRAEGE_STUECK)))))
     stueck = ly / k
-    flach = (lx - ly) * rng.dirichlet(np.full(k + 1, 2.0))
+    flach = (lx - ly) * rng.dirichlet(np.full(k + 1, gleichmass))
     xs, ys = [0.0], [0.0]
     for i in range(k + 1):
         xs.append(xs[-1] + flach[i])
@@ -301,9 +321,17 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
         if (SCHRAEGE_ZERLEGEN and art == "v" and ri > 0
                 and abs(y1 - y0) > 0):
             profil = _schraege_profil(abs(x1 - x0), abs(y1 - y0), rng)
+        steil = None
+        if SCHRAEGE_ZERLEGEN and art == "h" and abs(x1 - x0) > 0:
+            steil = _schraege_profil(abs(y1 - y0), abs(x1 - x0), rng,
+                                     STEIL_STUECK, STEIL_GLEICHMASS)
         for k in range(n):
             u = k / max(1, n - 1)
-            px = (x0 + (x1 - x0) * u + 0.5) * FEIN
+            if steil is None:
+                px = (x0 + (x1 - x0) * u + 0.5) * FEIN
+            else:
+                hx = float(np.interp(abs(y1 - y0) * u, *steil))
+                px = (x0 + np.sign(x1 - x0) * hx + 0.5) * FEIN
             if profil is None:
                 py = (y0 + (y1 - y0) * u + 0.5) * FEIN
             else:
@@ -313,10 +341,14 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
             d = dicke[min(s, schritte - 1)] * FEIN
             # Abstand zum naechsten Ende des ganzen Zuges, in Kacheln.
             rand_ab = min(s, schritte - 1 - s) / FEIN
+            ende_l = min(ENDE_LAENGE, ENDE_ANTEIL_MAX * schritte / FEIN)
             ende = 1.0
-            if enden and rand_ab < ENDE_LAENGE:
-                ende = ENDE_REST + (1 - ENDE_REST) * (rand_ab / ENDE_LAENGE) ** 0.5
+            if enden and rand_ab < ende_l:
+                ende = ENDE_REST + (1 - ENDE_REST) * (rand_ab / ende_l) ** 0.5
             d *= ende
+            if art == "h":
+                d *= SEITE_DICKE
+                w *= SEITE_UNRUHE
             nord = art == "v" and ri < 0
             if nord:
                 # Hochland im Sueden: die Wand faellt nach Norden.

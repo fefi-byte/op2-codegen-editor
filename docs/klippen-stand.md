@@ -2751,3 +2751,24 @@ Die Suite prueft, dass gebaut wird, was gemessen wird (2, 3, 5 Zellen).
 
 Nebenbei liest der Editor das Kachelgitter ueber eine Indextabelle statt
 Zelle fuer Zelle (11 -> 3 ms auf 256x256).
+
+## 26. Steile Seitenwaende (29.10.2026)
+
+Im Editor sah eine steil gezeichnete Linie (etwa 1:3, Hochland links) "semi
+gut" aus: duenn, fleckig, in der Mitte fast abgerissen, und auf langen Linien
+quer durchgeschnitten, wo das Band eine Zellgrenze kreuzte.
+
+213 steile Seitenwaende aus den 54 Karten: ein durchgehendes Band, die Kante
+springt fast immer um EINE Zelle, gleichmaessig verteilt (cm02 212,20:
+0 0 0 1 0 0 1 0 0 1 ...).
+
+- Steile Stuecke werden wie flache Schraegen zerlegt, nur gekippt: senkrechte
+  Laeufe und Ein-Zellen-Versaetze (`STEIL_STUECK` = 1, Laufe ungefaehr gleich
+  lang, `STEIL_GLEICHMASS` = 4). Versaetze von 1,5-3 Zellen sahen nach
+  Schlangenlinie aus.
+- Unruhe auf Seitenwaenden auf 40 % (`SEITE_UNRUHE`).
+- Wandenden verjuengen sich hoechstens auf je einem Viertel der Zuglaenge
+  (`ENDE_ANTEIL_MAX`); auf kurzen Linien frassen die Enden sonst die Wand.
+
+Sechs steile Zuege x 3 Saaten: unpassend mud 0,9 -> 0 %, unbelegt 27 -> 31 %,
+0 hart, 0 Loch, Median 36 ms. Die 78 Pruefwaende sind unveraendert.
