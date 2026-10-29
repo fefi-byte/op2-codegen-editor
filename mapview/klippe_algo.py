@@ -35,7 +35,9 @@ bleibt der Blockweg zustaendig.
 """
 from __future__ import annotations
 
+import json
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 
@@ -54,6 +56,21 @@ MINDEST_KACHELN = 40           # darunter traegt die Handzuordnung nicht
 NAHT_SPIELRAUM = 3.0
 NAHT_RUNDEN = 4
 
+# Wieviele der vier Abschnitte einer INNENNAHT Fels sein muessen. Eins
+# schliesst nur das Loch, laesst die Naht aber als BODENSEITE durchgehen --
+# dann steht eine Ober- oder Unterkante mitten in der Wand. Gemessen ueber
+# vier Gelaende, Anteil solcher Stellen an allen Kachelseiten:
+#
+#     1 -> mud bis 1,15 %, san bis 2,53 %
+#     2 -> mud bis 1,28 %, san bis 2,86 %
+#     3 -> mud 0,00 % ueberall, san hoechstens 1,65 %
+#     4 -> kaum noch besser, aber der Fuellanteil springt von 11-18 auf
+#          23-26 % (mud) -- die Wand wird massiv, und das ist der Weg zurueck
+#          zur Treppe.
+#
+# Zum Vergleich die Originalkarten: mud 1,22 %, san 0,95 %.
+NAHT_FELS = 3
+
 # Wandhoehe. Fest gewaehlt sah die Wand aus wie eine Treppe, weil Ober- und
 # Unterkante im Gleichschritt sprangen.
 HOEHE_MIN = 2.5
@@ -70,8 +87,64 @@ def _modelle():
     return _zwischen["K"], _zwischen["PX"]
 
 
+# An welchen Abschnitten zwei Seiten in einer Ecke zusammenstossen.
+# N und S laufen von links nach rechts, W und O von oben nach unten.
+ECKEN = (("N", 0, "W", 0), ("N", 3, "O", 0),
+         ("S", 0, "W", 3), ("S", 3, "O", 3))
+
+
+def _ecken_streiten(s: dict) -> bool:
+    """Widerspricht sich die Kachel in einer Ecke?
+
+    Die vier Abschnitte einer Seite sind acht Pixel breite Streifen; zwei
+    benachbarte Seiten beruehren sich nur in EINEM Pixel. Die Handzuordnung
+    darf dort darum verschiedene Werte tragen -- der obere Streifen kann
+    ueberwiegend Fels sein und der linke ueberwiegend Boden.
+
+    Die Gelaendekarte dieses Setzers hat je Abschnitt nur ein Teilfeld, und
+    das Eckteilfeld gehoert beiden Seiten. Eine widerspruechliche Ecke laesst
+    sich darin nicht abbilden: die Kachel passt dann zu keinem Gelaende, und
+    `angleichen` waehlt sie immer wieder, ohne je einen Treffer zu erzeugen --
+    gemessen 54 Berichtigungen je Runde ohne Fortschritt und neun dauerhaft
+    unbediente Zellen auf einer geraden san-Wand.
+
+    Betroffen sind 15 der 156 mud-Kacheln und 41 der 138 san-Kacheln.
+    """
+    for r1, i1, r2, i2 in ECKEN:
+        a, b = s[r1][i1], s[r2][i2]
+        if a != EGAL and b != EGAL and a != b:
+            return True
+    return False
+
+
+def _gerechnet() -> dict:
+    """Die GERECHNETE Zuordnung -- getrennt von der Handtabelle.
+
+    Sie steht bewusst in einer eigenen Datei und nicht in `cliff_kanten.json`:
+    dort haengen der Blockweg und der Loeser mit dran, und die verlassen sich
+    darauf, dass jede Angabe von Hand angesehen wurde. Gemessen ist das kein
+    Vorbehalt, sondern ein Befund -- mit san in der Handtabelle fiel die
+    Pruefung "laesst die belegten Paare durch" von 99,85 auf 96,57 %, und der
+    Blockweg fand fuer san keinen Eckblock mehr.
+    """
+    if "gerechnet" not in _zwischen:
+        pfad = Path(__file__).with_name("cliff_kanten_gerechnet.json")
+        try:
+            roh = json.loads(pfad.read_text(encoding="utf-8"))
+            _zwischen["gerechnet"] = {
+                int(t): {r: tuple(FELS if x else BIOM for x in e[r])
+                         for r in SEITEN}
+                for t, e in roh["kanten"].items()}
+        except Exception:                                # noqa: BLE001
+            _zwischen["gerechnet"] = {}
+    return _zwischen["gerechnet"]
+
+
 def vorrat(tm, familie: str) -> dict:
     """Je Kachel der Familie ihre 16 Randabschnitte und ihr Fels-Anteil.
+
+    Zuerst die Handzuordnung, dann -- fuer Familien, die sie nicht traegt --
+    die gerechnete. Kacheln mit widerspruechlicher Ecke fallen raus.
 
     Der Fels-Anteil stammt aus der Kantentabelle und nicht aus der Pixelflaeche
     -- gemessen macht das keinen Unterschied (Fuellanteil 25,1 gegen 26,9 %,
@@ -86,12 +159,18 @@ def vorrat(tm, familie: str) -> dict:
     except ValueError:
         _zwischen[schluessel] = {}
         return {}
+    quelle = {t: {r: K.seite(t, r) for r in SEITEN} for t in K.kanten
+              if int(tm.family_of[t]) == fi}
+    if len(quelle) < MINDEST_KACHELN:
+        quelle = {t: s for t, s in _gerechnet().items()
+                  if int(tm.family_of[t]) == fi}
     aus = {}
-    for t in K.kanten:
-        if int(tm.family_of[t]) != fi:
-            continue
-        s = {r: K.seite(t, r) for r in SEITEN}
+    verworfen = 0
+    for t, s in quelle.items():
         if any(v is None for v in s.values()):
+            continue
+        if _ecken_streiten(s):
+            verworfen += 1
             continue
         n = f = 0
         for r in SEITEN:
@@ -255,8 +334,13 @@ def rand_dem_biom(fein: np.ndarray, runden: int = 3):
     return fein, ber
 
 
-def naht_haelt(fein: np.ndarray):
+def naht_haelt(fein: np.ndarray, mindestens: int | None = None):
     """Zwei benachbarte Klippenzellen muessen an ihrer Naht Fels teilen.
+
+    `mindestens` sagt, wieviele der vier Abschnitte einer Innennaht Fels sein
+    muessen. Eins schliesst nur das Loch. Drei verhindert daneben, dass die
+    Naht als BODENSEITE gelesen wird -- genau das sind die Randkacheln, die
+    mitten in der Wand landen, weil das Gelaende dort Boden verlangt hat.
 
     Das Loch galt mir als unmoeglich -- zu Unrecht. Eine Naht hat zwei Seiten,
     und sie sind verschiedene Teilfelder: die letzte Spalte der linken Kachel
@@ -269,6 +353,10 @@ def naht_haelt(fein: np.ndarray):
     breitesten Stelle des gemeinsamen Randes, damit die Wand dort zusammen-
     haengt, wo sie ohnehin am dicksten ist.
     """
+    # Der Wert wird ERST HIER geholt, nicht als Vorgabe im Kopf: dort waere er
+    # beim Definieren gebunden, und ein Umstellen zur Laufzeit bliebe wirkungslos.
+    if mindestens is None:
+        mindestens = NAHT_FELS
     fein = fein.copy()
     fh, fw = fein.shape
     h, w = fh // FEIN, fw // FEIN
@@ -285,7 +373,8 @@ def naht_haelt(fein: np.ndarray):
                     continue
                 a = _randlinie(fein, x, y, r)
                 b = _randlinie(fein, nx, ny, geg)
-                if a.any() or b.any():
+                fehlt = mindestens - min(int(a.sum()), int(b.sum()))
+                if fehlt <= 0:
                     continue
                 # Wo ist die Wand beiderseits am dicksten? Dort schliessen.
                 da = fein[y * FEIN:(y + 1) * FEIN,
@@ -294,9 +383,12 @@ def naht_haelt(fein: np.ndarray):
                 db = fein[ny * FEIN:(ny + 1) * FEIN,
                           nx * FEIN:(nx + 1) * FEIN].sum(axis=0 if r == "O"
                                                          else 1)
-                i = int(np.argmax(da + db))
-                a[i] = True
-                b[i] = True
+                for i in np.argsort(-(da + db)):
+                    if fehlt <= 0:
+                        break
+                    if not (a[i] and b[i]):
+                        a[i] = b[i] = True
+                        fehlt -= 1
                 ber["Naht geschlossen"] += 1
     return fein, ber
 
@@ -447,7 +539,16 @@ def angleichen(fein: np.ndarray, vor: dict, runden: int = 6):
                     for i, u in enumerate(best[1][r]):
                         if u == EGAL:
                             continue
-                        linie[i] = (u == FELS) and r not in offen
+                        # WOERTLICH schreiben, was die Kachel zeigt. An
+                        # offenen Seiten stattdessen Biom zu erzwingen klingt
+                        # sicherer, macht die Zelle aber zu keiner Kachel mehr
+                        # passend -- sie bleibt dann unbedient, und der Nachbar
+                        # zeigt Fels in das entstandene Loch. Gemessen: 9
+                        # unbediente Zellen auf einer geraden san-Wand, und
+                        # mehr Runden halfen nicht, weil es ein Fixpunkt war.
+                        # Die Rangfolge oben sortiert ohnehin zuerst nach
+                        # "kein Fels ins Freie".
+                        linie[i] = (u == FELS)
                 geaendert += 1
                 ber["berichtigt"] += 1
         if not geaendert:

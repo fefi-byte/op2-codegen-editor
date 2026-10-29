@@ -1394,44 +1394,89 @@ def check_klippe_algo():
         v = K.seite(t, r)
         return v is not None and sum(1 for u in v if u == was) >= 3
 
-    def maengel(g, m):
+    def maengel(g, m, fam="mud"):
+        """-> (hart, Loch, innen, Seiten).
+
+        `innen` ist der Spiegelfall von `hart`: eine Kachelseite zeigt BODEN,
+        obwohl dahinter eine Klippenzelle steht -- eine Ober- oder Unterkante
+        mitten in der Wand. Der Mangel fehlte hier lange und fiel erst am
+        fertigen Bild auf.
+
+        Die Seiten kommen aus derselben Quelle wie beim Setzer: Hand fuer mud,
+        gerechnet fuer san. `K.seite` taugt dafuer nicht, es kennt nur die
+        Handtabelle.
+        """
+        seiten_von = {t: s for t, (s, _fa) in KA.vorrat(tm, fam).items()}
         h, w = g.shape
-        hart = lo = 0
+        hart = lo = innen = seiten = 0
         for y in range(h):
             for x in range(w):
                 if not m[y, x]:
                     continue
+                s = seiten_von.get(int(g[y, x]))
+                if s is None:
+                    continue
                 for r in ("N", "O", "S", "W"):
                     dx, dy = VERSATZ[r]
                     nx, ny = x + dx, y + dy
-                    if not (0 <= nx < w and 0 <= ny < h) or not m[ny, nx]:
-                        if zeigt(int(g[y, x]), r, FELS):
+                    if not (0 <= nx < w and 0 <= ny < h):
+                        continue
+                    seiten += 1
+                    if not m[ny, nx]:
+                        if sum(1 for u in s[r] if u == FELS) >= 3:
                             hart += 1
                         continue
+                    if sum(1 for u in s[r] if u == BIOM) >= 3:
+                        innen += 1
                     if r not in ("O", "S"):
                         continue
-                    sa = K.seite(int(g[y, x]), r)
-                    sb = K.seite(int(g[ny, nx]), {"O": "W", "S": "N"}[r])
-                    if sa and sb and all(u == BIOM and v == BIOM
-                                         for u, v in zip(sa, sb)):
+                    sb = seiten_von.get(int(g[ny, nx]))
+                    if sb is None:
+                        continue
+                    if all(u == BIOM and v == BIOM
+                           for u, v in zip(s[r], sb[{"O": "W", "S": "N"}[r]])):
                         lo += 1
-        return hart, lo
+        return hart, lo, innen, seiten
 
     zuege = (("waagerecht", [(4, 14), (57, 14)], "oben"),
              ("2:1 schraeg", [(4, 20), (57, 8)], "oben"),
              ("mit Knick", [(4, 20), (30, 10), (57, 20)], "oben"),
              ("senkrecht", [(20, 4), (20, 28)], "links"))
-    for name, punkte, seite in zuege:
-        g = np.full((32, 64), gr, dtype=np.int32)
-        m, _z = KA.klippe_aus_linie(g, punkte, seite, tm,
-                                    np.random.default_rng(7), "mud")
-        check(f"algorithmisch setzt ueberhaupt ({name})", int(m.sum()) > 40,
-              f"{int(m.sum())} Kacheln")
-        hart, lo = maengel(g, m)
-        check(f"algorithmisch ohne harte Uebergaenge ({name})", hart == 0,
-              f"{hart} Stellen")
-        check(f"algorithmisch ohne Loch ({name})", lo == 0,
-              f"{lo} Nahtstellen")
+    for fam in ("mud", "san"):
+        if not KA.verfuegbar(tm, fam):
+            check(f"Klippe algorithmisch -- {fam} zugeordnet", False,
+                  f"Vorrat {len(KA.vorrat(tm, fam))}")
+            continue
+        grf = next(t for t in range(2048)
+                   if tm.family_of[t] == tm.families.index(fam)
+                   and tm.placeable[t])
+        for name, punkte, seite in zuege:
+            g = np.full((32, 64), grf, dtype=np.int32)
+            m, _z = KA.klippe_aus_linie(g, punkte, seite, tm,
+                                        np.random.default_rng(7), fam)
+            check(f"algorithmisch setzt ueberhaupt ({fam} {name})",
+                  int(m.sum()) > 40, f"{int(m.sum())} Kacheln")
+            hart, lo, innen, seiten = maengel(g, m, fam)
+            check(f"algorithmisch ohne harte Uebergaenge ({fam} {name})",
+                  hart == 0, f"{hart} Stellen")
+            check(f"algorithmisch ohne Loch ({fam} {name})", lo == 0,
+                  f"{lo} Nahtstellen")
+            # Randkacheln mitten in der Wand. Die Originalkarten liegen bei
+            # 1,22 % (mud) und 0,95 % (san); 2 % ist die Schwelle, ab der es
+            # im Bild als Band quer durch den Fels auffaellt.
+            anteil = 100 * innen / max(1, seiten)
+            check(f"keine Randkacheln mitten in der Wand ({fam} {name})",
+                  anteil <= 2.0, f"{innen} von {seiten} ({anteil:.2f} %)")
+
+    # Kacheln mit widerspruechlicher Ecke duerfen gar nicht erst im Vorrat
+    # stehen -- sie passen zu keinem Gelaende, und `angleichen` dreht sich an
+    # ihnen endlos. Gemessen waren es 15 von 156 bei mud und 41 von 138 bei
+    # san; ohne die Aussortierung blieben neun Zellen unbedient.
+    for fam in ("mud", "san"):
+        v = KA.vorrat(tm, fam)
+        streit = [t for t, (s, _fa) in v.items() if KA._ecken_streiten(s)]
+        check(f"keine widerspruechlichen Ecken im Vorrat ({fam})",
+              not streit, f"{len(streit)} Kacheln")
 
     # Gegenprobe: ohne die Randregel muss die Pruefung durchfallen.
     g = np.full((32, 64), gr, dtype=np.int32)
@@ -1440,20 +1485,104 @@ def check_klippe_algo():
     fein, _b = KA.fuellregel(fein, achse, np.random.default_rng(7))
     fein, _b = KA.angleichen(fein, vor)          # Randregel absichtlich weg
     m, _b = KA.setzen(g, fein, vor)
-    hart, _lo = maengel(g, m)
+    hart, _lo, _in, _s = maengel(g, m)
     check("ohne die Randregel bleiben harte Uebergaenge -- die Pruefung "
           "misst etwas", hart > 0, f"{hart} Stellen")
 
-    # Familien, die die Handzuordnung noch nicht traegt, muessen sich sauber
-    # verweigern statt Unsinn zu setzen.
-    for fam in ("san", "sno"):
-        if fam not in tm.families:
-            continue
+    # sno hat keine Zuordnung und kann keine bekommen: in den Karten ist es zu
+    # 99,4 % unpassierbares Eis, es gibt also keinen Boden, gegen den sich Fels
+    # abheben koennte -- und neun Klippenkacheln traegen den Setzer ohnehin
+    # nicht. Es muss sich sauber verweigern statt Unsinn zu setzen.
+    if "sno" in tm.families:
         g = np.full((32, 64), gr, dtype=np.int32)
         m, _z = KA.klippe_aus_linie(g, [(4, 14), (57, 14)], "oben", tm,
-                                    np.random.default_rng(7), fam)
-        check(f"algorithmisch verweigert sich bei {fam}", not m.any(),
+                                    np.random.default_rng(7), "sno")
+        check("algorithmisch verweigert sich bei sno", not m.any(),
               f"{int(m.sum())} Kacheln gesetzt")
+
+
+def check_landschaft():
+    """Der Landschaftsmodus: Relief, Blockweg-Klippen, Flussbetten.
+
+    Die Schwellen sind Anteile, keine festen Zahlen -- feste Zahlen haengen an
+    der Kartengroesse. Gemessen an sechs Seeds (1, 2, 3, 7, 11, 23) auf
+    128x128: Klippenanteil 3,2 bis 4,5 %, null harte Bodenkanten, null
+    isolierte Klippenzellen, haeufigste Kachel 5,5 bis 5,7 % (Originalkarte
+    newworld: 2,8 %; der Deckel bei 10 % faengt den Kachelflut-Fehler, den
+    eine reine Nahtmetrik einmal belohnt hat).
+
+    Landscape mode: relief, block-path cliffs, riverbeds. Thresholds are
+    shares, not fixed counts. Measured across six seeds; the 10 % lid on the
+    most frequent tile catches the tile-flood failure a pure seam metric once
+    rewarded.
+    """
+    tm = mapgen.model()
+    mit_satz = {tuple(sorted(k)) for k in tm.trans}
+    klippentypen = (celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
+                    celltypes.CLIFFS_LOW_SIDE)
+
+    a = mapgen.generate(mapgen.MapGenParams.from_template(
+        "newterra", width=128, height=128, seed=42, spawns=2))
+    b = mapgen.generate(mapgen.MapGenParams.from_template(
+        "newterra", width=128, height=128, seed=42, spawns=2))
+    check("Landschaft: gleicher Seed -> gleiche Karte",
+          np.array_equal(a.tiles, b.tiles))
+
+    for seed in (1, 3, 11):
+        gen = mapgen.generate(mapgen.MapGenParams.from_template(
+            "newterra", width=128, height=128, seed=seed, spawns=2))
+        flaeche = float(gen.tiles.size)
+        klippe = np.isin(gen.cells, klippentypen)
+        anteil = float(klippe.mean())
+        check(f"Landschaft Seed {seed}: Klippenanteil im Zielband",
+              0.015 <= anteil <= 0.10, f"{anteil:.1%}")
+
+        # Waende, kein Schutt: jede Klippenzelle hat eine Klippennachbarin.
+        # Walls, not rubble: every cliff cell has a cliff neighbour.
+        nachbarn = np.zeros(klippe.shape, dtype=np.int16)
+        nachbarn[1:, :] += klippe[:-1, :]
+        nachbarn[:-1, :] += klippe[1:, :]
+        nachbarn[:, 1:] += klippe[:, :-1]
+        nachbarn[:, :-1] += klippe[:, 1:]
+        isoliert = int((klippe & (nachbarn == 0)).sum())
+        check(f"Landschaft Seed {seed}: keine isolierte Klippenzelle",
+              isoliert == 0, f"{isoliert}")
+
+        # Harte Bodenkanten wie in check_harte_kanten, Klippenzellen sind
+        # kein Boden und bleiben aussen vor.
+        # Hard ground edges as in check_harte_kanten; cliff cells are not
+        # ground and stay out of it.
+        fam, ueb = tm.family_of[gen.tiles], tm.ist_uebergang[gen.tiles]
+        schlimm = 0
+        for fa, fb, ua, ub, ka, kb in (
+                (fam[:, :-1], fam[:, 1:], ueb[:, :-1], ueb[:, 1:],
+                 klippe[:, :-1], klippe[:, 1:]),
+                (fam[:-1, :], fam[1:, :], ueb[:-1, :], ueb[1:, :],
+                 klippe[:-1, :], klippe[1:, :])):
+            roh = (~ua) & (~ub) & (~ka) & (~kb) & (fa >= 0) & (fb >= 0) \
+                & (fa != fb)
+            ys, xs = np.nonzero(roh)
+            for yy, xx in zip(ys.tolist(), xs.tolist()):
+                paar = tuple(sorted((tm.families[int(fa[yy, xx])],
+                                     tm.families[int(fb[yy, xx])])))
+                if paar in mit_satz:
+                    schlimm += 1
+        check(f"Landschaft Seed {seed}: kein Boden ohne Uebergang",
+              schlimm == 0, f"{schlimm} harte Kanten")
+
+        # Kachelverteilung: eine Nahtmetrik allein hat einmal einen Fehler
+        # belohnt, der die Karte mit einer Kachel flutete.
+        # Tile distribution: a seam metric alone once rewarded a bug that
+        # flooded the map with one tile.
+        _w, anzahl = np.unique(gen.tiles, return_counts=True)
+        check(f"Landschaft Seed {seed}: keine Kachel flutet die Karte",
+              float(anzahl.max()) / flaeche <= 0.10,
+              f"haeufigste {float(anzahl.max()) / flaeche:.1%}")
+
+        check(f"Landschaft Seed {seed}: Flussbett vorhanden",
+              gen.fluss_share >= 0.005, f"{gen.fluss_share:.1%}")
+        check(f"Landschaft Seed {seed}: Startpunkte verbunden",
+              gen.connected and len(gen.spawns) == 2)
 
 
 def main() -> int:
@@ -1462,6 +1591,7 @@ def main() -> int:
         return 1
     check_determinism()
     check_harte_kanten()
+    check_landschaft()
     check_mix()
     check_symmetry()
     check_spawns()

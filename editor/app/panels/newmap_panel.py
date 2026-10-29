@@ -28,7 +28,7 @@ import mapgen
 # header, hence no free values.
 SIZES = [(64, 64), (128, 64), (128, 128), (256, 128), (256, 256), (512, 256)]
 
-TEMPLATE_KEYS = ["plains", "canyon", "desert", "islands", "ice"]
+TEMPLATE_KEYS = ["plains", "canyon", "desert", "islands", "ice", "newterra"]
 # "veg" = bewachsener Fels -- OP2 kennt kein Grasland, aber diese Kacheln
 # bilden im Original zusammenhaengende bewachsene Flaechen.
 # "veg" = overgrown rock -- OP2 has no grassland, but these tiles form
@@ -259,6 +259,12 @@ class NewMapPanel(QWidget):
             slider.setValue(int(round(100 * tpl["mix"].get(key, 0.0))))
             slider.blockSignals(False)
         self.roughness.setValue(int(round(100 * tpl["roughness"])))
+        # Vorlagen duerfen Vulkane vorschlagen (Landschaft: leicht vulkanisch);
+        # der Drehknopf bleibt danach frei veraenderbar.
+        # Templates may suggest volcanoes (landscape: slightly volcanic); the
+        # spinner stays freely adjustable afterwards.
+        if "volcanoes" in tpl:
+            self.volcanoes.setValue(int(tpl["volcanoes"]))
         self._update_mix_labels()
         self._schedule()
 
@@ -285,6 +291,11 @@ class NewMapPanel(QWidget):
         mix = {k: s.value() / 100.0 for k, s in self.mix_sliders.items() if s.value() > 0}
         if not mix:
             mix = {"mud": 1.0}
+        # Der Landschaftsmodus haengt an der Vorlage, nicht an einem eigenen
+        # Regler: er ist eine andere Bauart, kein Parameter.
+        # Landscape mode is tied to the template, not to a slider of its own:
+        # it is a different construction, not a parameter.
+        tpl = mapgen.TEMPLATES.get(self.template.currentData(), {})
         return mapgen.MapGenParams(
             width=width, height=height, seed=self.seed.value(), mix=mix,
             roughness=self.roughness.value() / 100.0,
@@ -295,6 +306,7 @@ class NewMapPanel(QWidget):
             details=self.details.value() / 100.0,
             features=self.features.features(),
             volcanoes=self.volcanoes.value(),
+            landschaft=bool(tpl.get("landschaft", False)),
         )
 
     def generated(self) -> mapgen.GeneratedMap | None:

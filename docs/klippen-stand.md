@@ -2340,3 +2340,34 @@ Sicherung der vorherigen Datei: `cliff_kanten.json.vor_vorbelegung`.
 
 san wartet auf einen Handdurchgang ueber 138 Kacheln. sno ist erledigt: dort
 gibt es nichts zuzuordnen.
+
+## 18. Der Landschaftsmodus des Generators (11.08.2026)
+
+Der Generator hat einen dritten Klippenaufrufer: `_klippen_aus_linien`
+(mapgen.py) laeuft die Konturen des Hoehenfelds ab und zeichnet sie mit
+`klippe_aus_linie` -- derselbe Blockweg wie der Pinsel, mit allen Reparaturen.
+Nur im Landschaftsmodus (`MapGenParams.landschaft`, Vorlage "newterra");
+die uebrigen Vorlagen benutzen weiter `_male_klippen`.
+
+Was dabei gemessen wurde:
+
+- **Konturen muessen rechtwinklig sein.** Das Hoehenfeld wird auf ein
+  FUENFERraster begradigt (senkrechter mud-Laufblock = 5 hoch) und die
+  Vereinfachung (`_kontur_vereinfachen`, eps 1,0) behaelt jede Ecke. Freie
+  Schraegen (eps 2,9) zerfielen als haarfeine Nordkanten-Treppen sichtbar in
+  Stummel; Viererraster ohne Glaettung zerfiel in Haken (8 Segmente der
+  Laengen 3-7 auf einem 37-Zellen-Bogen).
+- **Ein Biom je Wand** (`_landschaft_familien`): jede Hochlandkomponente samt
+  4er-Saum bekommt die Mehrheitsfamilie ihres Umfelds, BEVOR die Uebergaenge
+  gemischt werden -- der bekannte Fehler "Wand ueber Biomgrenze = 118 harte
+  Kanten" (Abschnitt 12) wird so umgangen statt repariert. Ergebnis ueber
+  sechs Seeds: null harte Bodenkanten, null isolierte Klippenzellen.
+- **Rampen als Luecken im Zug** (`_kontur_boegen`): bevorzugt auf waagerechten
+  Laeufen, weil nur dort Abschlussstuecke existieren. Am Kartenrand wird keine
+  Wand gezeichnet -- das Hochland laeuft dort aus dem Bild.
+- **san-Mesas bleiben die schwache Stelle**: ohne Kantenzuordnung keine
+  Reparaturen (Abschnitt 17), die Ringe wirken offener als mud-Waende.
+
+Pruefungen: `check_landschaft` in `mapview/tests/mapgen_test.py`
+(Determinismus, Klippenanteil als ANTEIL, Isolation, harte Kanten,
+Kachelflut-Deckel 10 %, Flussbett, Verbundenheit).

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import math
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -63,6 +63,17 @@ TEMPLATES: dict[str, dict] = {
     "islands": {"mix": {"mud": 0.35, "roc": 0.35, "san": 0.20, "veg": 0.10},
                 "roughness": 0.85},
     "ice":     {"mix": {"sno": 0.45, "roc": 0.35, "mud": 0.20}, "roughness": 0.45},
+    # Landschaftsmodus: nicht Flecken wuerfeln, sondern ein Relief bauen --
+    # Hochlandmassiv, Mesas, ausgetrocknete Flussbetten, Klippen als gezeichnete
+    # Linien (Blockweg). Trocken, karg, leicht vulkanisch -- New Terra.
+    # Landscape mode: build a relief instead of rolling patches -- highland
+    # massif, mesas, dry riverbeds, cliffs as drawn lines (block path).
+    # Sandanteil bewusst klein: bei 0,28 wuchs auf 128er-Karten regelmaessig
+    # ein Sandkontinent, in dem die Flussbetten untergingen.
+    # Sand share deliberately small: at 0.28 a sand continent regularly grew
+    # on 128 maps and swallowed the riverbeds.
+    "newterra": {"mix": {"mud": 0.68, "san": 0.20, "roc": 0.12},
+                 "roughness": 0.0, "landschaft": True, "volcanoes": 1},
 }
 
 # Zelltypen, ueber die Fahrzeuge kommen (fuer Startpunkte und Statistik).
@@ -137,11 +148,25 @@ class MapGenParams:
     # Requested terrain features -- placed before the randomness, taking the
     # space away from it.
     features: list = field(default_factory=list)
+    # Landschaftsmodus: Hochland als EIN Relief (Massiv + Mesas) statt
+    # gestreuter Blobs, Klippen ueber klippe_aus_linie (Blockweg mit Gruppen),
+    # ausgetrocknete Flussbetten. Aus, solange keine Vorlage ihn anfordert --
+    # die bestehenden Wege bleiben unangetastet.
+    # Landscape mode: highland as ONE relief (massif + mesas) instead of
+    # scattered blobs, cliffs via klippe_aus_linie (block path with groups),
+    # dry riverbeds. Off unless a template requests it.
+    landschaft: bool = False
+    # Ausgetrocknete Flussbetten im Landschaftsmodus. -1 = nach Kartengroesse
+    # (eine je 128er-Kantenlaenge), 0 = keine.
+    # Dry riverbeds in landscape mode. -1 = by map size, 0 = none.
+    fluesse: int = -1
 
     @classmethod
     def from_template(cls, name: str, **kwargs) -> "MapGenParams":
         tpl = TEMPLATES.get(name, TEMPLATES["plains"])
-        params = cls(mix=dict(tpl["mix"]), roughness=tpl["roughness"])
+        params = cls(mix=dict(tpl["mix"]), roughness=tpl["roughness"],
+                     landschaft=bool(tpl.get("landschaft", False)),
+                     volcanoes=int(tpl.get("volcanoes", 0)))
         for key, value in kwargs.items():
             setattr(params, key, value)
         return params
@@ -170,6 +195,9 @@ class GeneratedMap:
     # jittered around the sector, otherwise every map would look
     # the same.
     feature_spots: list = field(default_factory=list)
+    # Anteil der Karte, der im Landschaftsmodus Flussbett ist.
+    # Share of the map that is riverbed in landscape mode.
+    fluss_share: float = 0.0
 
 
 class TileModel:
@@ -2680,6 +2708,473 @@ def _hoehenfeld(params: "MapGenParams", rng: np.random.Generator,
         H[:, :3] = 0
         H[:, -3:] = 0
     return H
+
+
+# --------------------------------------------------------------------------
+# Landschaftsmodus: ein Relief statt gestreuter Flecken. Das Hochland ist ein
+# Massiv an einer Kartenseite plus freistehende Mesas; ausgetrocknete
+# Flussbetten schneiden Schluchten hindurch. Die Klippen entstehen NICHT mehr
+# ueber das Zelltypband (_male_klippen), sondern indem die Hochlandkontur als
+# Linienzug abgelaufen und mit `klippe_aus_linie` gesetzt wird -- derselbe
+# Blockweg wie beim Klippenpinsel im Editor, mit ganzen Gruppen, Ecken,
+# Abschluessen und allen Reparaturen.
+#
+# Landscape mode: one relief instead of scattered patches. The highland is a
+# massif anchored at one map side plus free-standing mesas; dry riverbeds cut
+# gorges through it. Cliffs are no longer derived from the cell-type band
+# (_male_klippen) but by walking the highland contour as a polyline and
+# covering it with `klippe_aus_linie` -- the same block path as the editor's
+# cliff brush, with whole groups, corners, end caps and all repairs.
+
+# Moore-Nachbarschaft im Uhrzeigersinn, beginnend im Westen.
+# Moore neighbourhood clockwise, starting west.
+_MOORE = [(-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1)]
+
+
+def _fluss_pfad(start, ziel, shape, rng: np.random.Generator
+                ) -> list[tuple[int, int]]:
+    """Maeandernder Pfad von `start` Richtung `ziel` -> [(x, y)].
+
+    Ein ausgetrocknetes Flussbett ist kein Zufallslauf: es haelt grob die
+    Richtung und pendelt seitlich aus. Kurs zum Ziel plus eine langsam
+    laufende Seitwaertswelle ergibt genau das; Zufall steckt nur in Phase,
+    Wellenlaenge und Auslenkung.
+
+    A meandering path: heading towards the target plus a slowly running
+    sideways wave; randomness only in phase, wavelength and amplitude.
+    """
+    h, w = shape
+    x, y = float(start[0]), float(start[1])
+    tx, ty = float(ziel[0]), float(ziel[1])
+    punkte = [(int(round(x)), int(round(y)))]
+    phase = float(rng.uniform(0, 2 * np.pi))
+    takt = float(rng.uniform(0.05, 0.09))
+    auslenkung = float(rng.uniform(0.5, 0.85))
+    for schritt in range(4 * (w + h)):
+        dx, dy = tx - x, ty - y
+        if float(np.hypot(dx, dy)) < 2.0:
+            break
+        winkel = float(np.arctan2(dy, dx))
+        winkel += auslenkung * float(np.sin(phase + schritt * takt))
+        x = min(max(x + float(np.cos(winkel)), 1.0), w - 2.0)
+        y = min(max(y + float(np.sin(winkel)), 1.0), h - 2.0)
+        p = (int(round(x)), int(round(y)))
+        if p != punkte[-1]:
+            punkte.append(p)
+        if p[0] <= 1 or p[0] >= w - 2 or p[1] <= 1 or p[1] >= h - 2:
+            break
+    return punkte
+
+
+def _pfad_band(shape, punkte, radius: float) -> np.ndarray:
+    """Zellen im Abstand <= radius um den Pfad -- das Bett bzw. die Schlucht."""
+    h, w = shape
+    band = np.zeros((h, w), dtype=bool)
+    r = int(np.ceil(radius))
+    for px, py in punkte:
+        y0, y1 = max(0, py - r), min(h, py + r + 1)
+        x0, x1 = max(0, px - r), min(w, px + r + 1)
+        ys, xs = np.ogrid[y0:y1, x0:x1]
+        band[y0:y1, x0:x1] |= ((xs - px) ** 2 + (ys - py) ** 2) <= radius ** 2
+    return band
+
+
+def _dehne(mask: np.ndarray, schritte: int) -> np.ndarray:
+    """4er-Dehnung um `schritte` Zellen (randfest, ohne np.roll-Umlauf)."""
+    out = mask.copy()
+    for _ in range(max(0, schritte)):
+        gewachsen = out.copy()
+        gewachsen[1:, :] |= out[:-1, :]
+        gewachsen[:-1, :] |= out[1:, :]
+        gewachsen[:, 1:] |= out[:, :-1]
+        gewachsen[:, :-1] |= out[:, 1:]
+        out = gewachsen
+    return out
+
+
+def _landschaft_hoehenfeld(params: "MapGenParams", rng: np.random.Generator
+                           ) -> tuple[np.ndarray, np.ndarray]:
+    """Relief des Landschaftsmodus -> (H, Flussbetten).
+
+    Ein Massiv, an einer zufaelligen Kartenseite verankert, ein bis drei
+    freistehende Mesas, und die Flussbetten schneiden Schluchten durch das
+    Massiv. Die Kanten werden auf ein Viererraster gerastet: Laeufe unter vier
+    Zellen kann der Blockweg nicht sauber belegen (mud-Bloecke sind 3 bis 5
+    lang), und ein groeberes Raster erzeugt genau die "mehrere Kacheln
+    geradeaus, dann sauber abbiegen"-Kanten der Originalkarten.
+
+    The relief of landscape mode -> (H, riverbeds). A massif anchored at a
+    random map side, one to three mesas, riverbeds cutting gorges through the
+    massif. Edges are snapped to a four-cell grid: the block path cannot
+    cleanly cover runs shorter than four cells.
+    """
+    h, w = params.height, params.width
+    flaeche = w * h
+    H = np.zeros((h, w), dtype=np.int8)
+    # 0 = West, 1 = Ost, 2 = Nord, 3 = Sued.
+    seite = int(rng.integers(4))
+    # Zielanteil des Massivs an der Karte; der Klippenregler stockt auf.
+    # Target share of the massif; the cliff slider adds to it.
+    ziel = 0.16 + 0.45 * params.cliffs
+    grundradius = int(round(np.sqrt(flaeche) / 5.5))
+    for _ in range(10):
+        if float((H > 0).mean()) >= ziel:
+            break
+        r = int(rng.integers(max(4, grundradius - 4), grundradius + 5))
+        laengs = float(rng.uniform(0.08, 0.92))
+        tiefe = float(rng.uniform(0.0, 0.55)) * r
+        if seite == 0:
+            cx, cy = int(tiefe), int(laengs * h)
+        elif seite == 1:
+            cx, cy = w - 1 - int(tiefe), int(laengs * h)
+        elif seite == 2:
+            cx, cy = int(laengs * w), int(tiefe)
+        else:
+            cx, cy = int(laengs * w), h - 1 - int(tiefe)
+        H |= shapegen.blob((h, w), (cx, cy), r, rng, rauheit=0.35)
+    massiv = H.astype(bool)
+
+    # Mesas: freistehende Tafelberge im Tiefland, mit Abstand vom Massiv.
+    # Mesas: free-standing table mountains in the lowland, clear of the massif.
+    anzahl_mesas = max(1, int(round(flaeche / 12000)))
+    sperr = _dehne(massiv, 8)
+    for _ in range(anzahl_mesas * 6):
+        if anzahl_mesas <= 0:
+            break
+        r = int(rng.integers(5, 9))
+        cx = int(rng.integers(r + 4, w - r - 4))
+        cy = int(rng.integers(r + 4, h - r - 4))
+        if sperr[cy, cx]:
+            continue
+        mesa = shapegen.blob((h, w), (cx, cy), r, rng, rauheit=0.3)
+        H |= mesa
+        sperr |= _dehne(mesa.astype(bool), 8)
+        anzahl_mesas -= 1
+
+    # Flussbetten: Quelle im Massiv, Muendung am gegenueberliegenden Rand.
+    # Durch das Massiv wird eine Schlucht geschnitten -- breit genug fuer
+    # zwei Wandbaender (je 3) und einen begehbaren Boden dazwischen.
+    # Riverbeds: source inside the massif, mouth at the opposite border. The
+    # gorge is wide enough for two wall bands (3 each) plus a walkable floor.
+    anzahl = params.fluesse
+    if anzahl < 0:
+        anzahl = max(1, int(round(np.sqrt(flaeche) / 128.0)))
+    betten = np.zeros((h, w), dtype=bool)
+    innen = massiv & ~_dehne(~massiv, 6)
+    ys, xs = np.nonzero(innen if innen.any() else massiv)
+    for _ in range(anzahl):
+        if not len(ys):
+            break
+        i = int(rng.integers(len(ys)))
+        start = (int(xs[i]), int(ys[i]))
+        if seite == 0:
+            muendung = (w - 2, int(rng.integers(h // 6, h - h // 6)))
+        elif seite == 1:
+            muendung = (1, int(rng.integers(h // 6, h - h // 6)))
+        elif seite == 2:
+            muendung = (int(rng.integers(w // 6, w - w // 6)), h - 2)
+        else:
+            muendung = (int(rng.integers(w // 6, w - w // 6)), 1)
+        pfad = _fluss_pfad(start, muendung, (h, w), rng)
+        schlucht = _pfad_band((h, w), pfad, 5.0)
+        H[schlucht] = 0
+        betten |= _pfad_band((h, w), pfad, 2.1)
+        # Gelegentliche Aufweitungen: ein trockener Fluss hat Kolke.
+        # Occasional widenings: a dry river has scour pools.
+        for px, py in pfad[:: max(1, len(pfad) // 4)][1:]:
+            if rng.random() < 0.5:
+                betten |= _pfad_band((h, w), [(px, py)],
+                                     float(rng.uniform(3.0, 4.0)))
+
+    if H.any():
+        # Erst glaetten, dann auf ein FUENFERraster rasten. Fuenf, weil der
+        # senkrechte mud-Laufblock genau 5 Zellen hoch ist: jeder Lauf der
+        # Kontur laesst sich dann mit ganzen Bloecken belegen. Feinere Raster
+        # ergaben Zickzackkanten aus 3er/4er-Stuecken, und die zerlegte der
+        # Blockweg sichtbar in Haken; frei gelassene Schraegen zerfielen als
+        # duenne Nordkanten-Treppen in Stummel. Rechtwinklige Zuege mit langen
+        # Laeufen sind gemessen die fehlerfreie Gangart des Blockwegs (0 bis
+        # 3,4 % unbelegte Paare, docs/klippen-stand.md, 10) -- und genau so
+        # sehen die Waelle der Originalkarten aus.
+        # Smooth first, then snap to a FIVE-cell grid. Five because the
+        # vertical mud run block is exactly 5 cells tall: every contour run
+        # can then be covered with whole blocks. Finer grids gave zigzag edges
+        # the block path took apart into hooks; free diagonals crumbled into
+        # stubs of thin north-edge stairs. Rectilinear strokes with long runs
+        # are the block path's measured error-free gait.
+        H = shapegen.glaette(H, 2)
+        H = shapegen.begradige(H, block=5)
+        H = shapegen.entferne_kleinkram(
+            H, mindest=max(24, int(round(0.0015 * flaeche))))
+        # Nur die Ankerseite darf bis an den Rand: dort laeuft das Hochland
+        # aus dem Bild, und die Kontur wird am Rand bewusst NICHT gezeichnet.
+        # Die uebrigen Raender bleiben frei wie ueberall im Generator.
+        # Only the anchored side may reach the border -- the highland runs off
+        # the map there and the contour is deliberately not drawn along it.
+        if seite != 0:
+            H[:, :3] = 0
+        if seite != 1:
+            H[:, -3:] = 0
+        if seite != 2:
+            H[:3, :] = 0
+        if seite != 3:
+            H[-3:, :] = 0
+    # Eine Zelle Abstand zur Wand: der Wandfuss gehoert der Wandfamilie,
+    # direkt daneben darf das Bett beginnen.
+    # One cell clear of the wall: the footing belongs to the wall family, the
+    # bed may start right beside it.
+    betten &= ~_dehne(H > 0, 1)
+    return H, betten
+
+
+def _landschaft_familien(fam_field: np.ndarray, H: np.ndarray,
+                         betten: np.ndarray | None, tm: "TileModel") -> None:
+    """Ein Biom je Wand: jede Hochflaeche samt Saum wird einfarbig.
+
+    Ein Wandzug behaelt die Familie seines ersten Punkts; laeuft er ueber eine
+    Biomgrenze, stehen seine Kacheln dort gegen fremden Boden (gemessen 118
+    harte Bodenkanten an einem einzigen Zug, docs/klippen-stand.md, 12).
+    Deshalb bekommt jede Hochflaeche einen einfarbigen Saum, BEVOR die
+    Uebergaenge festgelegt werden.
+
+    Die Farbe je Komponente ist die Mehrheitsfamilie ihres Umfelds: eine Mesa
+    mitten im Sand bekommt Sandklippen statt eines Erdrings, der dort wie ein
+    Hof aussaehe. Nur Erde und Sand haben Klippenbloecke; alles andere wird
+    Erde -- dort laufen ausserdem alle Reparaturen (Kantenzuordnung nur mud).
+
+    One biome per wall: each highland component plus rim becomes one colour --
+    the majority family of its surroundings. A mesa amid sand gets sand
+    cliffs instead of a dirt ring. Only dirt and sand have cliff blocks;
+    everything else becomes dirt, where all repairs are active too.
+    """
+    if "mud" not in tm.families:
+        return
+    mud = tm.families.index("mud")
+    san = tm.families.index("san") if "san" in tm.families else -1
+    for comp in _components(H > 0):
+        saum = _dehne(comp, 4)
+        # Saum 4: Wandband 3 plus eine Zelle Fuss.
+        # Rim 4: wall band of 3 plus one cell of footing.
+        werte, anzahl = np.unique(fam_field[saum], return_counts=True)
+        mehrheit = int(werte[int(np.argmax(anzahl))])
+        fam_field[saum] = mehrheit if mehrheit in (mud, san) else mud
+    if betten is not None and betten.any() and san >= 0:
+        fam_field[betten] = san
+
+
+def _rand_zyklus(comp: np.ndarray) -> list[tuple[int, int]]:
+    """Geordneter Randzyklus einer Komponente (Moore-Randverfolgung).
+
+    Ordered boundary cycle of one component (Moore boundary tracing)."""
+    h, w = comp.shape
+    ys, xs = np.nonzero(comp)
+    if not len(ys):
+        return []
+    sy = int(ys.min())
+    sx = int(xs[ys == sy].min())
+
+    def drin(x, y):
+        return 0 <= x < w and 0 <= y < h and comp[y, x]
+
+    zyklus = [(sx, sy)]
+    bx, by = sx - 1, sy
+    cx, cy = sx, sy
+    for _ in range(int(comp.sum()) * 8 + 8):
+        start_i = _MOORE.index((bx - cx, by - cy))
+        naechster = None
+        for k in range(1, 9):
+            dx, dy = _MOORE[(start_i + k) % 8]
+            nx, ny = cx + dx, cy + dy
+            if drin(nx, ny):
+                naechster = (nx, ny)
+                pdx, pdy = _MOORE[(start_i + k - 1) % 8]
+                bx, by = cx + pdx, cy + pdy
+                break
+        if naechster is None:
+            return zyklus                      # Einzelzelle / single cell
+        cx, cy = naechster
+        if (cx, cy) == (sx, sy):
+            return zyklus
+        zyklus.append((cx, cy))
+    return zyklus
+
+
+def _kontur_vereinfachen(punkte: list[tuple[int, int]], eps: float = 1.0
+                         ) -> list[tuple[int, int]]:
+    """Randzellenfolge zu Eckpunkten eindampfen (Ramer-Douglas-Peucker).
+
+    eps = 1.0 behaelt jede echte Ecke: auf dem Fuenferraster des Hoehenfelds
+    werden die Waende reine waagerecht/senkrecht-Zuege mit Eckbloecken --
+    die gemessen fehlerfreie Gangart des Blockwegs. Ein groesseres eps (2,9)
+    ist probiert und verworfen: es fasste Rasterstufen zu freien Schraegen
+    zusammen, und deren Treppen zerfielen als haarfeine Nordkanten sichtbar
+    in Stummel (Seed 7, Schlucht und Massiv-Suedkante).
+
+    Boil the boundary run down to corner points (RDP). eps = 1.0 keeps every
+    true corner: on the five-cell grid the walls become pure horizontal/
+    vertical runs with corner blocks -- the block path's measured error-free
+    gait. A larger eps (2.9) was tried and dropped: it merged grid steps into
+    free diagonals whose stairs crumbled into visible stubs.
+    """
+    if len(punkte) < 3:
+        return list(punkte)
+    p = np.asarray(punkte, dtype=float)
+    a, b = p[0], p[-1]
+    ab = b - a
+    laenge = float(np.hypot(*ab)) or 1.0
+    quer = np.abs(ab[0] * (p[:, 1] - a[1]) - ab[1] * (p[:, 0] - a[0])) / laenge
+    i = int(np.argmax(quer))
+    if quer[i] <= eps:
+        return [(int(a[0]), int(a[1])), (int(b[0]), int(b[1]))]
+    links = _kontur_vereinfachen(punkte[:i + 1], eps)
+    rechts = _kontur_vereinfachen(punkte[i:], eps)
+    return links[:-1] + rechts
+
+
+def _kontur_hand(punkte, comp: np.ndarray) -> str:
+    """Liegt das Hochland links oder rechts der Laufrichtung? -> hoch_seite.
+
+    Nicht aus der Umlaufrichtung hergeleitet, sondern nachgesehen: neben
+    mehreren Segmentmitten wird gezaehlt, auf welcher Seite die Komponente
+    liegt. Links von (dx, dy) ist (dy, -dx) -- y waechst nach unten.
+
+    Does the highland lie left or right of the walking direction? Not derived
+    from the winding order but looked up beside several segment midpoints.
+    """
+    h, w = comp.shape
+    links = rechts = 0
+    for (x1, y1), (x2, y2) in zip(punkte, punkte[1:]):
+        dx = int(np.sign(x2 - x1))
+        dy = int(np.sign(y2 - y1))
+        mx, my = (x1 + x2) // 2, (y1 + y2) // 2
+        for k in (1, 2, 3):
+            lx, ly = mx + dy * k, my - dx * k
+            rx, ry = mx - dy * k, my + dx * k
+            if 0 <= lx < w and 0 <= ly < h and comp[ly, lx]:
+                links += 1
+            if 0 <= rx < w and 0 <= ry < h and comp[ry, rx]:
+                rechts += 1
+    return "links" if links >= rechts else "rechts"
+
+
+def _kontur_boegen(zyklus: list, comp: np.ndarray, luecken: int,
+                   rng: np.random.Generator, luecke_laenge: int = 9
+                   ) -> list[list]:
+    """Zyklus in offene Boegen teilen: Kartenrand raus, Rampenluecken rein.
+
+    Am Kartenrand wird keine Wand gezeichnet -- das Hochland laeuft dort aus
+    dem Bild, wie auf den Originalkarten. Die Rampenluecken sitzen bevorzugt
+    auf waagerechten Laeufen, weil es nur dort Abschlussstuecke gibt
+    (senkrechte Wandenden bleiben im Kachelsatz ohne Abschluss).
+
+    Split the cycle into open arcs: drop border-hugging stretches, cut ramp
+    gaps. Gaps prefer horizontal runs because only those have end caps.
+    """
+    h, w = comp.shape
+    n = len(zyklus)
+    am_rand = [x <= 1 or y <= 1 or x >= w - 2 or y >= h - 2
+               for x, y in zyklus]
+    weg = list(am_rand)
+    if luecken > 0 and n >= 40:
+        # Waagerechte Laufmitte als Kandidaten fuer eine Luecke.
+        # Middle of a horizontal run as gap candidates.
+        kandidaten = [i for i in range(n)
+                      if not weg[i]
+                      and zyklus[i][1] == zyklus[(i + 1) % n][1]
+                      and zyklus[i][1] == zyklus[i - 1][1]]
+        if not kandidaten:
+            kandidaten = [i for i in range(n) if not weg[i]]
+        for k in range(luecken):
+            if not kandidaten:
+                break
+            ziel = int(round((k + 0.5) * n / luecken))
+            i = min(kandidaten,
+                    key=lambda j: min(abs(j - ziel), n - abs(j - ziel)))
+            for d in range(-(luecke_laenge // 2), luecke_laenge // 2 + 1):
+                weg[(i + d) % n] = True
+    if not any(weg):
+        return [zyklus + [zyklus[0]]]          # geschlossen / closed figure
+    # Offene Boegen einsammeln: beim ersten entfernten Punkt beginnen, dann
+    # laufen die Boegen nicht ueber den Zyklusanfang.
+    # Collect the open arcs: start at the first removed point, then no arc
+    # wraps around the cycle start.
+    versatz = weg.index(True)
+    boegen: list[list] = []
+    lauf: list = []
+    for i in range(n + 1):
+        j = (versatz + i) % n
+        if i == n or weg[j]:
+            if len(lauf) >= 6:
+                boegen.append(lauf)
+            lauf = []
+        else:
+            lauf.append(zyklus[j])
+    return boegen
+
+
+def _klippen_aus_linien(grid: np.ndarray, fam_field: np.ndarray,
+                        H: np.ndarray, tm: "TileModel",
+                        rng: np.random.Generator, ramps: int = 2
+                        ) -> tuple[np.ndarray, np.ndarray]:
+    """Hochlandkonturen als Linienzuege mit dem Blockweg belegen.
+
+    -> (Klippenmaske, Zelltypfeld; -1 = nicht gesetzt).
+
+    Je Komponente wird der Rand abgelaufen, zu Eckpunkten vereinfacht und in
+    Boegen mit Rampenluecken zerlegt; jeder Bogen geht durch
+    `klippe_aus_linie` -- ganze Bloecke und Gruppen, Ecken nach Hochseite,
+    Abschluesse und Reparaturen inklusive. Das ersetzt im Landschaftsmodus
+    `_male_klippen`, das Kachel fuer Kachel aus dem Zelltypband waehlt.
+
+    Cover the highland contours as polylines with the block path. Per
+    component the boundary is walked, simplified to corner points and split
+    into arcs with ramp gaps; every arc goes through `klippe_aus_linie`.
+    """
+    maske_gesamt = np.zeros(grid.shape, dtype=bool)
+    zellen_gesamt = np.full(grid.shape, -1, dtype=np.int16)
+    hoch = H > 0
+    if not hoch.any():
+        return maske_gesamt, zellen_gesamt
+    komponenten = sorted(_components(hoch), key=lambda c: -int(c.sum()))
+    for nr, comp in enumerate(komponenten):
+        zyklus = _rand_zyklus(comp)
+        if len(zyklus) < 12:
+            continue
+        # Die groesste Flaeche bekommt die eingestellten Rampen, jede weitere
+        # eine -- sonst waere eine Mesa unerreichbar.
+        # The largest area gets the configured ramps, every other one -- a
+        # mesa would otherwise be unreachable.
+        luecken = max(ramps, 1) if nr == 0 else 1
+        for bogen in _kontur_boegen(zyklus, comp, luecken, rng):
+            if len(bogen) > 2 and bogen[0] == bogen[-1]:
+                # Geschlossene Figur: die Sehne der Vereinfachung haette
+                # Laenge null und saehe jeden Punkt als abstandslos -- also
+                # in zwei Haelften teilen und wieder zusammensetzen.
+                # Closed figure: the simplification chord would have zero
+                # length and see every point as distance-free -- split into
+                # two halves and rejoin.
+                mitte = len(bogen) // 2
+                punkte = (_kontur_vereinfachen(bogen[:mitte + 1])[:-1]
+                          + _kontur_vereinfachen(bogen[mitte:]))
+            else:
+                punkte = _kontur_vereinfachen(bogen)
+            punkte = [p for i, p in enumerate(punkte)
+                      if i == 0 or p != punkte[i - 1]]
+            if len(punkte) < 3 and len(set(punkte)) < 2:
+                continue
+            seite = _kontur_hand(punkte, comp)
+            x0, y0 = punkte[0]
+            fi = int(fam_field[y0, x0])
+            familie = tm.families[fi] if 0 <= fi < len(tm.families) else "mud"
+            if familie not in ("mud", "san"):
+                # Nur Erde und Sand haben Klippenbloecke.
+                # Only dirt and sand have cliff blocks.
+                familie = "mud"
+            maske, zellen = klippe_aus_linie(grid, punkte, seite, tm, rng,
+                                             familie=familie)
+            maske_gesamt |= maske
+            zellen_gesamt[zellen >= 0] = zellen[zellen >= 0]
+    return maske_gesamt, zellen_gesamt
 
 
 def _bewuchs_abstand(fam_field: np.ndarray, tm: "TileModel",
@@ -8194,6 +8689,21 @@ def generate(params: MapGenParams) -> GeneratedMap:
     # otherwise break the mirroring.
     fam_field = _apply_symmetry(fam_field, params.symmetry)
     _bewuchs_abstand(fam_field, tm, params.bewuchs_abstand)
+    # Landschaftsmodus: das Relief steht VOR den Uebergaengen fest, denn der
+    # einfarbige Saum unter den kommenden Waenden und die Sandbetten aendern
+    # die Biomgrenzen -- und die werden gleich darunter eingemischt.
+    # Landscape mode: the relief is fixed BEFORE the transitions, because the
+    # single-colour rim under the future walls and the sand beds change the
+    # biome borders -- which get blended right below.
+    land_H = None
+    land_betten = None
+    if params.landschaft:
+        land_H, land_betten = _landschaft_hoehenfeld(params, rng)
+        if params.symmetry != SYM_NONE:
+            land_H = _apply_symmetry(land_H, params.symmetry).astype(np.int8)
+            land_betten = _apply_symmetry(
+                land_betten.astype(np.int8), params.symmetry).astype(bool)
+        _landschaft_familien(fam_field, land_H, land_betten, tm)
     # Der Erdpuffer zwischen Fels und Sand ist ein Notbehelf aus der Zeit, als
     # es fuer dieses Paar keinen Uebergangssatz gab. `santoroc` mit 48 Kacheln
     # gibt es aber -- gemessen ueber vier Seeds ist es OHNE Puffer besser:
@@ -8238,10 +8748,26 @@ def generate(params: MapGenParams) -> GeneratedMap:
     gesperrt_vulkan = np.zeros(fam_field.shape, dtype=bool)
     for vx, vy in sites:
         gesperrt_vulkan[max(0, vy - 10):vy + 11, max(0, vx - 10):vx + 11] = True
-    H = _hoehenfeld(params, rng, layout)
+    if params.landschaft:
+        # Der Klippenregler ist im Relief schon verrechnet; _hoehenfeld traegt
+        # hier nur noch die gezielten Merkmale (Berg, Tal, Engstelle) bei.
+        # The cliff slider is already part of the relief; _hoehenfeld only
+        # contributes the requested features here.
+        H = (_hoehenfeld(replace(params, cliffs=0.0), rng, layout)
+             | land_H).astype(np.int8)
+    else:
+        H = _hoehenfeld(params, rng, layout)
     if params.symmetry != SYM_NONE:
         H = _apply_symmetry(H, params.symmetry).astype(np.int8)
     H[gesperrt_vulkan] = 0
+    if params.landschaft and H.any():
+        # Der Vulkanausschnitt kann das Massiv zerteilen; Splitter unter der
+        # Mindestgroesse waeren spaeter unbelegbare Konturen.
+        # The volcano punch can split the massif; slivers below the minimum
+        # size would later be contours no block can cover.
+        H = shapegen.entferne_kleinkram(
+            H, mindest=max(24, int(round(0.0015 * params.width
+                                         * params.height))))
 
     grid = _sample_tiles(fam_field, rng, tm, fest=vorbelegt)
     # Klippen NACH dem Sampeln: sie brauchen echte Bodennachbarn, um passende
@@ -8267,7 +8793,16 @@ def generate(params: MapGenParams) -> GeneratedMap:
     # Reparatur wuerde sie sonst nachtraeglich wieder zerlegen.
     # Cliffs last of all: they need real ground neighbours, and the repair pass
     # would otherwise take them apart again afterwards.
-    klippen = _male_klippen(grid, fam_field, H, tm, rng)
+    land_zellen = None
+    if params.landschaft:
+        # Blockweg statt Zelltypband: die Kontur wird als Linienzug gezeichnet
+        # -- ganze Gruppen, Ecken nach Hochseite, Abschluesse, Reparaturen.
+        # Block path instead of the cell-type band: the contour is drawn as a
+        # polyline -- whole groups, corners by high side, end caps, repairs.
+        klippen, land_zellen = _klippen_aus_linien(grid, fam_field, H, tm,
+                                                   rng, params.ramps)
+    else:
+        klippen = _male_klippen(grid, fam_field, H, tm, rng)
     _boden_an_klippen_nachziehen(grid, fam_field, klippen, tm, rng)
     nachbearbeite_uebergaenge(grid, fam_field, tm, rng)
 
@@ -8295,6 +8830,17 @@ def generate(params: MapGenParams) -> GeneratedMap:
     if params.symmetry != SYM_NONE:
         _mirror_region(grid, params.symmetry)
     cells = _cell_types(grid)
+    # Die gezeichneten Klippen kennen ihre Hochseite; die Zelltypen aus dem
+    # Zug sind der Tabelle je Kachel ueberlegen (98,6 gegen 94,1 % richtig,
+    # docs/klippen-stand.md, 10). Bei Symmetrie kommt die zweite Haelfte aus
+    # der Spiegelung des Kachelgitters -- dort passt das Zugfeld nicht mehr,
+    # also bleibt es bei der Tabelle.
+    # The drawn cliffs know their high side; the stroke's cell types beat the
+    # per-tile table. Under symmetry the second half comes from mirroring the
+    # tile grid, where the stroke field no longer matches -- table it is.
+    if land_zellen is not None and params.symmetry == SYM_NONE:
+        treffer = land_zellen >= 0
+        cells[treffer] = land_zellen[treffer].astype(cells.dtype)
     # Klippenzellen aus den Lavafeldern nehmen. Die Felder entstehen aus dem
     # Hoehenfeld und enthielten dadurch den Wandfuss -- eine Klippe hinauf
     # fliesst keine Lava. Nur Klippen, nicht alles Unpassierbare: der
@@ -8335,6 +8881,8 @@ def generate(params: MapGenParams) -> GeneratedMap:
                        for e in layout],
         volcanoes=volcanoes,
         lava_zones=lava_zones,
+        fluss_share=(float(land_betten.mean()) if land_betten is not None
+                     else 0.0),
     )
 
 

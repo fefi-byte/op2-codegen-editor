@@ -7,7 +7,19 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **Landscape mode** for the map generator (template "Dry landscape",
+  `MapGenParams.landschaft`): instead of rolling patches it builds a relief —
+  a highland massif anchored at one map side, free-standing mesas, and dry
+  riverbeds that cut gorges through the massif. The cliffs are no longer
+  derived from the cell-type band: the highland contour is walked as a
+  polyline and covered by `klippe_aus_linie`, the same block path as the
+  editor's cliff brush — whole groups, corners by high side, end caps, ramp
+  gaps and all repairs. Each highland component and its rim get a single
+  ground family (majority of the surroundings), because a wall crossing a
+  biome border leaves hard ground edges. Suite checks: determinism, cliff
+  share, no isolated cliff cells, no hard ground edges, no tile flooding the
+  map, riverbed present, spawns connected.
 
 ## [0.5.0-alpha] - 2026-08-05
 
