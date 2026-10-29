@@ -14,6 +14,12 @@ and the project follows [Semantic Versioning](https://semver.org/).
   state is seeded from the points, so the preview is exactly what gets
   written. Models are warmed up in the background when the brush is chosen.
 
+- **Cliff wall height from the map**: the cliff brush has a "Wall height"
+  choice — "like map" (default) measures the walls around the line, else
+  across the whole map, else 3 cells as in the stock maps; or fixed 2–6
+  cells. The measured value is shown in the box and the live preview
+  follows it.
+
 ### Changed
 - **Cliffs use only the terrain solver** (`klippe_algo`): editor brush, area
   brush, landscape mode and every generator template. The old block path,

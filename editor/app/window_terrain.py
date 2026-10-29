@@ -552,7 +552,8 @@ class _TerrainMixin:
             self.statusBar().showMessage(tr("terrain.klippe_zu_kurz"))
             return
         seite = self.terrain_panel.klippen_seite()
-        aenderungen = ebenen.klippe_zeichnen(punkte, seite)
+        aenderungen = ebenen.klippe_zeichnen(
+            punkte, seite, self.terrain_panel.klippen_hoehe())
         self._klippen_punkte = []
         self.terrain_panel.klippen_punkte_geaendert(0)
         if not aenderungen:
@@ -670,7 +671,8 @@ class _TerrainMixin:
         if ziel is not None and (not punkte or tuple(ziel) != tuple(punkte[-1])):
             punkte.append((int(ziel[0]), int(ziel[1])))
         seite = self.terrain_panel.klippen_seite()
-        schluessel = (tuple(punkte), seite)
+        hoehe = self.terrain_panel.klippen_hoehe()
+        schluessel = (tuple(punkte), seite, hoehe)
         if schluessel == self._klippen_live_schluessel:
             return
         self._klippen_live_bild_weg()
@@ -678,10 +680,13 @@ class _TerrainMixin:
         if len(punkte) < 2:
             return
         try:
-            aenderungen, _, _ = ebenen.klippe_berechnen(punkte, seite)
+            aenderungen, _, _ = ebenen.klippe_berechnen(punkte, seite, hoehe)
         except Exception as e:          # Vorschau darf den Editor nie stoeren
             print("Klippenvorschau:", e)
             return
+        if hoehe is None:
+            self.terrain_panel.klippen_hoehe_gemessen(
+                getattr(ebenen, "letzte_wandhoehe", None))
         if not aenderungen:
             return
         xs = [a[0] for a in aenderungen]

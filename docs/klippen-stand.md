@@ -2726,3 +2726,28 @@ uebergeblendet. Schraegen bleiben unveraendert. Nebenbei sinken die
 Randkacheln mitten in der Wand (san senkrecht im Mittel 2,4 -> 0,6 %). Die
 Suite-Pruefung dazu mittelt jetzt ueber drei Saaten, weil eine einzelne Wand
 je Saat zwischen 0,4 und 3,9 % streute.
+
+## 25. Wandhoehe aus der Karte (29.10.2026)
+
+Die Wand war fest etwa 3 Zellen hoch. Jetzt richtet sie sich nach der Karte,
+oder nach der Wahl im Editor ("Wandhoehe": wie Karte, 2 bis 6 Zellen).
+
+**Gemessen wie in den Originalen** (`wandhoehe_messen`): je Spalte die Laeufe
+von H/L-Zellen, nur wo links und rechts auch Klippe steht -- also quer durch
+eine waagerecht laufende Wand. 54 Karten: Median ueberall 3, Mittel je Karte
+2,5 bis 3,8 (mp2_05: 5,1). Hohe Waende sind in den Originalen selten (Hoehe 4
+und mehr: 8 % der Laeufe) und sehen in der Mitte nach zwei gestapelten
+Felsbaendern aus (Felsanteil 0,81 -> 0,56 -> 0,70) -- das waere der naechste
+Schritt (Terrassen), ist aber noch nicht gebaut.
+
+**Wo gemessen wird** (`wandhoehe_vor_ort`): erst 24 Zellen um die Linie --
+wer an eine Klippe ansetzt, will deren Hoehe --, sonst die ganze Karte, sonst
+3. Mindestens 12 Laeufe, damit eine einzelne Ecke nicht entscheidet.
+
+**Umrechnung** (`dicke_aus_hoehe`): Felsdicke d +- 0,5 ergibt d + 1 Zellen
+(2,0 -> 2,96; 3,0 -> 3,96; 4,0 -> 4,99; 5,0 -> 6,00 bei mud; san gleich). Auf
+jeder Hoehe 0 hart, 0 Loch. 3 Zellen ergibt genau die bisherigen 1,5 bis 2,5.
+Die Suite prueft, dass gebaut wird, was gemessen wird (2, 3, 5 Zellen).
+
+Nebenbei liest der Editor das Kachelgitter ueber eine Indextabelle statt
+Zelle fuer Zelle (11 -> 3 ms auf 256x256).

@@ -40,6 +40,8 @@ import mapgen       # noqa: E402
 import shapegen     # noqa: E402
 
 import klippe_algo  # noqa: E402
+from op2map import (CELL_TYPE_BITS, CELL_TYPE_MASK,  # noqa: E402
+                    MAPPING_INDEX_MASK)
 
 # Pinselarten. `tief` senkt ab, die naechsten setzen das Biom, der Rest sind
 # Sonderflaechen.
@@ -222,7 +224,7 @@ class PaintLayers:
         self.gemalt[:, :] = False
         return bereich
 
-    def klippe_zeichnen(self, punkte, hoch_seite: str
+    def klippe_zeichnen(self, punkte, hoch_seite: str, wandhoehe=None
                         ) -> list[tuple[int, int, int, int]]:
         """Eine gezeichnete Klippenlinie setzen -> [(x, y, Kachel, Zelltyp)].
 
@@ -240,7 +242,8 @@ class PaintLayers:
         updated afterwards so the overlay and later strokes know where the
         highland now is.
         """
-        aenderungen, maske, zellen = self.klippe_berechnen(punkte, hoch_seite)
+        aenderungen, maske, zellen = self.klippe_berechnen(punkte, hoch_seite,
+                                                           wandhoehe)
         if not aenderungen:
             return []
         self._hoehe_aus_klippe(maske, zellen)
@@ -250,7 +253,7 @@ class PaintLayers:
                     self.klippen_enden.append((int(p[0]), int(p[1])))
         return aenderungen
 
-    def klippe_berechnen(self, punkte, hoch_seite: str):
+    def klippe_berechnen(self, punkte, hoch_seite: str, wandhoehe=None):
         """Die Klippe ausrechnen, OHNE etwas zu veraendern.
 
         -> (aenderungen, maske, zellen). Fuer die Live-Vorschau: sie ruft das
@@ -259,15 +262,27 @@ class PaintLayers:
         selbst -- dieselbe Linie gibt dieselbe Wand, und was die Vorschau
         zeigt, ist genau das, was "Setzen" schreibt.
 
+        `wandhoehe` in Zellen; None heisst "wie die Karte": gemessen an den
+        Klippen um die Linie, sonst auf der ganzen Karte, sonst 3
+        (`klippe_algo.wandhoehe_vor_ort`). Was genommen wurde, steht danach in
+        `letzte_wandhoehe`.
+
         Compute the cliff WITHOUT changing anything. The random state is seeded
         from the points, so the preview shows exactly what "Set" will write.
+        `wandhoehe` None means: measured from the cliffs on the map.
         """
         leer = ([], None, None)
         if len(punkte) < 2:
             return leer
         h, w = self.hoehe.shape
-        gitter = self._kachelgitter()
+        roh = self._rohgitter()
+        gitter = ((roh >> CELL_TYPE_BITS) & MAPPING_INDEX_MASK).astype(np.int32)
         vorher = gitter.copy()
+        if wandhoehe is None:
+            wandhoehe = klippe_algo.wandhoehe_vor_ort(roh & CELL_TYPE_MASK,
+                                                      punkte)
+        self.letzte_wandhoehe = float(wandhoehe)
+        hmin, hmax = klippe_algo.dicke_aus_hoehe(wandhoehe)
         x0, y0 = punkte[0]
         fi = int(self.familie[max(0, min(h - 1, y0)), max(0, min(w - 1, x0))])
         familie = (self.tm.families[fi] if 0 <= fi < len(self.tm.families)
@@ -276,7 +291,7 @@ class PaintLayers:
                                 hoch_seite)).encode())
         maske, zellen = self._klippe_belegen(
             gitter, [tuple(p) for p in punkte], hoch_seite, familie,
-            np.random.default_rng(saat))
+            np.random.default_rng(saat), hmin, hmax)
         if not maske.any():
             return leer
         aenderungen = []
@@ -290,12 +305,27 @@ class PaintLayers:
 
     def _kachelgitter(self):
         """Die Kachelindizes der Karte als Feld (eine frische Kopie)."""
-        h, w = self.hoehe.shape
-        return np.array([[self.map.tile_mapping_index(x, y)
-                          for x in range(w)] for y in range(h)],
-                        dtype=np.int32)
+        return ((self._rohgitter() >> CELL_TYPE_BITS)
+                & MAPPING_INDEX_MASK).astype(np.int32)
 
-    def _klippe_belegen(self, gitter, punkte, hoch_seite, familie, rng=None):
+    def _rohgitter(self):
+        """Die rohen Kachelwerte (Zelltyp + Kachel) als Feld (h, w).
+
+        Ueber eine gemerkte Indextabelle statt Zelle fuer Zelle: die
+        Live-Vorschau braucht das bei jeder Mausbewegung (11 ms -> unter 1 ms
+        auf 128x128).
+        """
+        h, w = self.hoehe.shape
+        schl = (w, h)
+        if getattr(self, "_roh_index", (None,))[0] != schl:
+            ys, xs = np.mgrid[0:h, 0:w]
+            idx = ((xs >> 5) * h + ys) * 32 + (xs & 0x1F)
+            self._roh_index = (schl, idx)
+        return np.asarray(self.map.tiles, dtype=np.int64)[self._roh_index[1]]
+
+    def _klippe_belegen(self, gitter, punkte, hoch_seite, familie, rng=None,
+                        hoehe_min=klippe_algo.HOEHE_MIN,
+                        hoehe_max=klippe_algo.HOEHE_MAX):
         """Die Kante mit dem Gelaende-Loeser (`klippe_algo`) belegen.
 
         Der Blockweg ist entfernt. Traegt die Familie keine Kantenzuordnung
@@ -310,7 +340,8 @@ class PaintLayers:
                     np.full(gitter.shape, -1, dtype=np.int16))
         return klippe_algo.klippe_aus_linie(gitter, punkte, hoch_seite,
                                             self.tm, rng if rng is not None
-                                            else self.rng, familie)
+                                            else self.rng, familie,
+                                            hoehe_min, hoehe_max)
 
     def klippen_anker(self, x: int, y: int, umkreis: int = 5, ausser=()):
         """Naechstes offenes Klippenende im Umkreis -> (x, y) oder None.

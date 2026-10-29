@@ -105,15 +105,24 @@ class TerrainPanel(QWidget):
             self.klippen_seite_wahl.addItem(tr(f"terrain.klippe_{wert}"), wert)
         self.klippen_seite_wahl.setToolTip(tr("terrain.klippe_seite_hint"))
         kform.addRow(tr("terrain.klippe_seite"), self.klippen_seite_wahl)
+        # Wandhoehe: "wie Karte" misst die vorhandenen Klippen.
+        # Wall height: "like map" measures the cliffs already there.
+        self.klippen_hoehe_wahl = QComboBox()
+        self.klippen_hoehe_wahl.addItem(tr("terrain.klippe_hoehe_karte"), None)
+        for n in (2, 3, 4, 5, 6):
+            self.klippen_hoehe_wahl.addItem(tr("terrain.klippe_hoehe_n", n=n), n)
+        self.klippen_hoehe_wahl.setToolTip(tr("terrain.klippe_hoehe_hint"))
+        kform.addRow(tr("terrain.klippe_hoehe"), self.klippen_hoehe_wahl)
         kl.addLayout(kform)
         knopfreihe = QHBoxLayout()
         self.btn_klippe_setzen = QPushButton(tr("terrain.klippe_setzen"))
         self.btn_klippe_setzen.setToolTip(tr("terrain.klippe_setzen_hint"))
         self.btn_klippe_setzen.clicked.connect(self._window._klippe_setzen)
-        # Seite gewechselt: die Live-Vorschau neu rechnen.
-        self.klippen_seite_wahl.currentIndexChanged.connect(
-            lambda *_: self._window._klippen_live_planen(
-                self._window._klippen_live_ziel, neu=True))
+        # Seite oder Hoehe gewechselt: die Live-Vorschau neu rechnen.
+        for wahl in (self.klippen_seite_wahl, self.klippen_hoehe_wahl):
+            wahl.currentIndexChanged.connect(
+                lambda *_: self._window._klippen_live_planen(
+                    self._window._klippen_live_ziel, neu=True))
         apply_role(self.btn_klippe_setzen, "primary")
         knopfreihe.addWidget(self.btn_klippe_setzen, 1)
         self.btn_klippe_weg = QPushButton(tr("terrain.klippe_verwerfen"))
@@ -213,6 +222,17 @@ class TerrainPanel(QWidget):
     def klippen_seite(self) -> str:
         """Auf welcher Seite der gezeichneten Linie liegt das Hochland?"""
         return self.klippen_seite_wahl.currentData() or "links"
+
+    def klippen_hoehe(self):
+        """Gewaehlte Wandhoehe in Zellen, oder None fuer "wie Karte"."""
+        return self.klippen_hoehe_wahl.currentData()
+
+    def klippen_hoehe_gemessen(self, zellen) -> None:
+        """Den gemessenen Wert hinter "wie Karte" zeigen."""
+        text = (tr("terrain.klippe_hoehe_karte") if zellen is None else
+                tr("terrain.klippe_hoehe_karte_wert",
+                   n=f"{zellen:.1f}".replace(".", ",")))
+        self.klippen_hoehe_wahl.setItemText(0, text)
 
     def klippen_punkte_geaendert(self, n: int) -> None:
         """Anzahl gesetzter Stuetzpunkte anzeigen."""

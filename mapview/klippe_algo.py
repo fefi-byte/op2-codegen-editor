@@ -1230,6 +1230,75 @@ def loesen_stufenweise(grid: np.ndarray, fein: np.ndarray, vor: dict,
     return None
 
 
+# Wandhoehe aus der Karte. Gemessen wird wie in den Originalkarten: je Spalte
+# die Laeufe von H/L-Zellen (Zelltyp 9/10), und nur dort, wo links und rechts
+# ebenfalls Klippe steht -- also quer durch eine waagerecht laufende Wand, nicht
+# entlang einer senkrechten. In den 54 Karten liegt der Median ueberall bei 3,
+# das Mittel je Karte zwischen 2,5 und 3,8 (mp2_05: 5,1).
+#
+# Umrechnung Zellen -> Felsdicke, gemessen am Loeser (mud und san, waagerecht,
+# senkrecht und schraeg, je 3 Saaten): Dicke d +- 0,5 ergibt d + 1 Zellen
+# (2,0 -> 2,96; 3,0 -> 3,96; 4,0 -> 4,99; 5,0 -> 6,00), bei 0 hart und 0 Loch
+# auf jeder Hoehe. Also Dicke = Zellen - 1.
+WAND_ZELLEN = 3.0              # ohne Messung: wie die Originale
+WAND_ZELLEN_MIN = 2.0
+WAND_ZELLEN_MAX = 7.0
+WAND_MESS_MIN = 12             # so viele Laeufe, bevor eine Messung zaehlt
+WAND_UMKREIS = 24              # Zellen um die Linie fuer die Messung vor Ort
+
+
+def wandhoehe_messen(zelltypen: np.ndarray) -> tuple[float, int]:
+    """Mittlere Wandhoehe in Zellen -> (Mittel, Anzahl Laeufe).
+
+    `zelltypen` ist das Zelltypfeld (h, w) der Karte oder eines Ausschnitts.
+    """
+    zt = np.asarray(zelltypen)
+    hl = (zt == 9) | (zt == 10)
+    kl = hl | (zt == 8)
+    h, w = zt.shape
+    if h < 2 or w < 3:
+        return 0.0, 0
+    summe = n = 0
+    for x in range(1, w - 1):
+        spalte = hl[:, x]
+        if not spalte.any():
+            continue
+        d = np.diff(np.concatenate(([0], spalte.astype(np.int8), [0])))
+        for y0, y1 in zip(np.nonzero(d == 1)[0], np.nonzero(d == -1)[0]):
+            if (kl[y0:y1, x - 1].mean() > 0.8
+                    and kl[y0:y1, x + 1].mean() > 0.8):
+                summe += y1 - y0
+                n += 1
+    return (summe / n if n else 0.0), n
+
+
+def wandhoehe_vor_ort(zelltypen: np.ndarray, punkte) -> float:
+    """Die Wandhoehe, an der sich eine neue Linie orientiert, in Zellen.
+
+    Erst um die Linie herum (`WAND_UMKREIS`) -- wer an eine Klippe ansetzt,
+    will deren Hoehe. Reicht das nicht (`WAND_MESS_MIN` Laeufe), die ganze
+    Karte; steht auf der Karte noch keine Klippe, `WAND_ZELLEN`.
+    """
+    zt = np.asarray(zelltypen)
+    h, w = zt.shape
+    xs = [int(p[0]) for p in punkte]
+    ys = [int(p[1]) for p in punkte]
+    r = WAND_UMKREIS
+    nah = zt[max(0, min(ys) - r):min(h, max(ys) + r + 1),
+             max(0, min(xs) - r):min(w, max(xs) + r + 1)]
+    for feld in (nah, zt):
+        mittel, n = wandhoehe_messen(feld)
+        if n >= WAND_MESS_MIN:
+            return float(np.clip(mittel, WAND_ZELLEN_MIN, WAND_ZELLEN_MAX))
+    return WAND_ZELLEN
+
+
+def dicke_aus_hoehe(zellen: float) -> tuple[float, float]:
+    """Wandhoehe in Zellen -> (hoehe_min, hoehe_max) der Felsdicke."""
+    z = float(np.clip(zellen, WAND_ZELLEN_MIN, WAND_ZELLEN_MAX))
+    return z - 1.5, z - 0.5
+
+
 def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str, tm,
                      rng, familie: str = "mud",
                      hoehe_min: float = HOEHE_MIN,

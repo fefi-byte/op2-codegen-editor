@@ -737,6 +737,23 @@ def check_klippe_algo():
             check(f"keine Randkacheln mitten in der Wand ({fam} {name})",
                   anteil <= 2.0, f"{innen} von {seiten} ({anteil:.2f} %)")
 
+    # Wandhoehe: gemessen wird, was gebaut wurde. "Wie Karte" im Editor misst
+    # vorhandene Klippen mit `wandhoehe_messen` und baut mit
+    # `dicke_aus_hoehe` -- beides muss zusammenpassen, sonst wuerde jede
+    # fortgesetzte Wand niedriger oder hoeher als die, an die sie ansetzt.
+    grf = next(t for t in range(2048)
+               if tm.family_of[t] == tm.families.index("mud")
+               and tm.placeable[t])
+    for soll in (2, 3, 5):
+        g = np.full((32, 64), grf, dtype=np.int32)
+        hmin, hmax = KA.dicke_aus_hoehe(soll)
+        m, z = KA.klippe_aus_linie(g, [(4, 10), (57, 10)], "oben", tm,
+                                   np.random.default_rng(7), "mud",
+                                   hoehe_min=hmin, hoehe_max=hmax)
+        ist, n = KA.wandhoehe_messen(np.where(m, z, 0))
+        check(f"Wandhoehe {soll} gebaut wie gemessen", abs(ist - soll) <= 0.6,
+              f"{ist:.2f} Zellen aus {n} Laeufen")
+
     # Der Eckenfilter aus dem August (Kacheln mit widerspruechlicher Ecke aus
     # dem Vorrat) ist mit dem Gelaende-Loeser NICHT mehr drin. Er war fuer den
     # gierigen Setzer noetig, an dem `angleichen` sich endlos drehte; dem
