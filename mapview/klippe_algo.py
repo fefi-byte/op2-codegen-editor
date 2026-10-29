@@ -39,6 +39,7 @@ rufen alle `klippe_aus_linie`.
 """
 from __future__ import annotations
 
+import sys
 from collections import Counter
 
 import numpy as np
@@ -480,8 +481,11 @@ def innenbilder() -> dict:
             if fam.get(t, "mud") != "mud":
                 aus[t] = (_ka.felsmaske(t).reshape(FEIN, k, FEIN, k)
                           .mean(axis=(1, 3)) > 0.5)
-    except Exception:                                    # noqa: BLE001
-        pass
+    except Exception as e:                               # noqa: BLE001
+        # Ohne Pixelmasken fuer san wird das Kachelinnere dort nicht
+        # bewertet -- die Wand geht trotzdem, nur weniger gut.
+        print(f"klippe_algo: Innenbilder fuer san/sno fehlen ({e})",
+              file=sys.stderr)
     _zwischen["innen"] = aus
     return aus
 

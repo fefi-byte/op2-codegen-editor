@@ -13,6 +13,8 @@ overrides it.
 """
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 
 from .common import *
@@ -178,8 +180,9 @@ class _TerrainMixin:
                     try:
                         self._tilesets_cache[i] = load_tileset(
                             self.res.read_file(ts.filename + ".bmp"))
-                    except Exception:
-                        pass
+                    except Exception as e:  # Kacheln dieses Satzes bleiben leer
+                        print(f"Tileset {ts.filename}.bmp nicht ladbar: {e}",
+                              file=sys.stderr)
         return self._tilesets_cache
 
     def _tile_pixmap(self, mapping_index: int) -> QPixmap | None:

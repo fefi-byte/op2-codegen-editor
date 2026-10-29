@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 from .common import *
 from . import mission_project
 from .placed_object import PlacedObject
@@ -18,8 +20,8 @@ class _ProjectMixin:
         if not mission_project.is_mission_folder(folder):
             try:
                 appconfig.set_last_mission("")
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"config.ini: last_mission nicht geleert ({e})", file=sys.stderr)
             return
         title = tr("window.dlg_open_mission")
         text = tr("window.reopen_last_text", name=folder.name)
@@ -222,8 +224,8 @@ class _ProjectMixin:
         self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}  [{folder.name}]")
         try:
             appconfig.set_last_mission(str(folder))
-        except Exception:
-            pass
+        except Exception as e:          # nur Komfort: zuletzt geoeffnet
+            print(f"config.ini: last_mission nicht gespeichert ({e})", file=sys.stderr)
         self.statusBar().showMessage(
             tr("window.status_saved", path=str(folder), n=len(self.objects))
         )
@@ -281,6 +283,12 @@ class _ProjectMixin:
         except Exception as e:
             QMessageBox.critical(self, tr("window.open_failed_title"), str(e))
             return
+        # Was beim Laden nicht gelesen werden kann, wurde frueher still
+        # uebersprungen -- und beim naechsten Speichern endgueltig geloescht.
+        # Jetzt gesammelt und am Ende gemeldet.
+        # Entries that fail to load used to be skipped silently and were then
+        # lost for good on the next save; now they are collected and reported.
+        fehler: list[tuple[str, Exception]] = []
         self.mission_name = data.get("mission_name", "Editor Mission")
         self.mission_type = MissionType(data.get("mission_type", int(MissionType.Colony)))
         self.tech_tree = data.get("tech_tree", "MULTITEK.TXT")
@@ -294,15 +302,16 @@ class _ProjectMixin:
         if "difficulty" in data:
             try:
                 self.diff_setup = DifficultySetup(**data["difficulty"])
-            except Exception:
+            except Exception as e:
+                fehler.append(("Schwierigkeit", e))
                 self.diff_setup = DifficultySetup()
         if "variables" in data:
             self.variables = []
             for vd in data["variables"]:
                 try:
                     self.variables.append(VariableDef(**vd))
-                except Exception:
-                    pass
+                except Exception as e:
+                    fehler.append((f"Variable {vd.get('name', '?')}", e))
         self.node_positions.clear()
         self.node_positions.update(data.get("node_positions", {}))
         if "players" in data and data["players"]:
@@ -324,7 +333,8 @@ class _ProjectMixin:
                     actions = [action_from_dict(a) for a in td.pop("actions", [])]
                     checks = [FindUnitCheck(**c) for c in td.pop("unit_checks", [])]
                     self.triggers.append(TriggerDef(actions=actions, unit_checks=checks, **td))
-                except Exception:
+                except Exception as e:
+                    fehler.append((f"Trigger {td.get('name', '?')}", e))
                     continue
         self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}")
         self.mapgen_params = data.get("mapgen") or None
@@ -340,7 +350,8 @@ class _ProjectMixin:
         for od in data.get("objects", []):
             try:
                 obj = PlacedObject.from_dict(od)
-            except Exception:
+            except Exception as e:
+                fehler.append((f"Objekt {od.get('name') or od.get('kind', '?')}", e))
                 continue
             if not obj.uid:
                 while True:
@@ -354,7 +365,8 @@ class _ProjectMixin:
         for gd in data.get("building_groups", []):
             try:
                 self.building_groups.append(BuildingGroupSpec(**gd))
-            except Exception:
+            except Exception as e:
+                fehler.append((f"BuildingGroup {gd.get('name', '?')}", e))
                 continue
         self.reinforce_groups = []
         for gd in data.get("reinforce_groups", []):
@@ -365,19 +377,22 @@ class _ProjectMixin:
                     for target in gd.pop("targets", [])
                 ]
                 self.reinforce_groups.append(ReinforceGroupSpec(targets=targets, **gd))
-            except Exception:
+            except Exception as e:
+                fehler.append((f"ReinforceGroup {gd.get('name', '?')}", e))
                 continue
         self.fight_groups = []
         for gd in data.get("fight_groups", []):
             try:
                 self.fight_groups.append(FightGroupSpec(**gd))
-            except Exception:
+            except Exception as e:
+                fehler.append((f"FightGroup {gd.get('name', '?')}", e))
                 continue
         self.mining_groups = []
         for gd in data.get("mining_groups", []):
             try:
                 self.mining_groups.append(MiningGroupSpec(**gd))
-            except Exception:
+            except Exception as e:
+                fehler.append((f"MiningGroup {gd.get('name', '?')}", e))
                 continue
         self._migrate_wave_fight_groups()
         self._migrate_start_mining_groups()
@@ -387,8 +402,8 @@ class _ProjectMixin:
             self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}  [{parent.name}]")
             try:
                 appconfig.set_last_mission(str(parent))
-            except Exception:
-                pass
+            except Exception as e:      # nur Komfort: zuletzt geoeffnet
+                print(f"config.ini: last_mission nicht gespeichert ({e})", file=sys.stderr)
         else:
             self.mission_folder = None
         self.trigger_panel.load()
@@ -400,3 +415,13 @@ class _ProjectMixin:
             tr("window.status_loaded", path=path, n=len(self.objects),
                g=len(self.building_groups) + len(self.reinforce_groups) + len(self.fight_groups)
                + len(self.mining_groups)))
+        if fehler:
+            for was, e in fehler:
+                print(f"Laden: {was} uebersprungen: {type(e).__name__}: {e}",
+                      file=sys.stderr)
+            liste = "\n".join(f"- {was}: {e}" for was, e in fehler[:12])
+            if len(fehler) > 12:
+                liste += "\n- ..."
+            QMessageBox.warning(self, tr("window.load_skipped_title"),
+                                tr("window.load_skipped_text", n=len(fehler),
+                                   liste=liste))
