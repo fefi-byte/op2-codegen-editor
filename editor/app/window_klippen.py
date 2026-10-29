@@ -10,7 +10,7 @@ from .common import *
 from PySide6.QtWidgets import QGraphicsLineItem, QGraphicsEllipseItem
 from tileset import TILE
 import mapgen
-from .paint_layers import B_KLIPPE
+from .paint_layers import B_KLIPPE, KLIPPEN_ERSATZ
 from .window_terrain import (  # noqa: F401
     KLIPPEN_LIVE_DECKKRAFT,
     KLIPPEN_LIVE_VERZOEGERUNG,
@@ -129,6 +129,8 @@ class _KlippenMixin:
         # `offene_enden`, which discards remembered ends with no cliff at them --
         # run before the write it discarded exactly the ends this stroke had just
         # remembered.
+        if ebenen.letzte_klippe_ersatz:
+            rueck = self._ersatz_rand_legen(ebenen, aenderungen, rueck)
         self._klippen_vorschau()
         if not rueck:
             return
@@ -136,6 +138,31 @@ class _KlippenMixin:
         self._push_undo("terrain", TerrainEdit(rueck))
         self._refresh_terrain_overlay()
         self.statusBar().showMessage(tr("terrain.klippe_gesetzt", n=len(rueck)))
+
+    def _ersatz_rand_legen(self, ebenen, aenderungen, rueck):
+        """Erdrand um eine Klippe auf Boden ohne eigene Klippenkacheln.
+
+        Die Wand besteht dann aus mud-Kacheln, deren Raender Erde zeigen.
+        Ohne Rand stiesse diese Erde hart an Fels oder Schnee; mit einem zwei
+        Zellen breiten Erdstreifen rechnet der normale Malweg die Uebergaenge.
+        Lay a two-cell mud rim around a cliff placed on ground without its
+        own cliff tiles, so the regular painting path computes the transitions.
+        """
+        h, w = self.map.height, self.map.width
+        klippe = np.zeros((h, w), dtype=bool)
+        for x, y, _k, _z in aenderungen:
+            klippe[y, x] = True
+        rand = klippe.copy()
+        for _ in range(2):
+            p = np.pad(rand, 1)
+            rand = rand | p[:-2, 1:-1] | p[2:, 1:-1] | p[1:-1, :-2] | p[1:-1, 2:]
+        zellen = [(int(x), int(y)) for y, x in zip(*np.nonzero(rand & ~klippe))]
+        ebenen.strich_beginnen()
+        rechteck = ebenen.male(KLIPPEN_ERSATZ, zellen)
+        if rechteck is not None:
+            rueck = self._aenderungen_schreiben(ebenen.synth_region(rechteck),
+                                                rueck)
+        return self._rand_nachziehen(ebenen, rueck)
 
     def _klippen_vorschau(self):
         """Die gesetzten Stuetzpunkte als Linie in der Szene zeigen."""

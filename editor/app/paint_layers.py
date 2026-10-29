@@ -102,6 +102,7 @@ RAND = 3
 # How far around an old transition tile the tiles are recomputed as well.
 UEBERGANG_RAND = 2
 
+KLIPPEN_ERSATZ = "mud"     # Klippenfamilie fuer Boeden ohne eigene Klippen
 CLIFF_CELLS = (celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
                celltypes.CLIFFS_LOW_SIDE)
 
@@ -123,6 +124,7 @@ class PaintLayers:
         # Cells of the last stroke -- they stay pure ground.
         self.gemalt = np.zeros((h, w), dtype=bool)
         self.letzter_strich = None      # Maske des zuletzt beendeten Strichs
+        self.letzte_klippe_ersatz = None  # Familie, fuer die mud einsprang
         # Klippenzellen beim Beginn des Strichs (`strich_beginnen`).
         self.strich_war_klippe = None
         self.letzter_war_klippe = None
@@ -373,6 +375,17 @@ class PaintLayers:
         fi = int(self.familie[max(0, min(h - 1, y0)), max(0, min(w - 1, x0))])
         familie = (self.tm.families[fi] if 0 <= fi < len(self.tm.families)
                    else "san")
+        # Fels, Schnee, Bewuchs und Lava haben keine eigenen Klippenkacheln.
+        # Die Originale setzen dort mud-Klippen (in Schneegebieten 56 von 58
+        # Klippenzellen aller Karten) -- also mud, und der Aufrufer legt einen
+        # schmalen Erdrand um die Wand, damit die Uebergaenge stimmen.
+        # Rock, snow, vegetation and lava have no cliff tiles of their own; the
+        # originals use mud cliffs there. The caller lays a thin mud rim around.
+        self.letzte_klippe_ersatz = None
+        if (not klippe_algo.verfuegbar(self.tm, familie)
+                and klippe_algo.verfuegbar(self.tm, KLIPPEN_ERSATZ)):
+            self.letzte_klippe_ersatz = familie
+            familie = KLIPPEN_ERSATZ
         saat = zlib.crc32(repr(([tuple(map(int, p)) for p in punkte],
                                 hoch_seite)).encode())
         maske, zellen = self._klippe_belegen(
