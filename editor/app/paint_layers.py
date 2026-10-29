@@ -37,10 +37,7 @@ import celltypes    # noqa: E402
 import mapgen       # noqa: E402
 import shapegen     # noqa: E402
 
-try:
-    import klippe_algo  # noqa: E402
-except Exception:                                        # noqa: BLE001
-    klippe_algo = None
+import klippe_algo  # noqa: E402
 
 # Pinselarten. `tief` senkt ab, die naechsten setzen das Biom, der Rest sind
 # Sonderflaechen.
@@ -129,10 +126,6 @@ class PaintLayers:
         # in the map: an overlapped block is partly overwritten and no longer
         # matches, while a remembered point stays findable.
         self.klippen_enden: list[tuple[int, int]] = []
-        # Welcher Weg die Klippenkante belegt. Der algorithmische ist die
-        # Voreinstellung, wo die Handzuordnung ihn traegt; sonst faellt
-        # `_klippe_belegen` von selbst auf die Bloecke zurueck.
-        self.klippen_algorithmisch = True
         self._aus_karte()
 
     # ------------------------------------------------------------------
@@ -279,31 +272,20 @@ class PaintLayers:
         return aenderungen
 
     def _klippe_belegen(self, gitter, punkte, hoch_seite, familie):
-        """Welcher Weg belegt die Kante -- algorithmisch oder mit Bloecken?
+        """Die Kante mit dem Gelaende-Loeser (`klippe_algo`) belegen.
 
-        Der algorithmische Weg (`klippe_algo`) leitet jede Kachel aus dem
-        Gelaende ab und laesst harte Uebergaenge gar nicht erst zu. Er braucht
-        die Handzuordnung der Kachelraender und kann darum vorerst nur `mud`;
-        fuer die anderen Familien bleibt der Blockweg zustaendig.
+        Der Blockweg ist entfernt. Traegt die Familie keine Kantenzuordnung
+        (sno: neun Klippenkacheln), bleibt die Maske leer -- der Aufrufer
+        meldet dann "keine Klippe gesetzt", statt still etwas anderes zu tun.
 
-        Which path covers the edge -- algorithmic or block-based? The
-        algorithmic one needs the hand-assigned tile edges and currently only
-        covers `mud`; the others keep the block path.
+        Cover the edge with the terrain solver. The block path is gone; a
+        family without an edge assignment yields an empty mask.
         """
-        if self.klippen_algorithmisch and klippe_algo is not None:
-            try:
-                if klippe_algo.verfuegbar(self.tm, familie):
-                    maske, zellen = klippe_algo.klippe_aus_linie(
-                        gitter, punkte, hoch_seite, self.tm, self.rng,
-                        familie)
-                    if maske.any():
-                        return maske, zellen
-            except Exception:                            # noqa: BLE001
-                # Ein Fehler im neuen Weg darf den Editor nicht lahmlegen --
-                # dann eben mit Bloecken.
-                pass
-        return mapgen.klippe_aus_linie(gitter, punkte, hoch_seite, self.tm,
-                                       self.rng, familie)
+        if not klippe_algo.verfuegbar(self.tm, familie):
+            return (np.zeros(gitter.shape, dtype=bool),
+                    np.full(gitter.shape, -1, dtype=np.int16))
+        return klippe_algo.klippe_aus_linie(gitter, punkte, hoch_seite,
+                                            self.tm, self.rng, familie)
 
     def klippen_anker(self, x: int, y: int, umkreis: int = 5, ausser=()):
         """Naechstes offenes Klippenende im Umkreis -> (x, y) oder None.
@@ -761,39 +743,29 @@ class PaintLayers:
         # Only on release does the protection fall; then this call runs without
         # it and lays the band on both sides: measured 76 cells on one side and
         # 80 on the other.
+        zt_alt = np.array([[self.map.cell_type(x, y)
+                            for x in range(x0, x1 + 1)]
+                           for y in range(y0, y1 + 1)])
+        klippe_bleibt = (np.isin(zt_alt, (celltypes.NORTH_CLIFFS,
+                                          celltypes.CLIFFS_HIGH_SIDE,
+                                          celltypes.CLIFFS_LOW_SIDE))
+                         & ~schutz)
+        fest[klippe_bleibt] = alt[klippe_bleibt]
         if not schutz.any():
             mapgen._mische_grenzen(fest, fam, self.tm, self.rng, schutz=schutz,
                                    band_breite=breite)
         neu = mapgen._sample_tiles(fam, self.rng, self.tm, fest=fest,
                                    familie_zwingend=schutz)
 
-        # Baugelaende bleibt eben, dort keine Klippen
-        H_wirksam = H.copy()
-        H_wirksam[self.bau[y0:y1 + 1, x0:x1 + 1]] = 0
-        if H_wirksam.any():
-            # Erst die Kante mit ganzen Bloecken abfahren, dann den Rest
-            # wie bisher Kachel fuer Kachel fuellen.
-            # First walk the edge with whole blocks, then fill the rest tile by
-            # tile as before.
-            vom_laeufer = mapgen.klippen_laeufer(neu, H_wirksam, fam,
-                                                 self.tm, self.rng)
-            # Was der Laeufer als Block gesetzt hat, bleibt stehen. Sonst geht
-            # `_male_klippen` Zelle fuer Zelle darueber und zerlegt die Bloecke
-            # wieder in Bruchstuecke -- gemessen 191 ueberschriebene Zellen bei
-            # 36 gesetzten.
-            # What the runner placed as a block stays. Otherwise `_male_klippen`
-            # walks over it cell by cell and breaks the blocks back into
-            # fragments -- measured, 191 overwritten cells against 36 placed.
-            klippen = mapgen._male_klippen(neu, fam, H_wirksam, self.tm,
-                                           self.rng,
-                                           schutz=schutz,
-                                           fertig=vom_laeufer)
-            # Wie beim Erzeugen: die Klippe entsteht zuletzt, also hat der Boden
-            # daneben noch fuer eine andere Nachbarin gewaehlt.
-            # As when generating: the cliff comes last, so the ground beside it
-            # still chose for a different neighbour.
-            mapgen._boden_an_klippen_nachziehen(neu, fam, klippen, self.tm,
-                                                self.rng)
+        # Klippen werden nicht mehr aus dem Hoehenfeld abgeleitet (der
+        # Blockweg ist entfernt): was schon als Klippe auf der Karte steht,
+        # bleibt stehen -- ausser dort, wo dieser Strich selbst gemalt hat.
+        # Cliffs are no longer derived from the height field: what already
+        # stands as a cliff stays, except where this stroke painted.
+        if klippe_bleibt.any():
+            neu[klippe_bleibt] = alt[klippe_bleibt]
+            mapgen._boden_an_klippen_nachziehen(neu, fam, klippe_bleibt,
+                                                self.tm, self.rng)
         # Uebergaenge auch beim Malen aus den Ecken ableiten und danach
         # zurechtruecken -- dieselbe Kette wie beim Erzeugen.
         # Derive transitions from the corners when painting too and align them

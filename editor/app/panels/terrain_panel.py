@@ -106,14 +106,6 @@ class TerrainPanel(QWidget):
         self.klippen_seite_wahl.setToolTip(tr("terrain.klippe_seite_hint"))
         kform.addRow(tr("terrain.klippe_seite"), self.klippen_seite_wahl)
         kl.addLayout(kform)
-        # Welcher Weg die Kante belegt. Der Gelaendeweg ist die Voreinstellung;
-        # wo die Kantenzuordnung ihn nicht traegt, schaltet der Ebenenstapel
-        # von selbst auf Bloecke zurueck.
-        self.klippen_algo_schalter = QCheckBox(tr("terrain.klippe_algo"))
-        self.klippen_algo_schalter.setToolTip(tr("terrain.klippe_algo_hint"))
-        self.klippen_algo_schalter.setChecked(True)
-        self.klippen_algo_schalter.toggled.connect(self._klippen_algo_setzen)
-        kl.addWidget(self.klippen_algo_schalter)
         knopfreihe = QHBoxLayout()
         self.btn_klippe_setzen = QPushButton(tr("terrain.klippe_setzen"))
         self.btn_klippe_setzen.setToolTip(tr("terrain.klippe_setzen_hint"))
@@ -215,12 +207,6 @@ class TerrainPanel(QWidget):
     def klippen_seite(self) -> str:
         """Auf welcher Seite der gezeichneten Linie liegt das Hochland?"""
         return self.klippen_seite_wahl.currentData() or "links"
-
-    def _klippen_algo_setzen(self, an: bool) -> None:
-        """Den Weg umstellen, mit dem die Klippenkante belegt wird."""
-        ebenen = getattr(self._window, "ebenen", None)
-        if ebenen is not None:
-            ebenen.klippen_algorithmisch = bool(an)
 
     def klippen_punkte_geaendert(self, n: int) -> None:
         """Anzahl gesetzter Stuetzpunkte anzeigen."""

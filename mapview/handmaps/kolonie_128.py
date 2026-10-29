@@ -271,7 +271,8 @@ def baue() -> tuple[mapgen.GeneratedMap, list]:
 
     grid = mapgen._sample_tiles(fam, rng, tm)
     vulkane = mapgen._stamp_volcanoes(grid, [VULKAN_A, VULKAN_B], tm, rng)
-    klippen = mapgen._male_klippen(grid, fam, H, tm, rng)
+    # Klippen aus der Hoehenkontur, mit demselben Loeser wie der Generator.
+    klippen, _zellen = mapgen._klippen_aus_linien(grid, fam, H, tm, rng)
 
     # Streugut ueberall ausser auf den Basisflaechen -- dort soll gebaut
     # werden, und ein Felsblock mitten im Bauplatz ist nur laestig.

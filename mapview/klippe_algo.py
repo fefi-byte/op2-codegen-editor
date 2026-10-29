@@ -382,30 +382,21 @@ def rand_dem_biom(fein: np.ndarray, runden: int = 3):
     Kachel.
     """
     fein = fein.copy()
-    fh, fw = fein.shape
-    h, w = fh // FEIN, fw // FEIN
     ber = Counter()
     for _r in range(runden):
         hat = _zellen(fein)
-        geaendert = 0
-        for y in range(h):
-            for x in range(w):
-                if not hat[y, x]:
-                    continue
-                for r in SEITEN:
-                    dx, dy = VERSATZ[r]
-                    nx, ny = x + dx, y + dy
-                    if 0 <= nx < w and 0 <= ny < h and hat[ny, nx]:
-                        continue                  # dahinter Klippe: darf Fels
-                    s = _randlinie(fein, x, y, r)
-                    if s.any():
-                        geaendert += int(s.sum())
-                        s[:] = False
+        offen = _offen(hat) & hat[..., None]
+        blk = _bloecke(fein)                      # Sicht -- schreibt durch
+        vorher = int(fein.sum())
+        blk[offen[..., 0], 0, :] = False
+        blk[offen[..., 1], :, -1] = False
+        blk[offen[..., 2], -1, :] = False
+        blk[offen[..., 3], :, 0] = False
+        geaendert = vorher - int(fein.sum())
         ber["Randlinie geraeumt"] += geaendert
         if not geaendert:
             break
     return fein, ber
-
 
 def naht_haelt(fein: np.ndarray):
     """Zwei benachbarte Klippenzellen muessen an ihrer Naht Fels teilen.
@@ -422,36 +413,32 @@ def naht_haelt(fein: np.ndarray):
     haengt, wo sie ohnehin am dicksten ist.
     """
     fein = fein.copy()
-    fh, fw = fein.shape
-    h, w = fh // FEIN, fw // FEIN
     hat = _zellen(fein)
+    blk = _bloecke(fein)
     ber = Counter()
-    for y in range(h):
-        for x in range(w):
-            if not hat[y, x]:
-                continue
-            for r, geg in (("O", "W"), ("S", "N")):
-                dx, dy = VERSATZ[r]
-                nx, ny = x + dx, y + dy
-                if not (0 <= nx < w and 0 <= ny < h) or not hat[ny, nx]:
-                    continue
-                a = _randlinie(fein, x, y, r)
-                b = _randlinie(fein, nx, ny, geg)
-                if a.any() or b.any():
-                    continue
-                # Wo ist die Wand beiderseits am dicksten? Dort schliessen.
-                da = fein[y * FEIN:(y + 1) * FEIN,
-                          x * FEIN:(x + 1) * FEIN].sum(axis=0 if r == "O"
-                                                       else 1)
-                db = fein[ny * FEIN:(ny + 1) * FEIN,
-                          nx * FEIN:(nx + 1) * FEIN].sum(axis=0 if r == "O"
-                                                         else 1)
-                i = int(np.argmax(da + db))
-                a[i] = True
-                b[i] = True
-                ber["Naht geschlossen"] += 1
+    for r, geg, dy, dx in (("O", "W", 0, 1), ("S", "N", 1, 0)):
+        if r == "O":
+            a_leer = ~blk[:, :-1, :, -1].any(axis=-1)
+            b_leer = ~blk[:, 1:, :, 0].any(axis=-1)
+            paar = hat[:, :-1] & hat[:, 1:] & a_leer & b_leer
+        else:
+            a_leer = ~blk[:-1, :, -1, :].any(axis=-1)
+            b_leer = ~blk[1:, :, 0, :].any(axis=-1)
+            paar = hat[:-1, :] & hat[1:, :] & a_leer & b_leer
+        for y, x in zip(*np.nonzero(paar)):
+            ny, nx = y + dy, x + dx
+            a_l = _randlinie(fein, x, y, r)
+            b_l = _randlinie(fein, nx, ny, geg)
+            da = fein[y * FEIN:(y + 1) * FEIN,
+                      x * FEIN:(x + 1) * FEIN].sum(axis=0 if r == "O" else 1)
+            db = fein[ny * FEIN:(ny + 1) * FEIN,
+                      nx * FEIN:(nx + 1) * FEIN].sum(axis=0 if r == "O"
+                                                     else 1)
+            i = int(np.argmax(da + db))
+            a_l[i] = True
+            b_l[i] = True
+            ber["Naht geschlossen"] += 1
     return fein, ber
-
 
 def _randlinie(fein, x, y, r):
     """Die vier Teilfelder einer Kachelseite als beschreibbare Sicht."""
@@ -557,55 +544,41 @@ def angleichen(fein: np.ndarray, vor: dict, runden: int = 6):
     liest danach denselben, berichtigten Rand.
     """
     fein = fein.copy()
-    fh, fw = fein.shape
-    h, w = fh // FEIN, fw // FEIN
     ber = Counter()
+    tab = _tabelle(vor)
     for _r in range(runden):
         hat = _zellen(fein)
-        geaendert = 0
-        for y in range(h):
-            for x in range(w):
-                a = fein[y * FEIN:(y + 1) * FEIN, x * FEIN:(x + 1) * FEIN]
-                if not a.any():
-                    continue
-                soll = verlangt(fein, x, y)
-                if any(erfuellt(s, soll) for s, _fa in vor.values()):
-                    continue
-                # Welche Seiten stossen ans Biom? Dort darf die Berichtigung
-                # keinen Fels hinschreiben -- sonst holt sie sich genau den
-                # harten Uebergang zurueck, den die Randregel eben geraeumt
-                # hat. Gemessen: auf einer 2:1-Schraege blieb sonst eine
-                # Stelle stehen.
-                offen = set()
-                for r in SEITEN:
-                    dx, dy = VERSATZ[r]
-                    nx, ny = x + dx, y + dy
-                    if not (0 <= nx < w and 0 <= ny < h) or not hat[ny, nx]:
-                        offen.add(r)
-                anteil = float(a.mean())
-                best = None
-                for t, (s, fa) in vor.items():
-                    hart = sum(1 for r in offen for u in s[r] if u == FELS)
-                    fehl = sum(1 for r in SEITEN
-                               for u, v in zip(s[r], soll[r])
-                               if u != EGAL and u != v)
-                    schl = (hart, fehl, abs(fa - anteil), t)
-                    if best is None or schl < best[0]:
-                        best = (schl, s)
-                if best is None:
-                    continue
-                for r in SEITEN:
-                    linie = _randlinie(fein, x, y, r)
-                    for i, u in enumerate(best[1][r]):
-                        if u == EGAL:
-                            continue
-                        linie[i] = (u == FELS) and r not in offen
-                geaendert += 1
-                ber["berichtigt"] += 1
-        if not geaendert:
+        ys, xs = np.nonzero(hat)
+        if not len(ys):
             break
+        blk = _bloecke(fein)
+        soll = _soll(blk[ys, xs])                          # (m, 4, FEIN)
+        fehl = _fehl(tab, soll)                            # (m, n)
+        schlecht = np.nonzero(~(fehl == 0).any(axis=1))[0]
+        if not len(schlecht):
+            break
+        offen = _offen(hat)[ys, xs]                        # (m, 4)
+        for k in schlecht:
+            y, x = int(ys[k]), int(xs[k])
+            # Welche Seiten stossen ans Biom? Dort darf die Berichtigung
+            # keinen Fels hinschreiben -- sonst holt sie sich genau den
+            # harten Uebergang zurueck, den die Randregel eben geraeumt
+            # hat. Gemessen: auf einer 2:1-Schraege blieb sonst eine
+            # Stelle stehen.
+            hart = (tab.fels & offen[k][None, :, None]).sum(axis=(1, 2))
+            anteil = float(blk[y, x].mean())
+            reihe = np.lexsort((tab.kacheln, np.abs(tab.fa - anteil),
+                                fehl[k], hart))
+            seiten = tab.E[reihe[0]]
+            for ri, r in enumerate(SEITEN):
+                linie = _randlinie(fein, x, y, r)
+                for i in range(FEIN):
+                    u = seiten[ri, i]
+                    if u == EGAL:
+                        continue
+                    linie[i] = (u == FELS) and not offen[k][ri]
+            ber["berichtigt"] += 1
     return fein, ber
-
 
 def setzen(grid: np.ndarray, fein: np.ndarray, vor: dict,
            naht_runden: int = NAHT_RUNDEN,
@@ -767,11 +740,131 @@ INNENKANTE = 1
 LOESER_ZEIT = 3.0
 
 
+
+# --------------------------------------------------------------- schnell
+#
+# Alles, was je Zelle und je Kachel gefragt wird, steht hier einmal als
+# numpy-Tabelle. Vorher liefen Kandidatenwahl, Angleichen und Paarpruefung
+# in Python-Schleifen ueber Kacheln und Abschnitte: 0,35 s je Wand im Mittel,
+# bis 2,9 s -- zu langsam fuer eine Vorschau unter der Maus.
+
+SEITEN_I = {r: i for i, r in enumerate(SEITEN)}
+GEGEN_R = {"N": "S", "O": "W", "S": "N", "W": "O"}
+
+
+class _Tabelle:
+    """Der Vorrat einer Familie als Felder (Kacheln in fester Reihenfolge)."""
+
+    def __init__(self, vor: dict):
+        from cliff_tiles import modell as _tm
+        ke, px = _modelle()
+        tt = _tm()
+        innen = innenbilder()
+        self.kacheln = np.array(sorted(vor), dtype=np.int64)
+        self.platz = {int(t): i for i, t in enumerate(self.kacheln)}
+        n = len(self.kacheln)
+        self.n = n
+        self.E = np.zeros((n, 4, FEIN), dtype=np.int8)          # N O S W
+        self.fa = np.zeros(n)
+        self.I = np.zeros((n, FEIN, FEIN), dtype=bool)
+        self.hat_innen = np.zeros(n, dtype=bool)
+        for i, t in enumerate(self.kacheln):
+            seiten, fa = vor[int(t)]
+            for r in SEITEN:
+                self.E[i, SEITEN_I[r]] = seiten[r]
+            self.fa[i] = fa
+            ib = innen.get(int(t))
+            if ib is not None:
+                self.I[i] = ib
+                self.hat_innen[i] = True
+        self.fels = (self.E == FELS)
+        self.felsseite = self.fels.any(axis=2)                   # (n, 4)
+        rand = np.stack([self.I[:, 0, :], self.I[:, :, -1],
+                         self.I[:, -1, :], self.I[:, :, 0]], axis=1)
+        self.pixfels = (rand.sum(axis=2) >= OFFEN_FELS_MAX) & \
+            self.hat_innen[:, None]
+        biom = (self.E == BIOM).sum(axis=2)
+        self.binseite = (biom >= 3) & ~self.felsseite
+        # Paare je Richtung: belegt (Karten), Kanten erlaubt, Loch.
+        self.belegt = {}
+        self.kante = {}
+        self.loch = {}
+        self.naht = {}
+        for r in SEITEN:
+            g = GEGEN_R[r]
+            a = self.E[:, SEITEN_I[r]][:, None, :]
+            b = self.E[None, :, SEITEN_I[g]]
+            self.kante[r] = ((a == b) | (a == EGAL) | (b == EGAL)).all(axis=2)
+            self.loch[r] = ((a == BIOM) & (b == BIOM)).sum(axis=2) >= 3
+            bel = np.zeros((n, n), dtype=bool)
+            for i, t in enumerate(self.kacheln):
+                for u in tt.nachbarn(int(t), r):
+                    j = self.platz.get(int(u))
+                    if j is not None:
+                        bel[i, j] = True
+            self.belegt[r] = bel
+            nt = np.full((n, n), np.nan)
+            pp = [px._platz.get(int(t)) for t in self.kacheln]
+            if all(v is not None for v in pp):
+                taf = px._tafel(r)
+                nt = taf[np.ix_(pp, pp)].astype(float)
+            self.naht[r] = nt
+        self._erlaubt: dict = {}
+
+    def erlaubt(self, nur_belegt: bool, loch_erlaubt: bool) -> dict:
+        """-> {r: [Menge erlaubter j je i]} -- einmal je Einstellung."""
+        k = (nur_belegt, loch_erlaubt)
+        if k not in self._erlaubt:
+            aus = {}
+            for r in SEITEN:
+                m = self.belegt[r] if nur_belegt else \
+                    (self.belegt[r] | self.kante[r])
+                if not loch_erlaubt:
+                    m = m & ~self.loch[r]
+                aus[r] = [set(np.nonzero(m[i])[0].tolist())
+                          for i in range(self.n)]
+            self._erlaubt[k] = aus
+        return self._erlaubt[k]
+
+
+def _tabelle(vor: dict) -> _Tabelle:
+    k = ("tabelle", id(vor))
+    if k not in _zwischen:
+        _zwischen[k] = _Tabelle(vor)
+    return _zwischen[k]
+
+
+def _bloecke(fein: np.ndarray) -> np.ndarray:
+    """(h*FEIN, w*FEIN) -> (h, w, FEIN, FEIN)."""
+    fh, fw = fein.shape
+    return fein.reshape(fh // FEIN, FEIN, fw // FEIN, FEIN).transpose(0, 2, 1, 3)
+
+
+def _soll(blk: np.ndarray) -> np.ndarray:
+    """(..., FEIN, FEIN) -> (..., 4, FEIN): Rand N O S W als FELS/BIOM."""
+    return np.stack([blk[..., 0, :], blk[..., :, -1],
+                     blk[..., -1, :], blk[..., :, 0]], axis=-2).astype(np.int8)
+
+
+def _offen(hat: np.ndarray) -> np.ndarray:
+    """(h, w) -> (h, w, 4): ist die Nachbarzelle N O S W keine Klippe?"""
+    p = np.pad(hat, 1, constant_values=False)
+    return ~np.stack([p[:-2, 1:-1], p[1:-1, 2:], p[2:, 1:-1], p[1:-1, :-2]],
+                     axis=-1)
+
+
+def _fehl(tab: _Tabelle, soll: np.ndarray) -> np.ndarray:
+    """(m, 4, FEIN) Soll -> (m, n) Abweichungen je Kachel."""
+    E = tab.E[None]
+    return ((E != EGAL) & (E != soll[:, None])).sum(axis=(2, 3))
+
+
 def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
            zeit: float = LOESER_ZEIT, abweichung: int = 0,
            gelaende_zuerst: bool = True, loch_erlaubt: bool = False,
            nur_belegt: bool = False, innen_gewicht: bool = True,
-           wdh_stufe: int = 1, offen_ok: dict | None = None):
+           wdh_stufe: int = 1, offen_ok: dict | None = None,
+           vorbereitet: dict | None = None):
     """Gelaende -> Kacheln, aber GESUCHT statt gesetzt.
 
     `setzen` waehlt je Zelle eine Kachel, die das Gelaende erfuellt, und
@@ -801,106 +894,27 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
     import sys
     import time
 
-    from cliff_tiles import modell as _tm
-
-    ke, PX = _modelle()
-    tt = _tm()
-    h, w = grid.shape
-
-    hat = _zellen(fein)
-    zellen = []
-    dom: dict = {}
-    fehl_von: dict = {}
-    innen_von: dict = {}
-    ofs_von: dict = {}
-    ik_von: dict = {}
-    innen = innenbilder()
-    for y in range(h):
-        for x in range(w):
-            a = fein[y * FEIN:(y + 1) * FEIN, x * FEIN:(x + 1) * FEIN]
-            if not hat[y, x]:
-                continue
-            soll = verlangt(fein, x, y)
-            anteil = float(a.mean())
-            offen = set()
-            for r in SEITEN:
-                dx, dy = VERSATZ[r]
-                nx, ny = x + dx, y + dy
-                if not (0 <= nx < w and 0 <= ny < h) or not hat[ny, nx]:
-                    offen.add(r)
-            if offen_ok and (x, y) in offen_ok:
-                # Ende einer Nordkante: die Linie darf an die offene Seite.
-                offen.discard(offen_ok[(x, y)])
-            kand = []
-            innenkante = {}
-            blk = a
-            for t, (s, fa) in vor.items():
-                # Hart: kein Fels zum offenen Boden hin.
-                if any(u == FELS for r in offen for u in s[r]):
-                    continue
-                # Auch nicht, wo die Handzuordnung `egal` sagt, das Bild aber
-                # Fels zeigt: am Ende einer waagerechten Wand stand so eine
-                # Kachel mit Fels unten rechts, und darunter war nichts --
-                # im Bild fehlte dort sichtbar eine Kachel.
-                #
-                # Als Verbot gemessen zu streng: 17 von 39 Pruefwaenden wurden
-                # unloesbar. Darum als erste Vorliebe: wo es geht, nie.
-                ib = innen.get(t)
-                ofs = 0 if ib is None else sum(
-                    1 for r in offen
-                    if int(_innenrand(ib, r).sum()) >= OFFEN_FELS_MAX)
-                # Boden zu einer Nachbarzelle, die selbst Klippe ist: eine
-                # Ober- oder Unterkante mitten in der Wand.
-                # Nur Seiten ganz ohne Fels: eine Nordkante zeigt zur
-                # Nachbarzelle drei Abschnitte Boden und einen Fels -- das ist
-                # ihre Linie und kein Mangel. Mit ">= 3 Boden" blieb fuer sie
-                # nur Kachel 211, die Kante bestand aus einer einzigen Kachel.
-                bin_ = sum(1 for r in SEITEN if r not in offen
-                           and sum(1 for u in s[r] if u == BIOM) >= 3
-                           and not any(u == FELS for u in s[r]))
-                fehl = sum(1 for r in SEITEN for u, v in zip(s[r], soll[r])
-                           if u != EGAL and u != v)
-                if fehl > abweichung:
-                    continue
-                ib = innen.get(t)
-                inn = int((ib != blk).sum()) if ib is not None else FEIN * FEIN
-                vorn = ofs + (bin_ if INNENKANTE == 1 else 0)
-                kand.append((vorn, fehl, inn, abs(fa - anteil), t))
-                innenkante[t] = bin_
-            if not kand:
-                return None
-            kand.sort()
-            zellen.append((x, y))
-            dom[(x, y)] = [t for _o, _f, _i, _d, t in kand]
-            fehl_von[(x, y)] = {t: f for _o, f, _i, _d, t in kand}
-            innen_von[(x, y)] = {t: i for _o, _f, i, _d, t in kand}
-            ofs_von[(x, y)] = {t: o for o, _f, _i, _d, t in kand}
-            ik_von[(x, y)] = dict(innenkante)
-    if not zellen:
+    tab = _tabelle(vor)
+    vb = vorbereitet if vorbereitet is not None else \
+        _vorbereiten(tab, fein, offen_ok)
+    if vb is None:
         return None
-    drin = set(zellen)
+    zellen, nachbarn = vb["zellen"], vb["nachbarn"]
+    FE, IN, OF, BI, AN = vb["fehl"], vb["inn"], vb["ofs"], vb["bin"], vb["anteil"]
+    erlaubt = tab.erlaubt(nur_belegt, loch_erlaubt)
+    belegt_m = tab.belegt
+    naht = tab.naht
 
-    nachbarn = {}
-    for (x, y) in zellen:
-        nb = []
-        for r in SEITEN:
-            dx, dy = VERSATZ[r]
-            p = (x + dx, y + dy)
-            if p in drin:
-                nb.append((r, p))
-        nachbarn[(x, y)] = nb
-
-    _ok: dict = {}
-
-    def ok(a, b, r):
-        """Darf b in Richtung r neben a liegen? (belegt oder erlaubt)"""
-        k = (a, b, r)
-        v = _ok.get(k)
-        if v is None:
-            v = ((tt.passt(a, b, r) or (not nur_belegt and ke.passt(a, b, r)))
-                 and (loch_erlaubt or not ke.loch(a, b, r)))
-            _ok[k] = v
-        return v
+    dom: dict = {}
+    for k, p in enumerate(zellen):
+        moegl = np.nonzero(FE[k] <= abweichung)[0]
+        if not len(moegl):
+            return None
+        vorn = OF[k, moegl] + (BI[k, moegl] if INNENKANTE == 1 else 0)
+        reihe = np.lexsort((tab.kacheln[moegl], AN[k, moegl], IN[k, moegl],
+                            FE[k, moegl], vorn))
+        dom[p] = moegl[reihe].tolist()
+    platz = {p: k for k, p in enumerate(zellen)}
 
     belegt: dict = {}
     start = time.time()
@@ -908,6 +922,7 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
 
     def ordnen(kand, p):
         x, y = p
+        k = platz[p]
         gesetzt = [(r, belegt[q]) for r, q in nachbarn[p] if q in belegt]
         nb_kacheln = {t for _r, t in gesetzt}
         # Auch zwei und drei Zellen weiter: A-B-A-B und A-B-C-A-B-C sind
@@ -916,35 +931,40 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
         weiter = set()
         for r in SEITEN:
             dx, dy = VERSATZ[r]
-            for k in (2, 3):
-                q = belegt.get((x + k * dx, y + k * dy))
+            for kk in (2, 3):
+                q = belegt.get((x + kk * dx, y + kk * dy))
                 if q is not None:
                     weiter.add(q)
-
-        fehl = fehl_von[p]
+        fe, inn_k, of = FE[k], IN[k], OF[k]
+        bi = BI[k]
 
         def schluessel(i_t):
             i, t = i_t
-            rang = 0 if all(tt.passt(t, b, r) for r, b in gesetzt) else 1
+            rang = 0 if all(belegt_m[r][t, b] for r, b in gesetzt) else 1
             gleich = (2 if t in nb_kacheln else 0) + (1 if t in weiter else 0)
             s = n = 0.0
             for r, b in gesetzt:
-                d = PX.naht(t, b, r)
-                if d is not None:
+                d = naht[r][t, b]
+                if d == d:                                   # nicht NaN
                     s += d
                     n += 1
-            inn = innen_von[p][t] if innen_gewicht else 0
+            inn = int(inn_k[t]) if innen_gewicht else 0
+            f = int(fe[t])
             if wdh_stufe == 2:
-                stufen = (gleich, fehl[t], inn, rang)
+                stufen = (gleich, f, inn, rang)
             elif wdh_stufe == 1:
-                stufen = (fehl[t], gleich, inn, rang)
+                stufen = (f, gleich, inn, rang)
             else:
-                stufen = (fehl[t], inn, rang, gleich)
+                stufen = (f, inn, rang, gleich)
             if not gelaende_zuerst:
                 stufen = (rang,) + stufen
             if INNENKANTE == 2:
-                stufen = (stufen[0], ik_von[p][t]) + stufen[1:]
-            stufen = (ofs_von[p][t],) + stufen
+                stufen = (stufen[0], int(bi[t])) + stufen[1:]
+            # Erste Vorliebe wie bei der Kandidatenliste: Bild-Fels zum
+            # offenen Boden, plus (INNENKANTE 1) Seiten ohne Fels zu einer
+            # Klippennachbarin.
+            vorn = int(of[t]) + (int(bi[t]) if INNENKANTE == 1 else 0)
+            stufen = (vorn,) + stufen
             # Der Rang im Gelaende (Felsanteil) bricht Gleichstand.
             return stufen + (s / n if n else 0.0, i)
 
@@ -958,10 +978,10 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
         for p in zellen:
             if p in belegt:
                 continue
-            k = dom[p]
-            if beste is None or len(k) < len(dom[beste]):
+            kk = dom[p]
+            if beste is None or len(kk) < len(dom[beste]):
                 beste = p
-                if len(k) <= 1:
+                if len(kk) <= 1:
                     break
         if beste is None:
             return True
@@ -975,7 +995,8 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
             for r, q in nachbarn[p]:
                 if q in belegt:
                     continue
-                neu = [u for u in dom[q] if ok(t, u, r)]
+                darf = erlaubt[r][t]
+                neu = [u for u in dom[q] if u in darf]
                 alt.append((q, dom[q]))
                 dom[q] = neu
                 if not neu:
@@ -999,12 +1020,60 @@ def loesen(grid: np.ndarray, fein: np.ndarray, vor: dict,
     if not gefunden:
         return None
     maske = np.zeros(grid.shape, dtype=bool)
-    for (x, y), t in belegt.items():
-        grid[y, x] = t
+    for (x, y), i in belegt.items():
+        grid[y, x] = int(tab.kacheln[i])
         maske[y, x] = True
     ber = Counter(gesetzt=len(belegt), Suchschritte=schritte[0])
     return maske, ber
 
+
+def _vorbereiten(tab: _Tabelle, fein: np.ndarray, offen_ok: dict | None):
+    """Alles je Zelle und Kachel, was nicht von der Stufe abhaengt -- einmal.
+
+    -> dict mit Zellen (x, y), Nachbarn und den Feldern (Zellen x Kacheln):
+    fehl (Randabweichung), inn (Innenabweichung), ofs (Bild-Fels zum
+    offenen Boden), bin (Seite ohne Fels zu einer Klippennachbarin), anteil
+    (Abstand im Felsanteil). Kacheln mit FELS zu einer offenen Seite sind
+    ausgeschlossen (fehl = 99).
+    """
+    hat = _zellen(fein)
+    ys, xs = np.nonzero(hat)
+    if not len(ys):
+        return None
+    blk = _bloecke(fein)[ys, xs]                          # (m, F, F)
+    soll = _soll(blk)
+    offen = _offen(hat)[ys, xs].copy()                    # (m, 4)
+    if offen_ok:
+        for k, (y, x) in enumerate(zip(ys, xs)):
+            r = offen_ok.get((int(x), int(y)))
+            if r is not None:
+                # Ende einer Nordkante: die Linie darf an die offene Seite.
+                offen[k, SEITEN_I[r]] = False
+    fehl = _fehl(tab, soll)
+    # Hart: kein Fels zum offenen Boden hin.
+    hart = (tab.felsseite[None] & offen[:, None, :]).any(axis=2)
+    fehl = np.where(hart, 99, fehl)
+    # Bild-Fels zum offenen Boden -- als Verbot gemessen zu streng (17 von 39
+    # Pruefwaenden unloesbar), darum als erste Vorliebe.
+    ofs = (tab.pixfels[None] & offen[:, None, :]).sum(axis=2)
+    # Seite ganz ohne Fels zu einer Nachbarzelle, die selbst Klippe ist.
+    bin_ = (tab.binseite[None] & ~offen[:, None, :]).sum(axis=2)
+    inn = (tab.I[None] != blk[:, None]).sum(axis=(2, 3))
+    inn = np.where(tab.hat_innen[None], inn, FEIN * FEIN)
+    anteil = np.abs(tab.fa[None] - blk.mean(axis=(1, 2))[:, None])
+    zellen = [(int(x), int(y)) for y, x in zip(ys, xs)]
+    drin = set(zellen)
+    nachbarn = {}
+    for (x, y) in zellen:
+        nb = []
+        for r in SEITEN:
+            dx, dy = VERSATZ[r]
+            q = (x + dx, y + dy)
+            if q in drin:
+                nb.append((r, q))
+        nachbarn[(x, y)] = nb
+    return {"zellen": zellen, "nachbarn": nachbarn, "fehl": fehl,
+            "inn": inn, "ofs": ofs, "bin": bin_, "anteil": anteil}
 
 def naht_teilen(fein: np.ndarray) -> np.ndarray:
     """Beide Kacheln an einer Naht sollen dasselbe lesen.
@@ -1023,25 +1092,23 @@ def naht_teilen(fein: np.ndarray) -> np.ndarray:
     der Naht zu reissen.
     """
     fein = fein.copy()
-    fh, fw = fein.shape
-    h, w = fh // FEIN, fw // FEIN
     hat = _zellen(fein)
-    for y in range(h):
-        for x in range(w):
-            if not hat[y, x]:
-                continue
-            for r, geg in (("O", "W"), ("S", "N")):
-                dx, dy = VERSATZ[r]
-                nx, ny = x + dx, y + dy
-                if not (nx < w and ny < h) or not hat[ny, nx]:
-                    continue
-                a = _randlinie(fein, x, y, r)
-                b = _randlinie(fein, nx, ny, geg)
-                v = a | b
-                a[:] = v
-                b[:] = v
+    blk = _bloecke(fein)
+    # waagerecht: Zelle (y, x) und (y, x+1)
+    paar = hat[:, :-1] & hat[:, 1:]
+    l = blk[:, :-1, :, -1]
+    r = blk[:, 1:, :, 0]
+    v = l | r
+    l[paar] = v[paar]
+    r[paar] = v[paar]
+    # senkrecht: Zelle (y, x) und (y+1, x)
+    paar = hat[:-1, :] & hat[1:, :]
+    o = blk[:-1, :, -1, :]
+    u = blk[1:, :, 0, :]
+    v = o | u
+    o[paar] = v[paar]
+    u[paar] = v[paar]
     return fein
-
 
 def gelaende_angleichen(fein: np.ndarray, vor: dict,
                         teilen: bool = False) -> np.ndarray:
@@ -1084,18 +1151,23 @@ LOESER = True
 # Nur-belegt mit WENIGER Abweichung loest weniger (1: 12, 2: 16, 3: 20) und
 # laeuft dabei oft in die Zeitgrenze; mit mehr (6) ebenfalls, weil die
 # Domaenen zu gross werden. 4 ist der gemessene Sattel.
+# Zeit je Stufe. Erfolgreiche Stufen sind nach hoechstens 0,05 s fertig
+# (gemessen ueber 78 Pruefwaende); was laenger sucht, findet nichts mehr und
+# lief vorher bis zur Grenze von 1 bis 1,5 s -- das waren alle Ausreisser.
+STUFEN_ZEIT = 0.15
+
 LOESER_STUFEN = (
-    (True, 4, 1.5),
-    (False, 0, 1.0),
-    (False, 1, 1.0),
-    (False, 2, 1.0),
-    (False, 3, 1.0),
-    (False, 4, 1.0),
+    (True, 4, STUFEN_ZEIT),
+    (False, 0, STUFEN_ZEIT),
+    (False, 1, STUFEN_ZEIT),
+    (False, 2, STUFEN_ZEIT),
+    (False, 3, STUFEN_ZEIT),
+    (False, 4, STUFEN_ZEIT),
     # Fuer die waagerechte Nordkante: dort greift erst 4 bis 5 (gemessen an
     # drei Saaten), sonst faellt sie auf `setzen` zurueck -- 54 % unpassende
     # Paare.
-    (False, 5, 1.0),
-    (False, 6, 1.0),
+    (False, 5, STUFEN_ZEIT),
+    (False, 6, STUFEN_ZEIT),
 )
 
 
@@ -1105,9 +1177,12 @@ def loesen_stufenweise(grid: np.ndarray, fein: np.ndarray, vor: dict,
 
     Der Bericht nennt die Stufe, die gegriffen hat.
     """
+    vb = _vorbereiten(_tabelle(vor), fein, offen_ok)
+    if vb is None:
+        return None
     for i, (nur_belegt, abw, zeit) in enumerate(stufen):
         r = loesen(grid, fein, vor, zeit=zeit, abweichung=abw,
-                   nur_belegt=nur_belegt, offen_ok=offen_ok)
+                   nur_belegt=nur_belegt, offen_ok=offen_ok, vorbereitet=vb)
         if r is not None:
             r[1]["Stufe"] = i
             return r
@@ -1124,14 +1199,37 @@ def klippe_aus_linie(grid: np.ndarray, punkte, hoch_seite: str, tm,
     Wege ohne Umbau aufrufen kann. Der Zelltyp wird nicht selbst gesetzt: -1
     heisst "aus der Kachel ableiten", und genau das tut der Aufrufer bereits.
     """
+    # Nur auf dem Ausschnitt um die Linie arbeiten. Mehrere Schritte laufen
+    # ueber jede Zelle ihres Gitters; auf einer 256x256-Karte war das der
+    # groesste Teil der Zeit, obwohl die Wand nur ein paar hundert Zellen hat.
     h, w = grid.shape
     zellen = np.full(grid.shape, -1, dtype=np.int16)
+    if len(punkte) < 2:
+        return np.zeros(grid.shape, dtype=bool), zellen
+    rand = int(np.ceil(max(hoehe_max, NORD_MAX) + 3 * UNRUHE)) + 3
+    xs = [p[0] for p in punkte]
+    ys = [p[1] for p in punkte]
+    x0, x1 = max(0, int(min(xs)) - rand), min(w, int(max(xs)) + rand + 1)
+    y0, y1 = max(0, int(min(ys)) - rand), min(h, int(max(ys)) + rand + 1)
+    if x1 - x0 < w or y1 - y0 < h:
+        teil = grid[y0:y1, x0:x1]
+        m, z = klippe_aus_linie(teil, [(px - x0, py - y0) for px, py in punkte],
+                                hoch_seite, tm, rng, familie,
+                                hoehe_min, hoehe_max)
+        maske = np.zeros(grid.shape, dtype=bool)
+        maske[y0:y1, x0:x1] = m
+        zellen[y0:y1, x0:x1] = z
+        return maske, zellen
     vor = vorrat(tm, familie)
     if len(punkte) < 2 or len(vor) < MINDEST_KACHELN:
         return np.zeros(grid.shape, dtype=bool), zellen
     nordenden: list = []
+    # Ein geschlossener Zug (Mesa, Ring) hat keine Enden -- dort darf die Wand
+    # nicht spitz auslaufen.
+    geschlossen = len(punkte) > 2 and tuple(punkte[0]) == tuple(punkte[-1])
     fein, achse = band_aus_linie(punkte, hoch_seite, w, h, rng,
-                                 hoehe_min, hoehe_max, nordenden=nordenden)
+                                 hoehe_min, hoehe_max, nordenden=nordenden,
+                                 enden=not geschlossen)
     if not fein.any():
         return np.zeros(grid.shape, dtype=bool), zellen
     fein, _b = fuellregel(fein, achse, rng)
