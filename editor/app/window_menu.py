@@ -127,12 +127,12 @@ class _MenuMixin:
 
     def _escape_pressed(self):
         """Abbruch in der Reihenfolge: Karten-Pick, Bereichsauswahl, Platzieren."""
-        if getattr(self, "_action_pick", None) is not None:
+        if self._action_pick is not None:
             self._end_action_pick()
             self.statusBar().showMessage(tr("window.status_action_canceled"))
-        elif getattr(self, "_rect_pick_group", None) is not None:
+        elif self._rect_pick_group is not None:
             self._rect_drag_cancel()
-        elif getattr(self, "_placement_active", False):
+        elif self._placement_active:
             self._cancel_placement()
 
     def _set_language(self, code):

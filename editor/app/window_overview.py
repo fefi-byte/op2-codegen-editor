@@ -44,7 +44,7 @@ class _OverviewMixin:
         """Ein-/Ausblenden der Docks ueber das Ansicht-Menue anbieten.
 
         Offer showing/hiding the docks from the View menu."""
-        menu = getattr(self, "_view_menu", None)
+        menu = self._view_menu
         if menu is None:
             return
         menu.addSeparator()

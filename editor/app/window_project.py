@@ -187,7 +187,7 @@ class _ProjectMixin:
                 # "Speichern unter".
                 # Custom (edited) map: not in the game folder but next to the
                 # previous mission -- matters for "save as".
-                for folder in (self.mission_folder, getattr(self, "_map_search_folder", None)):
+                for folder in (self.mission_folder, self._map_search_folder):
                     if folder and (Path(folder) / self.map_name).is_file():
                         map_source = Path(folder) / self.map_name
                         break

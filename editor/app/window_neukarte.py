@@ -116,7 +116,7 @@ class _NeueKarteMixin:
         self._draw_lava_fields()
         if hasattr(self, "terrain_panel"):
             self.terrain_panel.load()
-        if getattr(self, "_terrain_active", False):
+        if self._terrain_active:
             self._refresh_terrain_overlay()
         self.view.zoom_fit()
 
@@ -165,7 +165,7 @@ class _NeueKarteMixin:
         self._lava_field_items = items
 
     def _clear_lava_field_items(self):
-        for item in getattr(self, "_lava_field_items", []):
+        for item in self._lava_field_items:
             try:
                 self.scene.removeItem(item)
             except RuntimeError:

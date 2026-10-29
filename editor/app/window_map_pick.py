@@ -81,7 +81,7 @@ class _MapPickMixin:
         self.scene.addItem(self._rect_pick_item)
 
     def _rect_drag_start(self, tx, ty):
-        if getattr(self, "_terrain_active", False):
+        if self._terrain_active:
             self._terrain_strich_beginnen()
             self._terrain_stamp(tx, ty)
             return
@@ -119,7 +119,7 @@ class _MapPickMixin:
         self._update_rect_overlay(x, y, w, h)
 
     def _rect_drag_move(self, tx, ty):
-        if getattr(self, "_terrain_active", False):
+        if self._terrain_active:
             self._terrain_stamp(tx, ty)
             self._update_terrain_preview(tx, ty)
             return
@@ -174,7 +174,7 @@ class _MapPickMixin:
         # stamped. Without this the event falls through to the rect-pick
         # cleanup below, which switches `rect_select_enabled` off: painting
         # would die after the first stroke until the tab is reopened.
-        if getattr(self, "_terrain_active", False):
+        if self._terrain_active:
             self._terrain_strich_abschliessen()
             return
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":
@@ -371,7 +371,7 @@ class _MapPickMixin:
     def _lava_brush_step(self, delta):
         # Strg+Rad bedient beide Malmodi -- im Gelaendemodus die Stempelgroesse.
         # Ctrl+wheel serves both paint modes -- the stamp size in terrain mode.
-        if getattr(self, "_terrain_active", False):
+        if self._terrain_active:
             self._terrain_brush_step(delta)
             return
         if not (self._action_pick and self._action_pick.get("kind") == "lava_paint"):
@@ -404,7 +404,7 @@ class _MapPickMixin:
         self._lava_brush_cursor_item = item
 
     def _clear_lava_brush_cursor(self):
-        if getattr(self, "_lava_brush_cursor_item", None) is not None:
+        if self._lava_brush_cursor_item is not None:
             self.scene.removeItem(self._lava_brush_cursor_item)
             self._lava_brush_cursor_item = None
 

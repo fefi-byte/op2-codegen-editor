@@ -21,7 +21,7 @@ class _BuildMixin:
 
         Load a map -- edited maps live in the mission folder, all others in
         the game folder."""
-        for folder in (getattr(self, "_map_search_folder", None), self.mission_folder):
+        for folder in (self._map_search_folder, self.mission_folder):
             if folder:
                 cand = Path(folder) / name
                 if cand.is_file():

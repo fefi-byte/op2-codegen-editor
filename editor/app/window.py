@@ -22,8 +22,55 @@ class EditorWindow(
     _BuildMixin, _OverlaysMixin, _TerrainMixin, _KlippenMixin,
     _NeueKarteMixin, QMainWindow,
 ):
+    def _zustand_anlegen(self):
+        """Jeden Zustand des Fensters VOR allem anderen anlegen.
+
+        Frueher fragten die Mixins verstreut `getattr(self, "_x", Standard)`,
+        weil nicht sicher war, ob ein Wert schon existiert. Das verschleierte
+        Fehler in der Startreihenfolge (die Klippenvorschau kam so nie an).
+        Jetzt existiert alles ab der ersten Zeile; die `_init_*`-Methoden
+        setzen danach ihre eigentlichen Werte.
+
+        Create every piece of window state before anything else, instead of
+        scattered `getattr(self, "_x", default)` calls in the mixins.
+        """
+        self._action_pick = None
+        self._cell_cache = None
+        self._did_initial_fit = False
+        self._klick_neu = False
+        self._klippen_items = []
+        self._klippen_live_items = []
+        self._klippen_live_timer = None
+        self._klippen_punkte = []
+        self._klippen_warm = False
+        self._lava_brush_cursor_item = None
+        self._lava_field_items = []
+        self._layers = None
+        self._layers_marke = None
+        self._map_item = None
+        self._map_pixmap = None
+        self._map_search_folder = None
+        self._object_dialog_open = False
+        self._overlay_enabled = True
+        self._overlay_mode = "speed"
+        self._placement_active = False
+        self._placement_was_active = False
+        self._prev_rect_select = False
+        self._rect_pick_group = None
+        self._redo_stack = None
+        self._strich_offen = False
+        self._strich_rechteck = None
+        self._strich_rueck = []
+        self._terrain_active = False
+        self._terrain_overlay_item = None
+        self._terrain_preview_item = None
+        self._tile_index_grid = None
+        self._undo_stack = None
+        self._view_menu = None
+
     def __init__(self):
         super().__init__()
+        self._zustand_anlegen()
         self.setWindowTitle(tr("window.app_title"))
         self.setWindowIcon(QIcon(str(ICON_PATH)))
         self.resize(1250, 870)
@@ -124,7 +171,7 @@ class EditorWindow(
         Fit the map only once the window has its final size -- the fit inside
         __init__ still runs against the pre-maximised viewport."""
         super().showEvent(event)
-        if not getattr(self, "_did_initial_fit", False):
+        if not self._did_initial_fit:
             self._did_initial_fit = True
             QTimer.singleShot(0, self.view.zoom_fit)
 

@@ -94,7 +94,7 @@ class _TerrainMixin:
             # load() instead of refresh(): the thumbnails belong to the old
             # map and must be dropped together with its tilesets.
             self.terrain_panel.load()
-        if getattr(self, "_terrain_active", False):
+        if self._terrain_active:
             self._refresh_terrain_overlay()
 
     def _init_terrain(self):
@@ -122,7 +122,7 @@ class _TerrainMixin:
         Apply the passability overlay's toggle and mode."""
         self._overlay_enabled = bool(enabled)
         self._overlay_mode = mode or "speed"
-        if getattr(self, "_terrain_active", False):
+        if self._terrain_active:
             if self._overlay_enabled:
                 self._refresh_terrain_overlay()
             else:
@@ -138,7 +138,7 @@ class _TerrainMixin:
         Terrain mode on/off -- the overlay follows the tab, not a separate
         toggle."""
         on = bool(on)
-        if on == getattr(self, "_terrain_active", False):
+        if on == self._terrain_active:
             return
         self._terrain_active = on
         self.view.terrain_paint_enabled = on
@@ -160,11 +160,11 @@ class _TerrainMixin:
             self._refresh_terrain_overlay()
             self.statusBar().showMessage(tr("terrain.status_active"))
         else:
-            self.view.rect_select_enabled = getattr(self, "_prev_rect_select", False)
+            self.view.rect_select_enabled = self._prev_rect_select
             self.view.setCursor(Qt.ArrowCursor)
             self._clear_terrain_overlay()
             self._clear_terrain_preview()
-            if getattr(self, "_placement_was_active", False):
+            if self._placement_was_active:
                 self._activate_placement()
 
     # ------------------------------------------------------------------
@@ -221,9 +221,9 @@ class _TerrainMixin:
         # layers of the OLD map, producing complete nonsense while painting.
         marke = (id(self.map), len(self.map.tiles),
                  int(sum(self.map.tiles[::97])))
-        ebenen = getattr(self, "_layers", None)
+        ebenen = self._layers
         if (ebenen is None or ebenen.map is not self.map
-                or getattr(self, "_layers_marke", None) != marke):
+                or self._layers_marke != marke):
             ebenen = PaintLayers(self.map)
             self._layers = ebenen
             self._layers_marke = marke
@@ -268,8 +268,8 @@ class _TerrainMixin:
 
     def _terrain_strich_abschliessen(self):
         """Ende des Strichs: einmal rechnen und alles auf einmal setzen."""
-        rechteck = getattr(self, "_strich_rechteck", None)
-        gesammelt = getattr(self, "_strich_rueck", [])
+        rechteck = self._strich_rechteck
+        gesammelt = self._strich_rueck
         self._strich_rechteck = None
         self._strich_rueck = []
         self._strich_offen = False
@@ -378,7 +378,7 @@ class _TerrainMixin:
             # Mausschritt ein eigener Rueckgaengig-Eintrag.
             # Collect during a stroke, otherwise every mouse step would produce
             # its own undo entry.
-            self._strich_rueck = getattr(self, "_strich_rueck", []) + rueck
+            self._strich_rueck = self._strich_rueck + rueck
         else:
             self._push_undo("terrain", TerrainEdit(rueck))
         self._refresh_terrain_overlay()
@@ -420,7 +420,7 @@ class _TerrainMixin:
         # Deriving the tiles takes over a second with a large brush -- doing
         # that on every mouse move would be unusable. It is computed once on
         # release.
-        if getattr(self, "_strich_offen", False):
+        if self._strich_offen:
             # Kleiner Pinsel rechnet live mit, grosser sammelt. Gemessen
             # braucht ein Strich beim Ziehen 51 ms bei Pinsel 11 und 114 ms
             # bei 21 -- darueber ruckelt es sichtbar, also wird dann erst beim
@@ -429,7 +429,7 @@ class _TerrainMixin:
             # drag step takes 51 ms at brush 11 and 114 ms at 21 -- above that
             # it stutters visibly, so it is computed on release instead.
             if self.terrain_panel.brush_radius() > LIVE_GRENZE:
-                vorher = getattr(self, "_strich_rechteck", None)
+                vorher = self._strich_rechteck
                 if vorher is None:
                     self._strich_rechteck = tuple(rechteck)
                 else:
@@ -533,7 +533,7 @@ class _TerrainMixin:
         Repaint changed tiles. Do NOT paint into the large map pixmap: opening
         a QPainter on it forces a 268 MB copy at 8192x8192 (~35 ms per stamp).
         Only the affected 256x256 chunks get their own item above the map."""
-        if getattr(self, "_map_pixmap", None) is None:
+        if self._map_pixmap is None:
             return
         by_chunk: dict[tuple[int, int], list[tuple[int, int]]] = {}
         for x, y in coords:
@@ -568,7 +568,7 @@ class _TerrainMixin:
                 pass
         painter.end()
         self._patch_chunks.clear()
-        if getattr(self, "_map_item", None) is not None:
+        if self._map_item is not None:
             self._map_item.setPixmap(self._map_pixmap)
 
     def _repaint_tile(self, x: int, y: int):
@@ -591,10 +591,10 @@ class _TerrainMixin:
         Cell types as a (height, width) array. Tiles are stored in vertical
         32-column strips; the (y, x) mapping is computed once per map."""
         w, h = self.map.width, self.map.height
-        cache = getattr(self, "_cell_cache", None)
+        cache = self._cell_cache
         if cache is not None and cache.shape == (h, w):
             return cache
-        grid = getattr(self, "_tile_index_grid", None)
+        grid = self._tile_index_grid
         if grid is None or grid.shape != (h, w):
             ys, xs = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
             grid = ((xs >> 5) * h + ys) * 32 + (xs & 0x1F)
@@ -612,7 +612,7 @@ class _TerrainMixin:
 
         Update changed cells in the cache. Rebuilding the whole array from the
         tile list costs ~35 ms per stamp; patching is practically free."""
-        cache = getattr(self, "_cell_cache", None)
+        cache = self._cell_cache
         if cache is None:
             return
         for x, y in coords:
@@ -623,7 +623,7 @@ class _TerrainMixin:
         """Farbtabelle Zelltyp -> RGBA (32 Eintraege).
 
         Colour lookup table cell type -> RGBA (32 entries)."""
-        blocked_only = getattr(self, "_overlay_mode", "speed") == "blocked"
+        blocked_only = self._overlay_mode == "blocked"
         lut = np.zeros((32, 4), dtype=np.uint8)
         for cell in range(32):
             cls = speed_class(cell)
@@ -647,7 +647,7 @@ class _TerrainMixin:
         tile resolution would be 8192x8192 on a 256x256 map; the item is
         scaled by TILE instead."""
         w, h = self.map.width, self.map.height
-        if getattr(self, "_overlay_mode", "speed") == "height":
+        if self._overlay_mode == "height":
             # Hoehenansicht: beim Malen muss man sehen, wo Hochland liegt --
             # die Klippe ist nur die Kante davon, nicht die Flaeche.
             # Height view: while painting you have to see where the highland
@@ -665,13 +665,13 @@ class _TerrainMixin:
         return QPixmap.fromImage(img)
 
     def _refresh_terrain_overlay(self):
-        if not getattr(self, "_terrain_active", False) or self.map is None:
+        if not self._terrain_active or self.map is None:
             return
-        if not getattr(self, "_overlay_enabled", True):
+        if not self._overlay_enabled:
             self._clear_terrain_overlay()
             return
         pix = self._terrain_overlay_pixmap()
-        item = getattr(self, "_terrain_overlay_item", None)
+        item = self._terrain_overlay_item
         if item is None:
             item = self.scene.addPixmap(pix)
             item.setZValue(900)
@@ -681,7 +681,7 @@ class _TerrainMixin:
             item.setPixmap(pix)
 
     def _clear_terrain_overlay(self):
-        item = getattr(self, "_terrain_overlay_item", None)
+        item = self._terrain_overlay_item
         if item is not None:
             try:
                 self.scene.removeItem(item)
@@ -712,7 +712,7 @@ class _TerrainMixin:
         self._terrain_preview_item = rect
 
     def _clear_terrain_preview(self):
-        item = getattr(self, "_terrain_preview_item", None)
+        item = self._terrain_preview_item
         if item is not None:
             try:
                 self.scene.removeItem(item)

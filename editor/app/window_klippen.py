@@ -33,12 +33,12 @@ class _KlippenMixin:
         the first call of a drag counts, otherwise every mouse move would add
         another point.
         """
-        if not getattr(self, "_klick_neu", False):
+        if not self._klick_neu:
             return
         self._klick_neu = False
         if not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
             return
-        punkte = getattr(self, "_klippen_punkte", None)
+        punkte = self._klippen_punkte
         if punkte is None:
             punkte = self._klippen_punkte = []
         # Auf ein offenes Klippenende einrasten. Damit muss man beim
@@ -85,7 +85,7 @@ class _KlippenMixin:
         Redraw the anchor rings after any map change: they come from the map's
         cell types, so an undo fixes them by itself -- they only need redrawing.
         """
-        if getattr(self, "_terrain_active", False) and hasattr(self, "terrain_panel"):
+        if self._terrain_active and hasattr(self, "terrain_panel"):
             self._klippen_vorschau()
 
     def _klippen_verwerfen(self):
@@ -98,7 +98,7 @@ class _KlippenMixin:
     def _klippe_setzen(self):
         """Aus den Stuetzpunkten eine Klippe machen."""
         ebenen = self._paint_layers()
-        punkte = getattr(self, "_klippen_punkte", []) or []
+        punkte = self._klippen_punkte or []
         if ebenen is None or len(punkte) < 2:
             self.statusBar().showMessage(tr("terrain.klippe_zu_kurz"))
             return
@@ -139,7 +139,7 @@ class _KlippenMixin:
 
     def _klippen_vorschau(self):
         """Die gesetzten Stuetzpunkte als Linie in der Szene zeigen."""
-        for item in getattr(self, "_klippen_items", []):
+        for item in self._klippen_items:
             if item.scene() is self.scene:
                 self.scene.removeItem(item)
         self._klippen_items = []
@@ -156,7 +156,7 @@ class _KlippenMixin:
                 ring.setZValue(1000)
                 self.scene.addItem(ring)
                 self._klippen_items.append(ring)
-        punkte = getattr(self, "_klippen_punkte", []) or []
+        punkte = self._klippen_punkte or []
         if not punkte or self.terrain_panel.selected_brush() != B_KLIPPE:
             self._klippen_live_weg()
             return
@@ -209,9 +209,9 @@ class _KlippenMixin:
         Compute the wall on a copy and lay it over the map as one pixmap.
         """
         ebenen = self._paint_layers()
-        punkte = list(getattr(self, "_klippen_punkte", []) or [])
+        punkte = list(self._klippen_punkte or [])
         if (ebenen is None or self.map is None
-                or not getattr(self, "_terrain_active", False)
+                or not self._terrain_active
                 or self.terrain_panel.selected_brush() != B_KLIPPE):
             self._klippen_live_weg()
             return
@@ -258,7 +258,7 @@ class _KlippenMixin:
 
     def _klippen_live_weg(self):
         """Die Live-Vorschau entfernen und vergessen."""
-        timer = getattr(self, "_klippen_live_timer", None)
+        timer = self._klippen_live_timer
         if timer is not None:
             timer.stop()
         self._klippen_live_bild_weg()
@@ -266,7 +266,7 @@ class _KlippenMixin:
         self._klippen_live_ziel = None
 
     def _klippen_live_bild_weg(self):
-        for item in getattr(self, "_klippen_live_items", []):
+        for item in self._klippen_live_items:
             if item.scene() is self.scene:
                 self.scene.removeItem(item)
         self._klippen_live_items = []
@@ -282,7 +282,7 @@ class _KlippenMixin:
         Warm the cliff models up in a background thread so the first live
         preview does not freeze for two seconds.
         """
-        if getattr(self, "_klippen_warm", False):
+        if self._klippen_warm:
             return
         ebenen = self._paint_layers()
         if ebenen is None:
@@ -323,7 +323,7 @@ class _KlippenMixin:
             return
         if not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
             return
-        punkte = getattr(self, "_klippen_punkte", None) or []
+        punkte = self._klippen_punkte or []
         # Steht schon ein Punkt, zeigt eine Linie, wohin gebaut wuerde. Sie
         # rastet auf dieselbe Richtung wie der Klick -- so sieht man die
         # Baurichtung, bevor man sie setzt.

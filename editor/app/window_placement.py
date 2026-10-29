@@ -27,7 +27,7 @@ class _PlacementMixin:
             self._redo_stack.clear()
 
     def undo(self):
-        if not getattr(self, "_undo_stack", None):
+        if not self._undo_stack:
             self.statusBar().showMessage(tr("window.status_nothing_to_undo"))
             return
         op, obj = self._undo_stack.pop()
@@ -36,7 +36,7 @@ class _PlacementMixin:
         self.klippen_anker_auffrischen()
 
     def redo(self):
-        if not getattr(self, "_redo_stack", None):
+        if not self._redo_stack:
             self.statusBar().showMessage(tr("window.status_nothing_to_redo"))
             return
         op, obj = self._redo_stack.pop()
@@ -121,7 +121,7 @@ class _PlacementMixin:
 
     def _on_tile_hover(self, tx, ty):
         self.coord_label.setText(f"Tile: {tx}, {ty}")
-        if getattr(self, "_terrain_active", False):
+        if self._terrain_active:
             self._update_terrain_preview(tx, ty)
             return
         if self._action_pick is not None and self._action_pick.get("kind") == "lava_paint":
@@ -173,7 +173,7 @@ class _PlacementMixin:
         # oeffnet sich der Dialog zweimal hintereinander.
         # A double-click delivers two click events; without this guard the
         # dialog opens twice in a row.
-        if getattr(self, "_object_dialog_open", False):
+        if self._object_dialog_open:
             return
         self._object_dialog_open = True
         try:
@@ -303,7 +303,7 @@ class _PlacementMixin:
         self.statusBar().showMessage(tr("window.status_placed", label=label, x=tx, y=ty, n=len(self.objects)))
 
     def on_remove(self, tx, ty):
-        if getattr(self, "_terrain_active", False):
+        if self._terrain_active:
             self._terrain_pick(tx, ty)
             return
         if self._action_pick is not None and self._action_pick.get("kind") == "lava_paint":
