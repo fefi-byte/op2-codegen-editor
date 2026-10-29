@@ -2371,3 +2371,281 @@ Was dabei gemessen wurde:
 Pruefungen: `check_landschaft` in `mapview/tests/mapgen_test.py`
 (Determinismus, Klippenanteil als ANTEIL, Isolation, harte Kanten,
 Kachelflut-Deckel 10 %, Flussbett, Verbundenheit).
+
+## 19. Der Gelaende-Loeser: suchen statt setzen
+
+Der Setzer aus Abschnitt 16 waehlt je Zelle eine Kachel, die das Gelaende
+erfuellt -- ob zwei Nachbarn zueinander passen, ist dort keine Bedingung. Der
+Blockloeser `mapgen.klippe_loesen` wiederum sucht passende Paare, kennt aber
+das Gelaende nicht. `klippe_algo.loesen` verbindet beides.
+
+### Was der gierige Setzer wirklich liefert
+
+Auf 45 Waenden (neun Zuege, fuenf Saaten) ueber `klippe_aus_linie` gemessen:
+
+    regelwidrig (weder belegt noch erlaubt)    6,5 %
+    unbelegt (in keiner der 54 Karten)          41,9 %
+    Loch                                        3
+
+Das sind die Kacheln, die "nicht zueinander passen". Die 0,9 bis 5,1 % aus
+Abschnitt 16 waren zu optimistisch.
+
+### Warum der erste Loeser NICHTS fand
+
+Mit dem Gelaende als harter Bedingung war jede der neun Waende unloesbar --
+erschoepfend durchsucht in Millisekunden. Der Grund: `verlangt` liest den Rand
+einer Kachel aus ihrem EIGENEN aeussersten Teilfeld. Links und rechts einer
+Naht sind das zwei verschiedene Spalten, und an **23 bis 29 % der Naehte**
+weichen sie ab. Das Gelaende verlangt dann von zwei Nachbarn Raender, die
+nicht zusammenpassen.
+
+### Was half (alles gemessen)
+
+| Schritt | geloest | unbelegt |
+|---|---|---|
+| Gelaende hart, wie es ist | 0/27 | -- |
+| `naht_teilen` (Fels, wo eine Seite Fels hat) | 12/27 | 8,5 % |
+| dasselbe mit Boden statt Fels | 0/9 | -- |
+| Berichtigung schreibt beide Nahtseiten | schlechter (4/9) | -- |
+| **Abweichung vom Gelaende 0 bis 4 Abschnitte, stufenweise** | **27/27** | 15 % |
+| **zuerst nur belegte Paare, Abweichung 4** | 23/27 | **0 %** |
+
+Hart bleiben dabei drei Dinge: **kein Fels zum offenen Boden** (hart = 0),
+**kein Loch** (`ke.loch` als Paarverbot -- ohne das stiegen die Loecher mit
+der Abweichung auf 12 bis 29), und **jedes Paar belegt oder erlaubt**. Das
+Gelaende ist nur noch Vorlage: Abweichungen kosten, verbieten aber nichts.
+
+### Stand gegen vorher (45 Waende, `klippe_aus_linie`)
+
+                    bisher    Loeser    Originalkarten
+    regelwidrig     6,5 %     0 %       0 %
+    unbelegt        41,9 %    1,6 %     --
+    hart            0         0         --
+    Loch            3         0         --
+    gleiche Nachbarn 2,0 %    2,2 %     ~1 %
+    Naht            22,9      23,9      18,4
+    Zeit je Wand    0,13 s    0,25 s (max 1,7 s)
+
+Die Naht ist leicht schlechter: der Loeser ordnet erst nach Gelaende und
+Beleg, dann nach Naht. Das ist der naechste Hebel.
+
+### Wo es steht
+
+`klippe_algo.loesen`, `loesen_stufenweise`, `naht_teilen`,
+`gelaende_angleichen`; Schalter `LOESER` (an), Stufen in `LOESER_STUFEN`.
+Findet keine Stufe etwas, faellt `klippe_aus_linie` auf `setzen` mit dem
+ungeteilten Gelaende zurueck. In der mapgen-Suite: "Loeser ohne regelwidrige
+Paare" auf vier Zuegen, mit Gegenprobe ohne Loeser (14 Paare).
+
+### Offen
+
+- **Im Spiel ansehen.** Alle Zahlen sind gegen die Tabellen gemessen, kein
+  Bild ist angesehen.
+- Naht als Teil der Ordnung frueher gewichten.
+- san und sno: weiterhin ohne Handzuordnung, also ohne `vorrat`.
+
+### Nachtrag: das Innere der Kachel (28.10.2026)
+
+Im Bild fiel am Knick eine Treppe auf, obwohl jede Kachel am Rand stimmte.
+Grund: die Handzuordnung beschreibt nur die RAENDER. Eine Kachel mit
+waagerechtem Felsband erfuellt dieselben Raender wie eine mit schraegem --
+erst recht mit `egal`-Abschnitten und der Abweichung 4 aus der ersten Stufe,
+die bei 22 von 27 Waenden greift.
+
+`innenbilder()` liest je Kachel ihr Inneres als 4x4 aus den Pixeln
+(Helligkeit unter 80 = Fels; gegen die Handzuordnung der Raender 93 %
+Uebereinstimmung). Der Loeser ordnet danach: erst Abweichung am Rand, dann
+Abweichung innen, dann Beleg.
+
+    Innenabweichung je Kachel (von 16)    gierig 1,68   Loeser 1,71   + innen 0,98
+    regelwidrig                            6,5 %         0 %           0 %
+    unbelegt                               41,7 %        2,6 %         2,5 %
+    Naht                                   22,8          23,8          25,0
+
+Die Naht wird dabei etwas schlechter; im Bild ist der Knick dafuer glatt.
+
+### Nachtrag: Wiederholung und Wanddicke (28.10.2026)
+
+**Wiederholung.** Der Loeser prueft jetzt auch die Kachel ZWEI Zellen weiter
+(A-B-A-B) und stellt Wiederholung direkt hinter die Randabweichung
+(`wdh_stufe=1`). Gleiche Kachel im Abstand 2: 8,8 % -> 1,2 % (cm02 0,8 %),
+direkter Nachbar 5,5 % -> 1,5 % (cm02 3,9 %). Innenabweichung 0,97 -> 1,07.
+
+**Wanddicke.** Gegen cm02 nachgerendert: die Originale sind ein duennes
+Felsband, das sich diagonal durch die Kacheln schlaengelt. Vollfels-Kacheln:
+cm02 6,7 %, bisher 43 %. Das dicke Band war die eigentliche Quelle der
+Treppen. `HOEHE_MIN/MAX` jetzt 1,5/2,5 (Tabelle am Wert). Zellen je Spalte
+3,0 -- wie cm02 in jeder Richtung (gemessen nach Wandwinkel, 2 bis 4).
+
+### Offen (nach Ansicht im Bild)
+
+- Restliche Treppenabsaetze auf 2:1-Schraegen.
+- Wandenden: oft ein dicker Klumpen.
+- Waagerecht wiederholt sich ein "Buckel"-Motiv, obwohl die Kacheln
+  verschieden sind -- vermutlich optisch aehnliche Kacheln.
+- Vollfels noch 21 % gegen 6,7 %.
+
+### Nachtrag: Klippen, die nach Norden fallen (28.10.2026)
+
+In cm02 ist eine nordwaerts fallende Klippe keine Wand, sondern eine
+Abbruchkante von EINER Zelle (Zelltyp N; Spaltenmuster "N" 162x, "NN" 77x,
+gegen "HLL" 184x und "HHLL" 77x bei der Suedwand). Die N-Kacheln (19 im
+mud-Vorrat, 389 Vorkommen in cm02) tragen innen eine einzige Felslinie in
+der zweiten Teilfeldzeile. Bisher wurde die Nordwand genauso dick gebaut
+wie die Suedwand.
+
+- `band_aus_linie`: faellt die Wand nach Norden (`art == "v"`, `ri < 0`),
+  ist das Felsband `NORD_MIN`..`NORD_MAX` = 0,25..0,5 Kacheln dick.
+- `_nordlinie_durchziehen`: die Linie wird je Teilfeldspalte von der
+  Zellgrenze ins Zellinnere geschoben und bei Reihenwechsel senkrecht
+  verbunden. Auf der Grenze hatte `rand_dem_biom` sie halb geloescht (274 ->
+  134 Teilfelder), und es gab keine Kacheln fuer "Fels nur am Rand".
+- `LOESER_STUFEN` um Abweichung 5 und 6 erweitert: die waagerechte Nordkante
+  loest erst ab 4 bis 5.
+
+Neue Testzuege im Bildvergleich: 2:1 schraeg/fallend, Knick und 1:1 jeweils
+mit `hoch_seite="unten"`. Alle 13 ohne unpassende Paare, ohne Loch.
+Die Pruefung im Spiel steht weiter aus -- insbesondere, ob die Zelltypen
+der Nordkante als N gesetzt werden (`celltypes.default_cell_type`).
+
+### Nachtrag: Wandenden (28.10.2026)
+
+In cm02 laufen Waende ueber zwei bis drei Kacheln spitz oder rund zu; bei
+uns waren sie bis zum letzten Punkt voll dick (Klumpen). `band_aus_linie`
+verjuengt die Dicke jetzt zu beiden Enden des Zuges (`ENDE_LAENGE` 3,5
+Kacheln, `ENDE_REST` 0, Wurzelverlauf). Abschaltbar mit `enden=False`.
+Die Nordkante bleibt unverjuengt -- verjuengt zerfiel sie, und 2:1 Nord war
+bis Abweichung 8 unloesbar. Alle 39 Pruefwaende sauber.
+
+### Nachtrag: Fels laut Bild zum offenen Boden (28.10.2026)
+
+Am Ende einer waagerechten Wand stand eine Kachel mit Fels unten rechts,
+darunter nichts -- im Bild fehlte sichtbar eine Kachel. Die Handzuordnung
+hatte die Seite `egal`, die harte Regel ("kein FELS zum Boden") griff darum
+nicht. Jetzt zaehlt der Loeser zusaetzlich, an wie vielen offenen Seiten das
+Bild (`innenbilder`, ab `OFFEN_FELS_MAX` = 2 von 4 Teilfeldern) Fels zeigt,
+und stellt das als ERSTE Vorliebe vor alles andere.
+
+    als Verbot     17 von 39 Pruefwaenden unloesbar -> verworfen
+    als Vorliebe   offene Seiten mit Bild-Fels 364 -> 102 (39 Waende, 3 Saaten)
+                   je Saat 2,8 % der offenen Seiten; cm02 hat 16,0 %
+    weiterhin      0 unpassende Paare, 0 Loch, 0 hart
+
+## 20. san ohne Handzuordnung: die automatische Kantenzuordnung (28.10.2026)
+
+**Vorweg: Abschnitt 17 kam zum selben Schluss.** Die abgeleitete Zuordnung
+erreicht keine Handqualitaet (dort 8,8 % Selbstwiderspruch an den Naehten,
+hier 6,2 % Widersprueche gegen die Karten). Neu ist nur, dass der
+Gelaende-Loeser damit trotzdem saubere Waende baut: er nimmt zuerst Paare, die
+in den Karten belegt sind, und die Zuordnung entscheidet nur den Rest. Die
+Schwaeche der Zuordnung bleibt -- wer san auf Handqualitaet will, braucht
+weiter das Handwerkzeug.
+
+`mapview/cliff_kanten_auto.py` leitet fuer jede nicht von Hand bearbeitete
+Kachel die vier Abschnitte je Seite ab -- aus den Kachelbildern und der
+Paartabelle, beide im Repo. Ergebnis: `cliff_kanten_auto.json`, neu erzeugt
+mit `python mapview/cliff_kanten_auto.py`.
+
+    Pixel       Fels/Boden je Pixel (zwei Farbzentren je Familie, k-means
+                auf geglaetteten Pixeln; Boden = heller), je Abschnitt die
+                Mehrheit der aeussersten zwei Pixelreihen
+    Mehrheit    Abschnitt uebernimmt, was die Partner in den Karten zu
+                >= 80 % verlangen
+    zerrissen   verlangen die Partner beides (je >= 10 Vorkommen) -> EGAL
+
+### An mud gegen die Handzuordnung gemessen
+
+    Abschnitte wie von Hand            96,8 % (Helligkeit), 96,1 % (k-means)
+    Widersprueche gegen die Karten      0,0 %
+    nicht belegte Paare: erlaubt, wo die Hand verbietet   16,5 %
+                         verbietet, wo die Hand erlaubt   12,7 %
+
+Die automatische Zuordnung ist also nachgiebiger als die Hand: sie setzt
+514 Abschnitte auf EGAL, die Hand 341. Versucht, das einzuschraenken (alle
+gemessen, alle verworfen):
+
+- strengere Zerriss-Schwelle (20, 40): der Loeser findet seltener eine
+  Belegung, faellt auf `setzen` zurueck -- schlechter.
+- EGAL nur, wo die Pixel selbst unklar sind: 8 % falsch erlaubt, aber
+  33-40 % falsch verboten; 20 von 39 Waenden ohne Loesung.
+- Pixelnaht als Schiedsrichter: nimmt falsche Erlaubnisse nur gegen ein
+  Vielfaches an richtigen weg.
+- laengeres Bleiben bei "nur belegt" (Abweichung bis 8): loest nicht mehr.
+
+Im Bild (mud, Hand gegen automatisch nebeneinander) sind die Suedwaende
+praktisch gleich; strittig waren die Treppenuebergaenge der Nordkante.
+
+### san
+
+Helligkeit trennt dort nicht: orangefarbener Sand und rotbrauner Fels sind
+fast gleich hell (Mediane 76 gegen 54) -- daher die Farbzentren. Auch
+`klippe_algo.innenbilder` nimmt fuer alles ausser mud die Farbzentren.
+
+    san: 138 Kacheln, Widersprueche gegen die Karten 6,2 %
+    39 Pruefwaende (13 Zuege, 3 Saaten): kein Rueckfall, 0 Loch, 0 hart,
+    unbelegte Paare 47,5 % (mud mit Hand 26,2 %)
+
+sno ist NICHT dabei: 9 Kacheln, 63 Vorkommen in allen Karten, 63,8 %
+Widersprueche -- und `MINDEST_KACHELN` = 40 ohnehin unerreichbar.
+
+### Wo sie gilt
+
+Nur im Gelaende-Loeser: `cliff_kanten.modell(auto=True)`. Der Blockweg in
+`mapgen` bleibt bei der Hand -- mit der automatischen fielen dort fuenf
+san-Pruefungen (Fortsetzung, Eckblock, T-Stoss) und "laesst die belegten
+Paare durch" (98,7 %). Der Editor schaltet san ueber `verfuegbar()` von
+selbst auf den Gelaende-Weg.
+
+### Offen
+
+- Im Spiel ansehen -- besonders san.
+- Wer san doch von Hand nachsehen will: die automatische Zuordnung ist ein
+  guter Startwert fuer `kanten_zuordnen.py`.
+
+## 21. Flache Schraegen: Plateau und 45 Grad statt gleichmaessig (28.10.2026)
+
+Mit `maps.vol` vom Nutzer-PC lassen sich jetzt alle 54 Originalkarten mit
+echtem Boden rendern. Gesucht: abfallende Suedwaende mit 4 bis 9 Zellen
+Hoehenunterschied auf 14 Spalten -- 20 Fundstellen (cm03, cm04, eden03,
+mp4_03, mp4_06, mp4_12, mp6_01, ply05, ...).
+
+**Keine einzige laeuft gleichmaessig.** Jede ist eine Folge aus waagerechtem
+Plateau und kurzem 45-Grad-Abstieg von zwei bis drei Zellen, dazwischen ein
+schmales Band H ueber L. Unser Gelaende legte die Linie gleichmaessig 2:1 --
+die Kacheln machten daraus eine Treppe aus Ein-Zellen-Versaetzen.
+
+`_schraege_profil` zerlegt jetzt jedes flache Stueck einer Suedwand
+(`art == "v"`, `ri > 0`, Neigung unter 0,9) in Plateaus und 45-Grad-Stuecke:
+Stueckzahl = Hoehenunterschied / Zufall(2..3), die Plateaulaengen aus einer
+Dirichlet-Verteilung, die Gesamtneigung bleibt genau. Abschaltbar mit
+`SCHRAEGE_ZERLEGEN = False`. Nordkanten bleiben unberuehrt.
+
+78 Pruefwaende (mud und san, 13 Zuege, 3 Saaten): kein Rueckfall, 0
+unpassend, 0 Loch, 0 hart. Bildvergleich gegen sechs Originale im Chat.
+
+## 22. Zusammengefuehrt: lokaler August-Stand und Gelaende-Loeser (29.10.2026)
+
+Der lokale Stand (Branch `kanten-san`: Commit vom 06.08. plus nicht
+committeter Landschaftsmodus vom 08.-11.08.) und der Branch `klippen-loeser`
+sind zusammengefuehrt. Uebernommen:
+
+- **Landschaftsmodus** (Abschnitt 18) vollstaendig, samt `check_landschaft`.
+- **Befund zu san/sno** (Abschnitt 17) vollstaendig; Abschnitt 20 verweist
+  darauf.
+- **Die Pruefung "Randkacheln mitten in der Wand"** -- sie zeigte eine echte
+  Schwaeche des Loesers (einzelne Waende bis 10,8 %). Behoben durch die neue
+  Vorliebe `INNENKANTE` (Tabelle am Wert): mud 1,54 -> 0,30 %, san 1,63 ->
+  0,20 %; Originale 1,22 bzw. 0,95 %.
+
+`klippe_algo.py` kommt vom Loeser-Branch. Die lokalen Aenderungen daran
+(berechnete Zuordnung `_gerechnet`, `naht_haelt(mindestens)`, Eckenfilter)
+sind NICHT uebernommen -- gemessen auf dem zusammengefuehrten Stand:
+
+    mud, 39 Waende            unpassend   unbelegt   innen
+    Loeser-Branch              0 Waende    25,9 %     1,54 %
+    zusammengefuehrt           12          34,7 %       --
+    ohne Eckenfilter            2          29,1 %       --
+    Loeser + nur Eckenfilter   10          36,4 %     2,25 %
+
+`cliff_kanten_gerechnet.json` lag lokal nur als unversionierte Datei vor; die
+automatische Zuordnung (`cliff_kanten_auto.json`, Abschnitt 20) ersetzt sie.

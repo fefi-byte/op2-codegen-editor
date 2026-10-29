@@ -1468,15 +1468,51 @@ def check_klippe_algo():
             check(f"keine Randkacheln mitten in der Wand ({fam} {name})",
                   anteil <= 2.0, f"{innen} von {seiten} ({anteil:.2f} %)")
 
-    # Kacheln mit widerspruechlicher Ecke duerfen gar nicht erst im Vorrat
-    # stehen -- sie passen zu keinem Gelaende, und `angleichen` dreht sich an
-    # ihnen endlos. Gemessen waren es 15 von 156 bei mud und 41 von 138 bei
-    # san; ohne die Aussortierung blieben neun Zellen unbedient.
-    for fam in ("mud", "san"):
-        v = KA.vorrat(tm, fam)
-        streit = [t for t, (s, _fa) in v.items() if KA._ecken_streiten(s)]
-        check(f"keine widerspruechlichen Ecken im Vorrat ({fam})",
-              not streit, f"{len(streit)} Kacheln")
+    # Der Eckenfilter aus dem August (Kacheln mit widerspruechlicher Ecke aus
+    # dem Vorrat) ist mit dem Gelaende-Loeser NICHT mehr drin. Er war fuer den
+    # gierigen Setzer noetig, an dem `angleichen` sich endlos drehte; dem
+    # Loeser schadet er gemessen auf jeder Kennzahl (mud, 39 Waende): Waende
+    # mit unpassenden Paaren 0 -> 10, unbelegt 25,9 -> 36,4 %, Randkacheln
+    # mitten in der Wand 1,54 -> 2,25 %. Siehe klippen-stand.md Abschnitt 22.
+
+    # Der Loeser: jedes Nachbarpaar belegt oder nach der Kantenzuordnung
+    # erlaubt. Der gierige Setzer lag hier bei 0,9 bis 8,6 % regelwidrig --
+    # die Gegenprobe zeigt, dass die Pruefung das auch sieht.
+    from cliff_tiles import modell as _ttm
+    tt = _ttm()
+
+    def regelwidrig(g, m):
+        h, w = g.shape
+        n = 0
+        for y in range(h):
+            for x in range(w):
+                for r, dx, dy in (("O", 1, 0), ("S", 0, 1)):
+                    nx, ny = x + dx, y + dy
+                    if nx >= w or ny >= h or not (m[y, x] and m[ny, nx]):
+                        continue
+                    a, b = int(g[y, x]), int(g[ny, nx])
+                    if not (tt.passt(a, b, r) or K.passt(a, b, r)):
+                        n += 1
+        return n
+
+    alt = KA.LOESER
+    try:
+        for name, punkte, seite in zuege:
+            KA.LOESER = True
+            g = np.full((32, 64), gr, dtype=np.int32)
+            m, _z = KA.klippe_aus_linie(g, punkte, seite, tm,
+                                        np.random.default_rng(7), "mud")
+            check(f"Loeser ohne regelwidrige Paare ({name})",
+                  m.sum() > 40 and regelwidrig(g, m) == 0,
+                  f"{regelwidrig(g, m)} Paare, {int(m.sum())} Kacheln")
+        KA.LOESER = False
+        g = np.full((32, 64), gr, dtype=np.int32)
+        m, _z = KA.klippe_aus_linie(g, [(4, 14), (57, 14)], "oben", tm,
+                                    np.random.default_rng(7), "mud")
+        check("ohne Loeser bleiben regelwidrige Paare -- die Pruefung misst "
+              "etwas", regelwidrig(g, m) > 0, f"{regelwidrig(g, m)} Paare")
+    finally:
+        KA.LOESER = alt
 
     # Gegenprobe: ohne die Randregel muss die Pruefung durchfallen.
     g = np.full((32, 64), gr, dtype=np.int32)
@@ -1489,10 +1525,36 @@ def check_klippe_algo():
     check("ohne die Randregel bleiben harte Uebergaenge -- die Pruefung "
           "misst etwas", hart > 0, f"{hart} Stellen")
 
-    # sno hat keine Zuordnung und kann keine bekommen: in den Karten ist es zu
-    # 99,4 % unpassierbares Eis, es gibt also keinen Boden, gegen den sich Fels
-    # abheben koennte -- und neun Klippenkacheln traegen den Setzer ohnehin
-    # nicht. Es muss sich sauber verweigern statt Unsinn zu setzen.
+    # san traegt die automatische Zuordnung (cliff_kanten_auto.json): die
+    # Wand muss stehen, ohne Paar, das weder belegt noch erlaubt ist, und
+    # ohne Loch. sno hat nur 9 Kacheln und muss sich weiter verweigern.
+    if "san" in tm.families:
+        from cliff_kanten import modell as _kma
+        ka = _kma(auto=True)
+        gs = next(t for t in range(2048)
+                  if tm.family_of[t] == tm.families.index("san")
+                  and tm.placeable[t])
+        for name, punkte, seite in zuege + (
+                ("waagerecht Nord", [(4, 14), (57, 14)], "unten"),):
+            g = np.full((32, 64), gs, dtype=np.int32)
+            m, _z = KA.klippe_aus_linie(g, punkte, seite, tm,
+                                        np.random.default_rng(7), "san")
+            h, w = g.shape
+            rw = lo = 0
+            for y in range(h):
+                for x in range(w):
+                    for r, dx, dy in (("O", 1, 0), ("S", 0, 1)):
+                        nx, ny = x + dx, y + dy
+                        if nx >= w or ny >= h or not (m[y, x] and m[ny, nx]):
+                            continue
+                        a, b = int(g[y, x]), int(g[ny, nx])
+                        if not (tt.passt(a, b, r) or ka.passt(a, b, r)):
+                            rw += 1
+                        if ka.loch(a, b, r):
+                            lo += 1
+            check(f"san algorithmisch ({name})",
+                  m.sum() > 20 and rw == 0 and lo == 0,
+                  f"{int(m.sum())} Kacheln, {rw} unpassend, {lo} Loch")
     if "sno" in tm.families:
         g = np.full((32, 64), gr, dtype=np.int32)
         m, _z = KA.klippe_aus_linie(g, [(4, 14), (57, 14)], "oben", tm,

@@ -32,6 +32,7 @@ from pathlib import Path
 
 HIER = Path(__file__).resolve().parent
 MODELL_PFAD = HIER / "cliff_kanten.json"
+AUTO_PFAD = HIER / "cliff_kanten_auto.json"
 
 SEITEN = ("N", "O", "S", "W")
 GEGEN = {"N": "S", "O": "W", "S": "N", "W": "O"}
@@ -45,7 +46,8 @@ ABSCHNITTE = 4
 class CliffEdgeModel:
     """Die Zuordnung, mit der einzigen Frage, die zaehlt: darf a an b?"""
 
-    def __init__(self, pfad: Path | str = MODELL_PFAD):
+    def __init__(self, pfad: Path | str = MODELL_PFAD,
+                 auto: Path | str | None = None):
         roh = json.loads(Path(pfad).read_text(encoding="utf-8"))
         bearbeitet = set(int(t) for t in roh.get("bearbeitet", []))
         self.kanten: dict[int, dict[str, tuple[int, ...]]] = {}
@@ -55,6 +57,19 @@ class CliffEdgeModel:
                 continue                 # nur, was von Hand angesehen wurde
             self.kanten[t] = {s: tuple(int(x) for x in v)
                               for s, v in e.items()}
+        # Die automatische Zuordnung (`cliff_kanten_auto.py`) fuellt, was
+        # niemand von Hand angesehen hat -- san und sno. Die Hand hat immer
+        # Vorrang.
+        self.automatisch: set[int] = set()
+        if auto is not None and Path(auto).exists():
+            roh_a = json.loads(Path(auto).read_text(encoding="utf-8"))
+            for k, e in roh_a.get("kanten", {}).items():
+                t = int(k)
+                if t in self.kanten:
+                    continue
+                self.kanten[t] = {s: tuple(int(x) for x in v)
+                                  for s, v in e.items()}
+                self.automatisch.add(t)
         self.abschnitte = ABSCHNITTE
 
     def __len__(self) -> int:
@@ -144,9 +159,16 @@ class CliffEdgeModel:
 _zwischen: dict[str, CliffEdgeModel] = {}
 
 
-def modell(pfad: Path | str = MODELL_PFAD) -> CliffEdgeModel:
-    """Das Modell, einmal geladen und dann gemerkt."""
-    s = str(pfad)
+def modell(pfad: Path | str = MODELL_PFAD, auto: bool = False) -> CliffEdgeModel:
+    """Das Modell, einmal geladen und dann gemerkt.
+
+    `auto` nimmt die automatische Zuordnung (`cliff_kanten_auto.json`) fuer
+    alle nicht von Hand bearbeiteten Kacheln dazu. Nur der Gelaende-Loeser
+    (`klippe_algo`) fragt danach; der Blockweg in `mapgen` bleibt bei der
+    Hand -- mit der automatischen fielen dort fuenf san-Pruefungen
+    (Fortsetzung, Eckblock, T-Stoss).
+    """
+    s = (str(pfad), bool(auto))
     if s not in _zwischen:
-        _zwischen[s] = CliffEdgeModel(pfad)
+        _zwischen[s] = CliffEdgeModel(pfad, AUTO_PFAD if auto else None)
     return _zwischen[s]
