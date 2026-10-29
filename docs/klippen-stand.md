@@ -2793,3 +2793,23 @@ Zwei Rueckmeldungen aus dem Editor: kurze Klippen gelingen schlecht, und eine
 - **Doppelte Ringe an den Enden.** Ein gemerktes Ende und das daneben
   gerasterte wurden beide angezeigt; das gerasterte entfaellt jetzt, wenn ein
   gemerktes innerhalb von drei Zellen liegt.
+
+## 28. Steile Nordkanten als Treppe mit Absatzwaenden (29.10.2026)
+
+Eine 45-Grad-Nordkante zerfiel im Editor in Striche. Versucht und verworfen
+(gemessen an der Zahl der Felsstuecke, Originale rund halb so viele): Linie
+schraeg statt auf Zeile 1, dickere Linie, Eckschritte ueber eine Kante,
+Treppe mit duennen Absaetzen. Keines aenderte etwas -- mud hat fuer eine
+duenne Linie quer durch die Kachel kaum Kacheln.
+
+Die Originale setzen an solchen Kanten vor allem 95, 212, 89, 94, 88, 203,
+97, 98, 210 -- echte Wandstuecke, von denen wir vorher kaum eines nahmen. Der
+Absatz einer Nordtreppe ist dort eine kleine Seitenwand. Felix' Hinweis
+dazu: "die Nordklippen brauchen etwas mehr Freiraum beim Treppenbilden".
+
+Jetzt (`_nord_treppe`, `NORD_ABSATZ_DICKE` = 1,5, ab Neigung 0,6): Laeufe
+mit Absaetzen von 1-2 Zellen, an jedem Absatz Fels auf der Seite des
+tieferen Laufs. Bei 45 Grad wird daraus eine durchgehende raue Wand, bei 1:1,5
+eine Kante mit Wandstuecken. Flachere Nordkanten bleiben wie bisher.
+Sechs steile Nordzuege x 3 Saaten, mud: unpassend 6,0 -> 0 %, unbelegt
+62 -> 32 %. Die 78 Pruefwaende: 0 unpassend, 0 Loch, 0 hart.

@@ -274,6 +274,51 @@ def _schraege_profil(lx: float, ly: float, rng, stueck=None,
     return np.array(xs), np.array(ys)
 
 
+# Steile Nordkanten (Hochland im Sueden, Neigung ab `NORD_TREPPE_AB`). Als
+# duenne Schraeglinie zerfielen sie in Striche: fuer eine duenne Linie quer
+# durch die Kachel hat mud kaum Kacheln. Die Originale (84 Fundstellen mit
+# Neigung 0,6-1,4) bauen eine Treppe: waagerechte Laeufe, und jeder Absatz
+# ist ein Stueck echte Seitenwand (Kacheln 88, 89, 94, 95, 97, 98, 210 --
+# die wir vorher kaum setzten). Also: Laeufe mit senkrechten Absaetzen von 1
+# bis 2 Zellen, und an jedem Absatz eine kleine Wand von
+# `NORD_ABSATZ_DICKE` Kacheln auf der Seite des tieferen Laufs. Bei 45 Grad
+# wachsen die Absaetze zu einer durchgehenden rauen Wand zusammen.
+# Sechs steile Nordzuege x 3 Saaten, mud: unpassend 6,0 -> 0 %, unbelegt
+# 62 -> 32 %, 0 hart, 0 Loch.
+NORD_TREPPE = True
+NORD_STUFE = (1.0, 2.0)        # Hoehe eines Absatzes in Zellen
+NORD_GLEICHMASS = 20.0
+NORD_HAKEN = 0.0               # Breite eines Absatzes in Kacheln
+NORD_ABSATZ_DICKE = 1.5        # Felsdicke der kleinen Seitenwand am Absatz
+NORD_TREPPE_AB = 0.6           # erst ab dieser Neigung (Zeilen je Spalte)
+
+
+def _nord_treppe(lx: float, ly: float, rng):
+    """Schraege Nordkante -> (x, y) Stuetzstellen: Laeufe und Haken."""
+    stufen = max(1, int(round(ly)))
+    hoehen = []
+    rest = stufen
+    while rest > 0:
+        h = max(1, int(min(rest, round(rng.uniform(*NORD_STUFE)))))
+        hoehen.append(h)
+        rest -= h
+    k = len(hoehen)
+    haken = [min(NORD_HAKEN * h, 0.9 * lx / k) for h in hoehen]
+    laeufe = max(0.0, lx - sum(haken)) * rng.dirichlet(
+        np.full(k + 1, NORD_GLEICHMASS))
+    xs, ys = [0.0], [0.0]
+    y = 0.0
+    for i in range(k + 1):
+        xs.append(xs[-1] + laeufe[i])
+        ys.append(y)
+        if i < k:
+            y += hoehen[i] * ly / stufen
+            xs.append(xs[-1] + max(1e-6, haken[i]))
+            ys.append(y)
+    xs[-1] = max(xs[-1], lx)
+    return np.array(xs), np.array(ys)
+
+
 def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
                    rng, hoehe_min: float = HOEHE_MIN,
                    hoehe_max: float = HOEHE_MAX, unruhe: float = UNRUHE,
@@ -321,6 +366,7 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
     dicke_nord = NORD_MIN + (NORD_MAX - NORD_MIN) * anteil
 
     nordlinie = np.zeros_like(fein)
+    absaetze = []           # (x, y_a, y_b, Richtung zum tieferen Lauf)
     s = 0
     for i in range(len(punkte) - 1):
         x0, y0 = punkte[i]
@@ -331,6 +377,18 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
         if (SCHRAEGE_ZERLEGEN and art == "v" and ri > 0
                 and abs(y1 - y0) > 0):
             profil = _schraege_profil(abs(x1 - x0), abs(y1 - y0), rng)
+        elif (NORD_TREPPE and art == "v" and ri < 0
+                and abs(y1 - y0) >= NORD_TREPPE_AB * abs(x1 - x0)):
+            profil = _nord_treppe(abs(x1 - x0), abs(y1 - y0), rng)
+            sx = 1 if x1 > x0 else -1
+            sy = 1 if y1 > y0 else -1
+            pxs, pys = profil
+            for j in range(len(pxs) - 1):
+                if pys[j + 1] != pys[j]:
+                    ya = y0 + sy * pys[j]
+                    yb = y0 + sy * pys[j + 1]
+                    absaetze.append((x0 + sx * pxs[j], ya, yb,
+                                     sx if yb > ya else -sx))
         steil = None
         if SCHRAEGE_ZERLEGEN and art == "h" and abs(x1 - x0) > 0:
             steil = _schraege_profil(abs(y1 - y0), abs(x1 - x0), rng,
@@ -391,6 +449,23 @@ def band_aus_linie(punkte, hoch_seite: str, breite: int, hoehe: int,
                     fein[fy, v0:v1] = True
                     achse[fy // FEIN, v0 // FEIN:(v1 - 1) // FEIN + 1] = 2
     _nordlinie_durchziehen(fein, achse, nordlinie, nordenden)
+    # Absaetze der Nordtreppe als kleine Seitenwand: in den Originalen ist der
+    # Absatz keine duenne Linie, sondern ein Stueck echte Wand (Kacheln 88,
+    # 89, 94, 95, 97, 98, 210) -- der Fels liegt auf der Seite des tieferen
+    # Laufs. Eine duenne senkrechte Linie zerfiel in Striche.
+    for xs_, ya, yb, ri_ in absaetze:
+        r0 = int(min(ya, yb)) * FEIN + NORD_ZEILE
+        r1 = int(max(ya, yb)) * FEIN + NORD_ZEILE + 1
+        fx = (xs_ + 0.5) * FEIN
+        d = NORD_ABSATZ_DICKE * FEIN
+        c0, c1 = (fx, fx + d) if ri_ > 0 else (fx - d, fx)
+        c0 = max(0, int(round(c0)))
+        c1 = min(breite * FEIN, int(round(c1)))
+        r0, r1 = max(0, r0), min(hoehe * FEIN, r1)
+        if c1 > c0 and r1 > r0:
+            fein[r0:r1, c0:c1] = True
+            achse[r0 // FEIN:(r1 - 1) // FEIN + 1,
+                  c0 // FEIN:(c1 - 1) // FEIN + 1] = 2
     return fein, achse
 
 
