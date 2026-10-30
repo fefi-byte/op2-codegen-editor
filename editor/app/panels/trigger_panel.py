@@ -166,6 +166,10 @@ class TriggerPanel(QWidget):
         cond_scroll.setWidgetResizable(True)
         cond_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         cond_scroll.setWidget(cond_inner)
+        # Aufgeklappt nicht zu einem Schlitz zusammendruecken lassen, wenn
+        # darunter viele Aktionen offen sind (Name/Ausloeser halb verdeckt).
+        # Keep the expanded section from being squeezed to a sliver.
+        cond_scroll.setMinimumHeight(250)
 
         cond_section = QWidget()
         cs_lay = QVBoxLayout(cond_section)

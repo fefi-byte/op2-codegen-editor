@@ -66,7 +66,7 @@ class _SidebarMixin:
 
         self._baue_linke_seite(dock)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
-        self.resizeDocks([dock], [400], Qt.Horizontal)
+        self.resizeDocks([dock], [460], Qt.Horizontal)
         self._fill_list(self.cat_combo.currentData())
 
     def _on_sidebar_tab_changed(self, index: int):

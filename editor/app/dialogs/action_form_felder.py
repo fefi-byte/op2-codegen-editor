@@ -210,7 +210,10 @@ class _FelderMixin:
         # Ohne Auf/Ab-Pfeile: schmaler; Werte per Tastatur oder Mausrad bei Fokus.
         # Without up/down arrows: narrower; edit via keyboard or wheel when focused.
         s = QSpinBox(); s.setRange(0, 1023)
-        s.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        # Keine sichtbaren Pfeile -- ueber das Stylesheet (flach), NICHT mit
+        # NoButtons: das laesst unter dem Stylesheet das Eingabefeld auf 1 px
+        # schrumpfen, die Zahl war dann unsichtbar.
+        s.setProperty("flach", "true")
         s.setMinimumWidth(36)
         return s
 
@@ -392,14 +395,24 @@ class _FelderMixin:
         cu_pick_btn = QPushButton("📍"); cu_pick_btn.setFixedWidth(28)
         cu_pick_btn.setToolTip(tr("action_editor.tooltip_pick_mine"))
         cu_pick_btn.clicked.connect(lambda: self._request_pick("primary"))
-        cu_row = QHBoxLayout()
-        cu_row.addWidget(self.cu_unit, 3)
-        cu_row.addWidget(self.cu_weapon, 2)
-        cu_row.addWidget(self.cu_x, 1)
-        cu_row.addWidget(self.cu_y, 1)
-        cu_row.addWidget(cu_pick_btn)
-        cu_row.addWidget(cu_add_btn)
-        cu_row.addWidget(cu_rm_btn)
+        # Zwei Zeilen statt einer: im Seitenbereich lagen die Knoepfe
+        # (Karte, +, -) sonst rechts ausserhalb des Sichtfelds.
+        # Two rows instead of one: in the side area the buttons ended up
+        # outside the visible width.
+        cu_row = QVBoxLayout()
+        cu_typ = QHBoxLayout()
+        cu_typ.addWidget(self.cu_unit, 3)
+        cu_typ.addWidget(self.cu_weapon, 2)
+        cu_pos = QHBoxLayout()
+        cu_pos.addWidget(QLabel("X"))
+        cu_pos.addWidget(self.cu_x, 1)
+        cu_pos.addWidget(QLabel("Y"))
+        cu_pos.addWidget(self.cu_y, 1)
+        cu_pos.addWidget(cu_pick_btn)
+        cu_pos.addWidget(cu_add_btn)
+        cu_pos.addWidget(cu_rm_btn)
+        cu_row.addLayout(cu_typ)
+        cu_row.addLayout(cu_pos)
         self.unit_editor = QWidget()
         cu_lay = QVBoxLayout(self.unit_editor)
         cu_lay.setContentsMargins(0, 0, 0, 0)

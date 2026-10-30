@@ -327,7 +327,10 @@ class ActionCard(QFrame):
         self._loop_rect_spins = []
         for _ in range(4):
             s = QSpinBox(); s.setRange(0, 1023)
-            s.setButtonSymbols(QAbstractSpinBox.NoButtons)
+            # Keine sichtbaren Pfeile -- ueber das Stylesheet (flach), NICHT mit
+            # NoButtons: das laesst unter dem Stylesheet das Eingabefeld auf 1 px
+            # schrumpfen, die Zahl war dann unsichtbar.
+            s.setProperty("flach", "true")
             s.setMinimumWidth(36)
             rect_row.addWidget(s, 1)
             self._loop_rect_spins.append(s)

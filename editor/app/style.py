@@ -148,6 +148,10 @@ QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
     border: none;
     width: 16px;
 }}
+QSpinBox[flach="true"]::up-button, QSpinBox[flach="true"]::down-button {{
+    width: 0px;
+    border: none;
+}}
 QSpinBox::up-button:hover, QSpinBox::down-button:hover,
 QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
     background-color: {SURFACE2};

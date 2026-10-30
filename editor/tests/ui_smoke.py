@@ -336,6 +336,38 @@ def check_mission_layout(win, app) -> None:
           (f.idle_x, f.idle_y) == (x + 2, y + 1), f"({x},{y}) -> ({f.idle_x},{f.idle_y})")
     check("nach Bestaetigen nicht im Platziermodus", not win._placement_active)
 
+    # Neue Gruppe liegt im sichtbaren Ausschnitt, nicht oben links.
+    win.view.centerOn(60 * 32, 60 * 32)
+    pump(app)
+    win._neu_anlegen("group_mining")
+    m = win.groups_panel.groups[win.groups_panel._idx]
+    check("neue Gruppe im Bildausschnitt", (m.idle_x, m.idle_y) != (0, 0),
+          f"({m.idle_x},{m.idle_y})")
+    win._bearbeiten_abbrechen()
+
+    # Einheit erzeugen: Kartenklick traegt die Einheit in die Liste ein, und
+    # die X/Y-Felder ohne Pfeile zeigen ihren Wert (Stylesheet-Falle).
+    from mission_model import TriggerAction
+    from app.dialogs.action_cards import ActionCard
+    tu = TriggerDef(name="CU", condition="time", marks=5)
+    tu.actions.append(TriggerAction(kind="createUnit"))
+    win.triggers.append(tu)
+    win._refresh_overview()
+    win._bearbeiten_oeffnen("trigger", len(win.triggers) - 1)
+    pump(app)
+    karte = win.trigger_panel.act_scroll.widget().findChildren(ActionCard)[0]
+    karte.expand()
+    pump(app)
+    karte._form._request_pick("primary")
+    win.on_place(33, 34)
+    pump(app)
+    check("Einheit per Kartenklick in der Liste", tu.actions[0].unit_list
+          and tu.actions[0].unit_list[-1]["x"] == 33, str(tu.actions[0].unit_list))
+    form = win.trigger_panel.act_scroll.widget().findChildren(ActionCard)[0]._form
+    check("X-Feld zeigt seinen Wert", form.cu_x.lineEdit().width() > 10,
+          f"{form.cu_x.lineEdit().width()} px")
+    win._bearbeiten_bestaetigen()
+
 
 def check_terrain(win, app) -> None:
     """Gelaende-Tab: Overlay am Tab, Stempeln, Zelltyp, Rueckgaengig."""

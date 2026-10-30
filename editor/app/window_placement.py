@@ -218,6 +218,16 @@ class _PlacementMixin:
                     action.x_expr, action.y_expr = tx, ty
                 else:
                     action.x, action.y = tx, ty
+                if getattr(action, "kind", "") == "createUnit":
+                    # Der Klick setzt die Einheit direkt in die Liste -- vorher
+                    # landeten nur X/Y in der Eingabezeile, und das "+" dazu
+                    # lag im schmalen Seitenbereich ausserhalb des Sichtfelds.
+                    # The click adds the unit to the list right away.
+                    liste = list(getattr(action, "unit_list", None) or [])
+                    liste.append({"unit_type": action.unit_type or "mapLynx",
+                                  "weapon_type": getattr(action, "weapon_type", "") or "mapNone",
+                                  "x": tx, "y": ty})
+                    action.unit_list = liste
             elif field == "secondary":
                 if (getattr(action, "kind", "") == "createDisaster"
                         and getattr(action, "disaster_type", "meteor") in {"storm", "vortex"}):

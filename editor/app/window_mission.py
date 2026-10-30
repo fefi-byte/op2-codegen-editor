@@ -229,6 +229,7 @@ class _MissionMixin:
             self.groups_panel.select(bezug)
             pfad = f"{tr('outline.groups')}  ›  {bezug}"
         elif art == "trigger":
+            self.trigger_panel.refresh()
             self._sidebar_tabs.setCurrentWidget(self.trigger_panel)
             self.trigger_panel.als_editor(True)
             self.trigger_panel.select(bezug)
@@ -347,8 +348,9 @@ class _MissionMixin:
             if 0 <= idx < len(self.groups_panel.groups):
                 g = self.groups_panel.groups[idx]
                 f = bereich_felder(g)
-                # Bauvorlage ohne Bereich: neuen Bereich dorthin, wo man schaut.
-                if f and self.map is not None and art == "group_building":
+                # Neuer Bereich dort, wo man gerade hinschaut -- nicht oben links.
+                # New area where the user is looking -- not the top-left corner.
+                if f and self.map is not None:
                     mitte = self.view.mapToScene(self.view.viewport().rect().center())
                     setattr(g, f[0], max(0, int(mitte.x() // SCENE_TILE) - getattr(g, f[2]) // 2))
                     setattr(g, f[1], max(0, int(mitte.y() // SCENE_TILE) - getattr(g, f[3]) // 2))
@@ -497,11 +499,6 @@ class _MissionMixin:
             ring.setPen(QPen(_AUSWAHL, 3))
             self._neu_item(ring, 1095)
         elif art == "trigger" and 0 <= bezug < len(self.triggers):
-            # Karte abdunkeln, nur die Bezuege des Triggers bleiben hell.
-            dunkel = QGraphicsRectItem(self.scene.sceneRect())
-            dunkel.setBrush(QBrush(QColor(17, 17, 27, 140)))
-            dunkel.setPen(QPen(Qt.NoPen))
-            self._neu_item(dunkel, 880)
             t = self.triggers[bezug]
             if t.condition == "rect":
                 rect = QGraphicsRectItem(t.x * T, t.y * T, max(1, t.width) * T,
@@ -592,7 +589,11 @@ class _MissionMixin:
                 if (tx, ty) in ecken and not doppelt:
                     self._zug = {"art": "ecke", "g": g, "fest": ecken[(tx, ty)]}
                     return
-                if x <= tx < x + w and y <= ty < y + h and not doppelt:
+                # Ein Objekt im Bereich (z.B. Gebaeude in der Basis) geht vor:
+                # Klick darauf waehlt das Objekt, statt den Bereich zu ziehen.
+                auf_objekt = any(o.covers(tx, ty) for o in self.objects)
+                if x <= tx < x + w and y <= ty < y + h and not doppelt \
+                        and not auf_objekt:
                     self._zug = {"art": "schieben", "g": g, "start": (tx, ty),
                                  "rect": (x, y)}
                     return
