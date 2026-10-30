@@ -122,7 +122,7 @@ class _PlacementMixin:
         if kind in ("structure", "vehicle"):
             waffe = self.weapon_combo.currentData() if self.weapon_row.isVisible() else None
             geist = self._sprite_item(_map_id, self.player_spin.value(), tx, ty, alpha=0.75,
-                                      waffe=waffe)
+                                      waffe=waffe, fw=footprint_w, fh=footprint_h)
             if geist is not None:
                 geist.setZValue(1049)
                 rect.setBrush(Qt.NoBrush)
@@ -194,7 +194,7 @@ class _PlacementMixin:
             return self.players[spieler].colony == Colony.Plymouth
         return False
 
-    def _sprite_item(self, map_id, spieler, tx, ty, alpha=1.0, waffe=None):
+    def _sprite_item(self, map_id, spieler, tx, ty, alpha=1.0, waffe=None, fw=1, fh=1):
         """QGraphicsPixmapItem mit der echten Grafik -- Eden oder Plymouth je
         nach Kolonie des Spielers, in seiner Spielerfarbe. None ohne Grafik."""
         satz = self._sprites()
@@ -205,8 +205,16 @@ class _PlacementMixin:
             return None
         pm, off = b
         it = QGraphicsPixmapItem(pm)
-        it.setPos(tx * SCENE_TILE + SCENE_TILE / 2 + off.x(),
-                  ty * SCENE_TILE + SCENE_TILE / 2 + off.y())
+        # Bezugspunkt der Spielgrafik ist die MITTE DER BELEGTEN FLAECHE, nicht
+        # die Mitte der Bezugskachel -- bei gerader Breite/Hoehe liegt sie auf
+        # einer Kachelgrenze (Auswahlrechtecke der Animationen bestaetigen
+        # das, z.B. Standard Lab 3x2: -48..48 / -32..32). Vorher sassen solche
+        # Gebaeude 16 px zu weit rechts bzw. unten.
+        # The sprite origin is the centre of the footprint, not of the anchor
+        # tile -- on a tile edge for even sizes (was 16 px off before).
+        mx = (tx - fw // 2 + fw / 2) * SCENE_TILE
+        my = (ty - fh // 2 + fh / 2) * SCENE_TILE
+        it.setPos(mx + off.x(), my + off.y())
         # Weiter unten stehende Einheiten verdecken die oberen (wie im Spiel).
         it.setZValue(5 + ty * 0.001)
         it.setOpacity(alpha)
@@ -540,7 +548,7 @@ class _PlacementMixin:
         y0 = (obj.tile_y - fh // 2) * SCENE_TILE
         rect = QGraphicsRectItem(x0, y0, fw * SCENE_TILE, fh * SCENE_TILE)
         sprite = self._sprite_item(obj.map_id, obj.player, obj.tile_x, obj.tile_y,
-                                   waffe=(obj.params or {}).get("weapon")) \
+                                   waffe=(obj.params or {}).get("weapon"), fw=fw, fh=fh) \
             if obj.kind in ("structure", "vehicle") else None
         if sprite is not None:
             # Echte Grafik: das Rechteck bleibt nur als feiner Rahmen der
