@@ -21,7 +21,8 @@ class ConditionEditDialog(QDialog):
 
     Dialog for editing a single When-condition of an "if" action.
     """
-    def __init__(self, parent, condition=None, variables=None, diff_values=None):
+    def __init__(self, parent, condition=None, variables=None, diff_values=None,
+                 loop_tiefe=None):
         super().__init__(parent)
         self.setWindowTitle(tr("action_editor.dlg_condition_title"))
         self.kind = QComboBox(); fill_combo(self.kind, ACTION_CONDITION_KINDS, "action_conditions")
@@ -61,6 +62,10 @@ class ConditionEditDialog(QDialog):
         self.loop_level = QComboBox()
         self.loop_level.addItem(tr("action_editor.loop_level_current"), "current")
         self.loop_level.addItem(tr("action_editor.loop_level_outer"), "outer")
+        if loop_tiefe is not None:
+            from .action_daten import schleifen_ref_text
+            self.loop_level.setItemText(0, schleifen_ref_text("<loop>", loop_tiefe))
+            self.loop_level.setItemText(1, schleifen_ref_text("<loop:outer>", loop_tiefe))
         self.form = QFormLayout()
         # Label ueber dem Widget: macht die Formularspalte deutlich schmaler.
         # Label above the widget: makes the form column much narrower.

@@ -150,3 +150,36 @@ def unit_commands_for(map_id: str) -> list[tuple[str, str]]:
             cmds.append(("launch", "uc_launch"))
         return cmds + list(_UNIT_COMMANDS_BUILDING)
     return list(_UNIT_COMMANDS_BUILDING)
+
+
+# ---------------------------------------------------------------------------
+# Schleifen-Ebenen: dieselben Namen wie der Codegenerator (codegen_actions.
+# _loop_var): aeusserste "Fuer jede Einheit"-Schleife "unit", darin "unit2" ...
+# Loop levels: the same names the code generator uses.
+# ---------------------------------------------------------------------------
+
+def schleifen_var(tiefe: int) -> str:
+    return "unit" if tiefe <= 1 else f"unit{tiefe}"
+
+
+def schleifen_ref_name(ref: str, tiefe: int) -> str | None:
+    """"<loop>"/"<loop:outer>" -> Variablenname an dieser Stelle, None ausserhalb."""
+    if tiefe < 1:
+        return None
+    if ref == "<loop:outer>" and tiefe >= 2:
+        return schleifen_var(tiefe - 1)
+    return schleifen_var(tiefe)
+
+
+def schleifen_ref_text(ref: str, tiefe) -> str:
+    """Beschriftung fuer die Auswahl "aktuelle/aeussere Schleife" mit dem
+    konkreten Namen, z.B. "Schleifen-Einheit unit2 (aktuelle Schleife)"."""
+    schl = "action_editor.loop_ref_current" if ref == "<loop>" else "action_editor.loop_ref_outer"
+    if tiefe is None:
+        return tr(schl)
+    name = schleifen_ref_name(ref, tiefe)
+    if name is None:
+        return tr(schl) + "  ⚠ " + tr("action_editor.loop_none_here")
+    if ref == "<loop:outer>" and tiefe < 2:
+        return tr(schl) + f" → {name}  (" + tr("action_editor.loop_outer_is_current") + ")"
+    return tr(schl) + f" → {name}"

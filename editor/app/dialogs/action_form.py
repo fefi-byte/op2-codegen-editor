@@ -264,6 +264,19 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(self.form)
 
+        # Schleifen-Einheit mit dem Namen, der an dieser Stelle gilt.
+        # Loop-unit entries show the name valid at this spot.
+        tiefe = ctx.get("foreach_tiefe", 0) if isinstance(ctx, dict) else None
+        from .action_daten import schleifen_ref_text
+        for cb in (getattr(self, n, None) for n in
+                   ("mine_ref", "smelter_ref", "unit_ref", "cmd_unit_target")):
+            if cb is None:
+                continue
+            for ref in ("<loop>", "<loop:outer>"):
+                i = cb.findData(ref)
+                if i >= 0:
+                    cb.setItemText(i, schleifen_ref_text(ref, tiefe))
+
         # Auswahllisten nicht nach ihrem laengsten Eintrag bemessen -- sonst
         # ragen Zeilen mit mehreren Listen im Seitenbereich ueber den Rand.
         # Don't size combos by their longest entry; rows with several combos

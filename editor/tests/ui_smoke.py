@@ -449,6 +449,32 @@ def check_mission_layout(win, app) -> None:
     check("Seitenbereich danach wieder schmal", abs(win._mission_dock.width() - b0) < 30,
           f"{win._mission_dock.width()} vs {b0}")
 
+    # Verschachtelte Schleifen: Titel/Namen je Ebene, Platzhalter aufgeloest,
+    # und "je Einheit" filtert nicht stillschweigend auf Scouts.
+    from mission_model import ActionCondition
+    innen = TriggerAction(kind="if", loop_mode="forEach", unit_type="mapAny",
+                          conditions=[ActionCondition(kind="loopUnitDamage", loop_level="outer")],
+                          then_actions=[TriggerAction(kind="unitCmd", unit_ref="<loop:outer>")])
+    aussen = TriggerAction(kind="if", loop_mode="forEach", unit_type="mapAny", then_actions=[innen])
+    neu_if = TriggerAction(kind="if")
+    ts = TriggerDef(name="Schleifen", condition="time", marks=5)
+    ts.actions = [aussen, neu_if]
+    win.triggers.append(ts)
+    win._refresh_overview()
+    win._bearbeiten_oeffnen("trigger", len(win.triggers) - 1)
+    pump(app)
+    karten = {id(k.a): k for k in win.trigger_panel.act_scroll.widget().findChildren(ActionCard)}
+    ki = karten[id(innen)]
+    check("innere Schleife heisst unit2", "unit2" in ki._title_lbl.text(), ki._title_lbl.text())
+    befehl = karten[id(innen.then_actions[0])]
+    check("aeussere Schleifen-Einheit aufgeloest", befehl._det.text().startswith("unit "),
+          befehl._det.text())
+    kn = karten[id(neu_if)]
+    kn._loop_mode.setCurrentIndex(kn._loop_mode.findData("forEach"))
+    pump(app)
+    check("neue je-Einheit-Schleife ohne Scout-Filter", neu_if.unit_type == "mapAny", neu_if.unit_type)
+    win._bearbeiten_bestaetigen()
+
     # Bereich ziehen landet in Rueckgaengig/Wiederholen.
     g = win.building_groups[0]
     win._auswahl = ("group", g.name)

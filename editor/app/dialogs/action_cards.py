@@ -16,6 +16,8 @@ from ..style import (ACTION_CATEGORY_COLOR, ACTION_SECTION_COLOR, CONDITION_SECT
                      IF_LOOP_COLOR, SURFACE1, apply_role, tint_button_stylesheet, tint_stylesheet)
 from .action_daten import (
     _NoWheelFilter,
+    schleifen_ref_name,
+    schleifen_var,
 )
 from .condition_dialog import ConditionEditDialog
 from .action_form import ActionInlineForm
@@ -74,9 +76,19 @@ class ConditionListWidget(QWidget):
             elif item.layout():
                 _layout_leeren(item.layout())
         self.logic.setVisible(len(self.a.conditions) > 1)
+        tiefe = self.ctx.get("foreach_tiefe") if isinstance(self.ctx, dict) else None
         for c in list(self.a.conditions):
             row = QHBoxLayout()
-            row.addWidget(QLabel(((tr("action_editor.not_prefix") + " ") if c.negate else "") + action_condition_summary(c)), 1)
+            text = ((tr("action_editor.not_prefix") + " ") if c.negate else "") + action_condition_summary(c)
+            if c.kind.startswith("loopUnit") and tiefe is not None:
+                ref = "<loop:outer>" if getattr(c, "loop_level", "current") == "outer" else "<loop>"
+                name = schleifen_ref_name(ref, tiefe)
+                if name:
+                    # "unit.damage" -> "unit2.damage": der Name, der hier gilt.
+                    text = text.replace("unit.", f"{name}.", 1)
+                else:
+                    text += "  ⚠ " + tr("action_editor.loop_none_here")
+            row.addWidget(QLabel(text), 1)
             edit = QPushButton("✎"); edit.setFixedWidth(28); edit.clicked.connect(lambda _, cc=c: self._edit(cc))
             rm = QPushButton("✕"); rm.setFixedWidth(28); rm.clicked.connect(lambda _, cc=c: self._remove(cc))
             row.addWidget(edit); row.addWidget(rm)
@@ -96,7 +108,8 @@ class ConditionListWidget(QWidget):
     def _add(self):
         dlg = ConditionEditDialog(self,
                                   variables=self.ctx.get("variables"),
-                                  diff_values=self.ctx.get("diff_values"))
+                                  diff_values=self.ctx.get("diff_values"),
+                                  loop_tiefe=self.ctx.get("foreach_tiefe"))
         if dlg.exec() == QDialog.Accepted:
             self.a.conditions.append(dlg.result())
             self.rebuild()
@@ -104,7 +117,8 @@ class ConditionListWidget(QWidget):
     def _edit(self, c):
         dlg = ConditionEditDialog(self, c,
                                   variables=self.ctx.get("variables"),
-                                  diff_values=self.ctx.get("diff_values"))
+                                  diff_values=self.ctx.get("diff_values"),
+                                  loop_tiefe=self.ctx.get("foreach_tiefe"))
         if dlg.exec() == QDialog.Accepted:
             self.a.conditions[self.a.conditions.index(c)] = dlg.result()
             self.rebuild()
@@ -195,7 +209,10 @@ class ActionListWidget(QWidget):
             self.actions.append(TriggerAction(kind="custom", custom_name=k[1]))
             self.rebuild(expand_last=True)
             return
-        self.actions.append(TriggerAction(kind=k))
+        neu = TriggerAction(kind=k)
+        if k == "if":
+            neu.unit_type = "mapAny"     # Schleifen-Filter: alle Typen
+        self.actions.append(neu)
         self.rebuild(expand_last=(k not in ("noop", "if")))
 
     def _remove(self, a):
@@ -279,7 +296,7 @@ class ActionCard(QFrame):
         self._refresh_comment()
 
         if action.kind not in ("if", "noop"):
-            params = action_params_summary(action)
+            params = self._mit_schleifennamen(action_params_summary(action))
             self._det = QLabel(params if params else "")
             self._det.setWordWrap(True)
             self._det.setStyleSheet("color: #6c7086; font-size: 10pt; padding: 0 2px 2px 6px;")
@@ -295,9 +312,22 @@ class ActionCard(QFrame):
             self._form = None
 
         if action.kind == "if":
+            # Schleifen-Ebenen: Kinder dieses Blocks (Bedingungen und Aktionen)
+            # liegen eine "Fuer jede Einheit"-Ebene tiefer, wenn der Block eine
+            # solche Schleife ist. Die Ebene reist im Kontext mit.
+            # Children of a forEach block sit one loop level deeper.
+            basis = ctx if isinstance(ctx, dict) else {}
+            aussen = int(basis.get("foreach_tiefe", 0) or 0)
+            mode = getattr(action, "loop_mode", "none") or "none"
+            innen = aussen + (1 if mode == "forEach" else 0)
+            self._tiefe_aussen = aussen
+            kind_ctx = dict(basis, foreach_tiefe=innen,
+                            block_tiefe=int(basis.get("block_tiefe", 0) or 0) + 1)
+            ctx = kind_ctx
             loop_box = self._build_loop_row(action, ctx)
             # Schleifenart sitzt in der Kopfzeile statt in eigener Zeile.
             header.insertWidget(header.indexOf(self._title_lbl) + 1, self._loop_mode)
+            self._if_titel_setzen()
             self._if_kurz = QLabel("")
             self._if_kurz.setWordWrap(True)
             self._if_kurz.setStyleSheet("color: #a6adc8; font-size: 10pt; padding: 0 2px 2px 6px;")
@@ -307,6 +337,16 @@ class ActionCard(QFrame):
             body.setContentsMargins(0, 2, 0, 0)
             body.setSpacing(4)
             body.addWidget(loop_box)
+            # Welche Schleifen-Einheit gilt hier? Nur innerhalb von Schleifen.
+            if innen >= 1:
+                teile = [tr("action_editor.loop_here", var=schleifen_var(innen))]
+                if innen >= 2:
+                    teile.append(tr("action_editor.loop_outer_var",
+                                    var=schleifen_var(innen - 1)))
+                hinweis = QLabel("   ·   ".join(teile))
+                hinweis.setStyleSheet("color: #a6adc8; font-size: 10pt; padding-left: 2px;")
+                hinweis.setToolTip(tr("action_editor.loop_here_tip"))
+                body.addWidget(hinweis)
             self._cond_list = ConditionListWidget(action, ctx=ctx, button_color=CONDITION_SECTION_COLOR)
             body.addWidget(self._section(tr("action_editor.lbl_if"), self._cond_list,
                                          CONDITION_SECTION_COLOR, kopf_extra=self._cond_list.logic))
@@ -330,6 +370,39 @@ class ActionCard(QFrame):
             self._else_btn.setVisible(not hat_sonst)
             lay.addWidget(self._if_body)
             self._block_anzeigen()
+
+    def _mit_schleifennamen(self, text: str) -> str:
+        """"<loop>"/"<loop:outer>" in Zusammenfassungen durch den Namen
+        ersetzen, der an dieser Stelle gilt (unit, unit2, ...)."""
+        if not text or "<loop" not in text:
+            return text
+        tiefe = self.ctx.get("foreach_tiefe", 0) if isinstance(self.ctx, dict) else 0
+        for ref in ("<loop:outer>", "<loop>"):
+            name = schleifen_ref_name(ref, tiefe) or ("⚠ " + tr("action_editor.loop_none_here"))
+            text = text.replace(f"'{ref}'", name).replace(ref, name)
+        return text
+
+    def _if_titel_setzen(self):
+        """Titel nach Schleifenart; verschachtelte Schleifen tragen ihre Ebene
+        und den Variablennamen, damit innen und aussen unterscheidbar sind.
+        Title by loop mode; nested loops show level and variable name."""
+        mode = getattr(self.a, "loop_mode", "none") or "none"
+        aussen = getattr(self, "_tiefe_aussen", 0)
+        if mode == "forEach":
+            ebene = aussen + 1
+            titel = tr("action_editor.block_foreach", var=schleifen_var(ebene))
+            if ebene >= 2:
+                titel += "  ·  " + tr("action_editor.block_level", n=ebene)
+        elif mode == "count":
+            titel = tr("action_editor.block_count")
+        else:
+            titel = tr("action_editor.block_if")
+        self._title_lbl.setText(f"<b>{titel}</b>")
+        # Auswahl-Text der Schleifenart mit dem Namen, den sie bekaeme.
+        i = self._loop_mode.findData("forEach")
+        if i >= 0:
+            self._loop_mode.setItemText(i, tr("action_editor.loop_kopf_foreach_var",
+                                              var=schleifen_var(aussen + 1)))
 
     # --- Wenn-Block ein-/ausklappen / collapse an if block ---------------
 
@@ -414,6 +487,7 @@ class ActionCard(QFrame):
         self._loop_count = ExprEdit(diff_values=diff_values)
         self._loop_count.setPlaceholderText(tr("action_editor.ph_loop_count"))
         count_row = QHBoxLayout()
+        count_row.setContentsMargins(0, 0, 0, 0)
         count_row.addWidget(QLabel(tr("action_editor.lbl_loop_count")))
         count_row.addWidget(self._loop_count, 1)
         self._loop_count_row = QWidget(); self._loop_count_row.setLayout(count_row)
@@ -422,6 +496,7 @@ class ActionCard(QFrame):
         # forEach: Enumerator-Quelle + Einheitentyp-Filter + Spieler + Bereich
         # forEach: enumerator source + unit-type filter + player + rect
         src_row = QHBoxLayout()
+        src_row.setContentsMargins(0, 0, 0, 0)
         src_row.addWidget(QLabel(tr("action_editor.lbl_enum_source")))
         self._loop_source = QComboBox()
         self._loop_source.addItem(tr("action_editor.enum_rect"), "rect")
@@ -435,12 +510,15 @@ class ActionCard(QFrame):
         lay.addWidget(self._loop_src_row)
 
         fe_row = QHBoxLayout()
+        fe_row.setContentsMargins(0, 0, 0, 0)
         self._loop_unit = QComboBox()
         self._loop_unit.addItem(tr("action_editor.enum_all"), "mapAny")
         for d, m in ALL_UNITS:
             self._loop_unit.addItem(d, m)
         self._loop_unit.setToolTip(tr("action_editor.ph_enum_type"))
+        fe_row.addWidget(QLabel(tr("action_editor.lbl_enum_filter_type")))
         fe_row.addWidget(self._loop_unit, 2)
+        fe_row.addWidget(QLabel(tr("action_editor.lbl_enum_filter_player")))
         self._loop_player = QSpinBox()
         self._loop_player.setRange(-1, 5)
         self._loop_player.setSpecialValueText(tr("action_editor.player_all"))
@@ -450,6 +528,7 @@ class ActionCard(QFrame):
         lay.addWidget(self._loop_fe_row1)
 
         rect_row = QHBoxLayout()
+        rect_row.setContentsMargins(0, 0, 0, 0)
         rect_row.addWidget(QLabel(tr("action_editor.lbl_enum_rect")))
         self._loop_rect_spins = []
         for _ in range(4):
@@ -498,7 +577,20 @@ class ActionCard(QFrame):
             s.setValue(int(v))
 
         def save(*_a):
-            action.loop_mode = self._loop_mode.currentData() or "none"
+            neu_modus = self._loop_mode.currentData() or "none"
+            # Der Typ-Filter stand unsichtbar auf dem Datenklassen-Standard
+            # "mapScout": eine frisch auf "je Einheit" gestellte Schleife lief
+            # dann nur ueber Scouts. Beim Umschalten auf "Alle" setzen -- vorher
+            # konnte niemand Scout bewusst gewaehlt haben (Feld war verborgen).
+            # The type filter silently defaulted to mapScout; reset on switch.
+            if neu_modus == "forEach" and action.loop_mode != "forEach" \
+                    and (self._loop_unit.currentData() or "") == "mapScout":
+                k = self._loop_unit.findData("mapAny")
+                if k >= 0:
+                    self._loop_unit.blockSignals(True)
+                    self._loop_unit.setCurrentIndex(k)
+                    self._loop_unit.blockSignals(False)
+            action.loop_mode = neu_modus
             action.enum_source = self._loop_source.currentData() or "rect"
             action.loop_count = self._loop_count.value()
             action.unit_type = self._loop_unit.currentData() or "mapAny"
@@ -507,6 +599,12 @@ class ActionCard(QFrame):
                 s.value() for s in self._loop_rect_spins)
             update_vis()
             self._apply_card_style(action)
+            # Schleifenart geaendert -> Ebenen und Namen der Kinder stimmen
+            # nicht mehr: Liste neu aufbauen (Klappzustand bleibt erhalten).
+            # Loop mode changed -> rebuild so child levels/names update.
+            if getattr(self, "_letzter_modus", None) != action.loop_mode:
+                self._letzter_modus = action.loop_mode
+                QTimer.singleShot(0, self.parent_list.rebuild)
 
         def update_vis():
             mode = self._loop_mode.currentData() or "none"
@@ -515,6 +613,7 @@ class ActionCard(QFrame):
             self._loop_fe_row1.setVisible(mode == "forEach")
             self._loop_fe_row2.setVisible(mode == "forEach")
 
+        self._letzter_modus = getattr(action, "loop_mode", "none") or "none"
         self._loop_mode.currentIndexChanged.connect(save)
         self._loop_source.currentIndexChanged.connect(save)
         self._loop_unit.currentIndexChanged.connect(save)
@@ -561,9 +660,12 @@ class ActionCard(QFrame):
 
     def _on_form_changed(self):
         if self._det is not None:
-            self._det.setText(action_params_summary(self.a))
+            self._det.setText(self._mit_schleifennamen(action_params_summary(self.a)))
         self._refresh_comment()
-        self._title_lbl.setText(f"<b>{action_kind_label(self.a.kind)}</b>")
+        if self.a.kind == "if":
+            self._if_titel_setzen()
+        else:
+            self._title_lbl.setText(f"<b>{action_kind_label(self.a.kind)}</b>")
         self._apply_card_style(self.a)
         # Live-Update der Bereichs-Vorschau waehrend die Karte offen ist
         # Live-update the area preview while the card is open
