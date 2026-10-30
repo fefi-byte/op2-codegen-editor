@@ -213,9 +213,9 @@ class _PlacementMixin:
         self.scene.addItem(it)
         return it
 
-    # Gebaeude ohne planierte Flaeche im Spiel (Waende/Roehren sind keine
-    # Gebaeude im Katalog; Minen sitzen auf dem Erzfeld).
-    _OHNE_PLANIERUNG = {"mapCommonOreMine", "mapRareOreMine", "mapMagmaWell"}
+    # Im Spiel haben ALLE Gebaeude planierten Untergrund -- auch Minen und
+    # Magmaquelle. / In the game every building has bulldozed ground.
+    _OHNE_PLANIERUNG: set = set()
 
     def _planier_item(self, map_id, tx, ty, fw, fh, alpha=1.0):
         """Planierte Flaeche um ein Gebaeude -- nur als Bild auf der Karte,
