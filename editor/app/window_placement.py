@@ -52,6 +52,10 @@ class _PlacementMixin:
             self._apply_terrain_changes(obj, forward=False)
             self.statusBar().showMessage(tr("terrain.status_undo", n=len(obj.changes)))
             return
+        if op == "bereich":
+            self._bereich_anwenden(obj, rueck=True)
+            self._refresh_overview()
+            return
         if op == "place":
             self._delete_object_silent(obj)
             self.statusBar().showMessage(tr("window.status_undo_place", display=obj.display))
@@ -65,7 +69,9 @@ class _PlacementMixin:
             self._apply_terrain_changes(obj, forward=True)
             self.statusBar().showMessage(tr("terrain.status_redo", n=len(obj.changes)))
             return
-        if op == "place":
+        if op == "bereich":
+            self._bereich_anwenden(obj, rueck=False)
+        elif op == "place":
             self._restore_object_silent(obj)
         else:
             self._delete_object_silent(obj)
@@ -199,20 +205,53 @@ class _PlacementMixin:
         der Mining-Gruppen) mitziehen, sofern der alte Name eindeutig war.
         Follow a unit rename in unit_ref/target_unit/mine_ref/smelter_ref."""
         neu = obj.unit_name
+        felder = ("unit_ref", "target_unit", "mine_ref", "smelter_ref")
         if not alt or alt == neu:
             return
-        if any(o is not obj and o.unit_name in (alt, neu) for o in self.objects if neu):
-            return
+        if any(o is not obj and o.unit_name == alt for o in self.objects):
+            return              # alter Name weiter vergeben -> Verweise stimmen
         if not neu:
+            # Name geloescht: haengen noch Verweise daran, fragen statt sie
+            # ins Leere zeigen zu lassen. alt -> alt zaehlt nur.
+            # Name cleared: if references remain, ask instead of leaving them
+            # dangling. Renaming alt -> alt only counts them.
+            n = self._verweise_umbenennen(felder, alt, alt)
+            if not n:
+                return
+            if self._name_loeschen_fragen(alt, n):
+                self._verweise_umbenennen(felder, alt, "")
+                self.statusBar().showMessage(tr("window.status_unit_refs_cleared", alt=alt, n=n))
+            else:
+                obj.unit_name = alt
+                self._redraw_object(obj)
+                self.statusBar().showMessage(tr("window.status_unit_name_kept", alt=alt))
+                return
+            self.trigger_panel.refresh_actions()
+            self.conditions_panel.load()
+            self.groups_panel.load()
+            self._refresh_overview()
             return
-        n = self._verweise_umbenennen(
-            ("unit_ref", "target_unit", "mine_ref", "smelter_ref"), alt, neu)
+        if any(o is not obj and o.unit_name == neu for o in self.objects):
+            return
+        n = self._verweise_umbenennen(felder, alt, neu)
         if n:
             self.trigger_panel.refresh_actions()
             self.conditions_panel.load()
             self.groups_panel.load()
             self._refresh_overview()
             self.statusBar().showMessage(tr("outline.status_renamed_unit", alt=alt, neu=neu, n=n))
+
+    def _name_loeschen_fragen(self, alt, n) -> bool:
+        """True = Verweise leeren, False = Namen behalten."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(tr("window.unit_name_cleared_title"))
+        box.setText(tr("window.unit_name_cleared_text", alt=alt, n=n))
+        behalten = box.addButton(tr("window.unit_name_keep"), QMessageBox.RejectRole)
+        box.addButton(tr("window.unit_refs_clear"), QMessageBox.DestructiveRole)
+        box.setDefaultButton(behalten)
+        box.exec()
+        return box.clickedButton() is not behalten
 
     def on_place(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":

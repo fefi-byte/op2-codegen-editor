@@ -257,16 +257,13 @@ class _MapPickMixin:
         sx, sy = self._rect_pick_start
         x, y, w, h = self._rect_from_tiles(sx, sy, tx, ty)
         group = self._rect_pick_group
-        # FightGroup speichert den Bereich als Idle-Rect (idle_x/y/width/height)
-        # statt rect_x/y/width/height wie Building-/ReinforceGroup.
-        # FightGroup stores the area as an idle rect (idle_x/y/width/height)
-        # instead of rect_x/y/width/height like Building/Reinforce groups.
-        if isinstance(group, FightGroupSpec):
-            group.idle_x, group.idle_y = x, y
-            group.idle_width, group.idle_height = w, h
-        else:
-            group.rect_x, group.rect_y = x, y
-            group.rect_width, group.rect_height = w, h
+        # Kampf- UND Mining-Gruppen speichern den Bereich als idle_*, Bau-
+        # gruppen als rect_* -- frueher bekamen Mining-Gruppen hier rect_*
+        # angehaengt, der echte Bereich blieb unveraendert.
+        # Fight AND mining groups use idle_*, building groups rect_*.
+        alt = self._gruppen_rechteck(group)
+        self._bereich_setzen(group, x, y, w, h)
+        self._bereich_merken(group, alt)
         name = group.name
         self._end_rect_pick()
         self.statusBar().showMessage(tr("window.status_setrect_done", name=name, x=x, y=y, w=w, h=h))

@@ -413,6 +413,47 @@ def check_mission_layout(win, app) -> None:
     check("Einheit umbenennen zieht unitCmd mit",
           tr_.actions[-1].unit_ref == "Held2", tr_.actions[-1].unit_ref)
 
+    # Namen loeschen: Rueckfrage. "Behalten" stellt ihn her, "Leeren" leert.
+    o.unit_name = ""
+    win._name_loeschen_fragen = lambda *_a: False
+    win._einheit_umbenannt(o, "Held2")
+    check("Name loeschen -> behalten", o.unit_name == "Held2", o.unit_name)
+    o.unit_name = ""
+    win._name_loeschen_fragen = lambda *_a: True
+    win._einheit_umbenannt(o, "Held2")
+    check("Name loeschen -> Verweise geleert", tr_.actions[-1].unit_ref == "",
+          tr_.actions[-1].unit_ref)
+    del win._name_loeschen_fragen
+
+    # Bereich ziehen landet in Rueckgaengig/Wiederholen.
+    g = win.building_groups[0]
+    win._auswahl = ("group", g.name)
+    x, y = g.rect_x, g.rect_y
+    win._letzter_klick = (None, 0.0)
+    win._karte_klick(x + 1, y + 1)
+    win._karte_ziehen(x + 4, y + 1)
+    win._karte_loslassen(0, 0)
+    check("Bereich verschoben", g.rect_x == x + 3)
+    win.undo()
+    check("Rueckgaengig setzt Bereich zurueck", (g.rect_x, g.rect_y) == (x, y),
+          f"({g.rect_x},{g.rect_y})")
+    win.redo()
+    check("Wiederholen verschiebt erneut", g.rect_x == x + 3, str(g.rect_x))
+
+    # SetRect einer Mining-Gruppe trifft idle_* (nicht rect_*).
+    win._neu_anlegen("group_mining")
+    mg = win.groups_panel.groups[win.groups_panel._idx]
+    win._begin_rect_pick(mg)
+    win._rect_drag_start(20, 21)
+    win._rect_drag_finish(25, 24)
+    check("SetRect Mining-Gruppe setzt idle_*",
+          (mg.idle_x, mg.idle_y, mg.idle_width, mg.idle_height) == (20, 21, 6, 4)
+          and not hasattr(mg, "rect_x"),
+          f"{mg.idle_x},{mg.idle_y},{mg.idle_width},{mg.idle_height}")
+    win._bearbeiten_abbrechen()
+    check("Abbrechen entfernt Bereichs-Schritt",
+          not any(op == "bereich" and e["name"] == mg.name for op, e in win._undo_stack))
+
 
 def check_terrain(win, app) -> None:
     """Gelaende-Tab: Overlay am Tab, Stempeln, Zelltyp, Rueckgaengig."""

@@ -253,7 +253,8 @@ class _MissionMixin:
                        "conditions": "outline.conditions"}[art])
         else:
             return
-        self._bearbeitung = {"art": art, "bezug": bezug, "stand": stand}
+        self._bearbeitung = {"art": art, "bezug": bezug, "stand": stand,
+                             "undo_laenge": len(self._undo_stack or [])}
         self._editor_zeigen(f"{tr('outline.mission')}  ›  {pfad}", fuss=True)
         self._btn_loeschen.setVisible(art in ("group", "trigger", "win", "lose"))
         if art in ("groups", "triggers", "conditions"):
@@ -336,6 +337,12 @@ class _MissionMixin:
             return
         for name, wert in b["stand"].items():
             setattr(self, name, wert)
+        # Bereichs-Schritte aus dieser Bearbeitung sind mit verworfen.
+        # Area steps made during this edit are discarded as well.
+        stapel = self._undo_stack or []
+        n0 = b.get("undo_laenge", len(stapel))
+        stapel[n0:] = [e for e in stapel[n0:] if e[0] != "bereich"]
+        self._verlauf_auffrischen()
         self._bearbeiten_ende()
         self._panels_laden()
         self._gliederung_auffrischen()
@@ -480,6 +487,31 @@ class _MissionMixin:
                 if g.name == name:
                     return g
         return None
+
+    def _bereich_merken(self, g, alt):
+        """Bereichsaenderung einer Gruppe in Rueckgaengig/Verlauf eintragen."""
+        neu = self._gruppen_rechteck(g)
+        if alt is None or neu is None or tuple(alt) == tuple(neu):
+            return
+        self._push_undo("bereich", {"g": g, "name": g.name,
+                                    "alt": tuple(alt), "neu": tuple(neu)})
+
+    def _bereich_anwenden(self, eintrag, rueck: bool):
+        g = eintrag["g"]
+        # Nach "Abbrechen" im Editor sind die Gruppen Kopien -- dann per Name.
+        if g not in self._alle_gruppen():
+            g = self._gruppe_nach_name(eintrag["name"])
+            if g is None:
+                self.statusBar().showMessage(tr("outline.status_area_gone", name=eintrag["name"]))
+                return
+            eintrag["g"] = g
+        self._bereich_setzen(g, *(eintrag["alt"] if rueck else eintrag["neu"]))
+        if self._bearbeitung is not None and self._bearbeitung["art"] == "group" \
+                and 0 <= self.groups_panel._idx < len(self.groups_panel.groups) \
+                and self.groups_panel.groups[self.groups_panel._idx] is g:
+            self.groups_panel._load(self.groups_panel._idx)
+        x, y, w, h = self._gruppen_rechteck(g)
+        self.statusBar().showMessage(tr("outline.status_area", name=g.name, x=x, y=y, w=w, h=h))
 
     def _alle_gruppen(self):
         return (list(self.building_groups) + list(self.reinforce_groups)
@@ -674,7 +706,7 @@ class _MissionMixin:
                 ecken = {(x, y): (x + w - 1, y + h - 1), (x + w - 1, y): (x, y + h - 1),
                          (x, y + h - 1): (x + w - 1, y), (x + w - 1, y + h - 1): (x, y)}
                 if (tx, ty) in ecken and not doppelt:
-                    self._zug = {"art": "ecke", "g": g, "fest": ecken[(tx, ty)]}
+                    self._zug = {"art": "ecke", "g": g, "fest": ecken[(tx, ty)], "alt": r}
                     return
                 # Ein Objekt im Bereich (z.B. Gebaeude in der Basis) geht vor:
                 # Klick darauf waehlt das Objekt, statt den Bereich zu ziehen.
@@ -683,7 +715,7 @@ class _MissionMixin:
                 if x <= tx < x + w and y <= ty < y + h and not doppelt \
                         and not auf_objekt:
                     self._zug = {"art": "schieben", "g": g, "start": (tx, ty),
-                                 "rect": (x, y)}
+                                 "rect": (x, y), "alt": r}
                     return
         treffer = self._treffer(tx, ty)
         if treffer is None:
@@ -720,7 +752,8 @@ class _MissionMixin:
     def _karte_loslassen(self, _tx, _ty):
         if self._zug is None:
             return
-        self._zug = None
+        z, self._zug = self._zug, None
+        self._bereich_merken(z["g"], z["alt"])
         if self._bearbeitung is not None and self._bearbeitung["art"] == "group":
             self.groups_panel._load(self.groups_panel._idx)
         self._refresh_overview()

@@ -36,6 +36,9 @@ class _VerlaufMixin:
         if op == "terrain":
             was = getattr(obj, "was", "") or tr("window.verlauf_gelaende")
             return tr("window.verlauf_terrain", was=was, n=len(obj.changes))
+        if op == "bereich":
+            x, y, w, h = obj["neu"]
+            return tr("window.verlauf_bereich", name=obj["name"], x=x, y=y, w=w, h=h)
         if op == "place":
             return tr("window.verlauf_place", display=obj.display)
         return tr("window.verlauf_remove", display=obj.display)
