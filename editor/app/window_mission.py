@@ -30,6 +30,20 @@ _LISTEN = ("building_groups", "reinforce_groups", "fight_groups",
            "mining_groups", "triggers", "victories", "defeats")
 
 
+def bereich_felder(g):
+    """Attributnamen (x, y, breite, hoehe) des Kartenbereichs einer Gruppe.
+
+    Baugruppen haben rect_*, Kampf- und Mining-Gruppen idle_*,
+    Verstaerkungsgruppen keinen Bereich (None)."""
+    if g is None:
+        return None
+    if hasattr(g, "rect_x"):
+        return ("rect_x", "rect_y", "rect_width", "rect_height")
+    if hasattr(g, "idle_x"):
+        return ("idle_x", "idle_y", "idle_width", "idle_height")
+    return None
+
+
 class _MissionMixin:
     # ------------------------------------------------------------------
     # Aufbau / construction
@@ -251,8 +265,11 @@ class _MissionMixin:
         for p in (self.groups_panel, self.trigger_panel, self.conditions_panel):
             p.als_editor(False)
         self._bearbeitung = None
-        self._sidebar_tabs.setCurrentIndex(0)
+        # Erst die Gliederung zeigen, dann den Bereich wechseln -- sonst
+        # wandert der Tastaturfokus in die Katalogliste, die dabei ihren
+        # ersten Eintrag waehlt und das Platzieren scharf schaltet.
         self._linke_seite.setCurrentIndex(0)
+        self._sidebar_tabs.setCurrentIndex(0)
 
     def _bearbeiten_bestaetigen(self):
         if self._placement_active:
@@ -329,11 +346,12 @@ class _MissionMixin:
             idx = self.groups_panel._idx
             if 0 <= idx < len(self.groups_panel.groups):
                 g = self.groups_panel.groups[idx]
-                if hasattr(g, "rect_x") and self.map is not None:
-                    # Neuer Bereich dort, wo man gerade hinschaut.
+                f = bereich_felder(g)
+                # Bauvorlage ohne Bereich: neuen Bereich dorthin, wo man schaut.
+                if f and self.map is not None and art == "group_building":
                     mitte = self.view.mapToScene(self.view.viewport().rect().center())
-                    g.rect_x = max(0, int(mitte.x() // SCENE_TILE) - g.rect_width // 2)
-                    g.rect_y = max(0, int(mitte.y() // SCENE_TILE) - g.rect_height // 2)
+                    setattr(g, f[0], max(0, int(mitte.x() // SCENE_TILE) - getattr(g, f[2]) // 2))
+                    setattr(g, f[1], max(0, int(mitte.y() // SCENE_TILE) - getattr(g, f[3]) // 2))
                 self._bearbeiten_oeffnen("group", self.groups_panel.groups[idx].name, stand)
         elif art == "trigger":
             self.trigger_panel._add()
@@ -379,10 +397,24 @@ class _MissionMixin:
                     return g
         return None
 
+    def _alle_gruppen(self):
+        return (list(self.building_groups) + list(self.reinforce_groups)
+                + list(self.fight_groups) + list(self.mining_groups))
+
     def _gruppen_rechteck(self, g):
-        if g is None or not hasattr(g, "rect_x"):
+        f = bereich_felder(g)
+        if f is None:
             return None
-        return (g.rect_x, g.rect_y, max(1, g.rect_width), max(1, g.rect_height))
+        x, y, w, h = (getattr(g, n) for n in f)
+        return (x, y, max(1, w), max(1, h))
+
+    def _bereich_setzen(self, g, x, y, w=None, h=None):
+        f = bereich_felder(g)
+        setattr(g, f[0], x)
+        setattr(g, f[1], y)
+        if w is not None:
+            setattr(g, f[2], w)
+            setattr(g, f[3], h)
 
     def _auswahl_ort(self, art, bezug):
         """Mittelpunkt (Kacheln) des Elements, oder None."""
@@ -416,16 +448,25 @@ class _MissionMixin:
         self._auswahl_items.append(item)
         return item
 
-    def _griff(self, x, y):
-        g = QGraphicsRectItem(-5, -5, 10, 10)
-        g.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
-        g.setPos(x, y)
-        g.setBrush(QBrush(_AUSWAHL))
-        g.setPen(QPen(QColor(17, 17, 27), 1))
+    def _griff(self, tx, ty):
+        """Eckkachel hervorheben: dort zieht man den Bereich auf."""
+        T = SCENE_TILE
+        g = QGraphicsRectItem(tx * T, ty * T, T, T)
+        g.setBrush(QBrush(QColor(137, 180, 250, 150)))
+        pen = QPen(QColor(205, 225, 255), 2)
+        pen.setCosmetic(True)
+        g.setPen(pen)
         return self._neu_item(g, 960)
 
     def _auswahl_zeichnen(self):
         self._auswahl_weg()
+        # Die Gruppenbereiche haengen an der Auswahl (nur gleicher Typ).
+        typ = None
+        if self._auswahl and self._auswahl[0] == "group":
+            typ = type(self._gruppe_nach_name(self._auswahl[1]))
+        if typ is not getattr(self, "_overlay_typ", None):
+            self._overlay_typ = typ
+            self._refresh_overlays()
         if self.map is None or self._auswahl is None or self._modus != "mission":
             return
         art, bezug = self._auswahl
@@ -439,8 +480,8 @@ class _MissionMixin:
             rect.setPen(QPen(_AUSWAHL, 3))
             rect.setBrush(QBrush(QColor(137, 180, 250, 50)))
             self._neu_item(rect, 950)
-            for gx, gy in ((x, y), (x + w, y), (x, y + h), (x + w, y + h)):
-                self._griff(gx * T, gy * T)
+            for gx, gy in {(x, y), (x + w - 1, y), (x, y + h - 1), (x + w - 1, y + h - 1)}:
+                self._griff(gx, gy)
         elif art == "object" and 0 <= bezug < len(self.objects):
             o = self.objects[bezug]
             fw, fh = o.footprint
@@ -497,12 +538,31 @@ class _MissionMixin:
                     rect.setBrush(QBrush(QColor(243, 139, 168, 40)))
                     self._neu_item(rect, 950)
 
+    def _gruppe_sichtbar(self, g):
+        """Ist eine Gruppe gewaehlt oder in Bearbeitung, zeigt die Karte nur
+        Bereiche desselben Typs -- der Baubereich stoert beim Setzen eines
+        Kampfgruppen-Bereichs. / With a group selected, only areas of the
+        same type are shown."""
+        if self._modus != "mission":
+            return True
+        aktiv = None
+        b = self._bearbeitung
+        if b is not None and b["art"] == "group":
+            idx = self.groups_panel._idx
+            if 0 <= idx < len(self.groups_panel.groups):
+                aktiv = self.groups_panel.groups[idx]
+        elif self._auswahl and self._auswahl[0] == "group":
+            aktiv = self._gruppe_nach_name(self._auswahl[1])
+        return aktiv is None or type(g) is type(aktiv)
+
     def _treffer(self, tx, ty):
         """Was liegt auf der Kachel? -> (art, bezug) | None."""
         for i in range(len(self.objects) - 1, -1, -1):
             if self.objects[i].covers(tx, ty):
                 return ("object", i)
-        for g in self.building_groups:
+        for g in self._alle_gruppen():
+            if not self._gruppe_sichtbar(g):
+                continue
             r = self._gruppen_rechteck(g)
             if r and r[0] <= tx < r[0] + r[2] and r[1] <= ty < r[1] + r[3]:
                 return ("group", g.name)
@@ -556,18 +616,17 @@ class _MissionMixin:
         g = z["g"]
         if z["art"] == "schieben":
             dx, dy = tx - z["start"][0], ty - z["start"][1]
-            g.rect_x = max(0, z["rect"][0] + dx)
-            g.rect_y = max(0, z["rect"][1] + dy)
+            self._bereich_setzen(g, max(0, z["rect"][0] + dx), max(0, z["rect"][1] + dy))
         else:
             fx, fy = z["fest"]
-            g.rect_x, g.rect_y = min(fx, tx), min(fy, ty)
-            g.rect_width = abs(tx - fx) + 1
-            g.rect_height = abs(ty - fy) + 1
+            tx, ty = max(0, tx), max(0, ty)
+            self._bereich_setzen(g, min(fx, tx), min(fy, ty),
+                                 abs(tx - fx) + 1, abs(ty - fy) + 1)
         self._refresh_overlays()
         self._auswahl_zeichnen()
+        x, y, w, h = self._gruppen_rechteck(g)
         self.statusBar().showMessage(
-            tr("outline.status_area", name=g.name, x=g.rect_x, y=g.rect_y,
-               w=g.rect_width, h=g.rect_height))
+            tr("outline.status_area", name=g.name, x=x, y=y, w=w, h=h))
 
     def _karte_loslassen(self, _tx, _ty):
         if self._zug is None:

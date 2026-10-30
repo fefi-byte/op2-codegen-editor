@@ -5,6 +5,11 @@ from .common import *
 # Overlay-Farben / overlay colors
 _TRIGGER_COLOR = QColor(137, 180, 250)   # blau / blue
 _GROUP_COLOR = QColor(250, 179, 135)     # orange
+_GROUP_FARBEN = {
+    "BuildingGroupSpec": _GROUP_COLOR,
+    "FightGroupSpec": QColor(243, 139, 168),
+    "MiningGroupSpec": QColor(249, 226, 175),
+}
 
 
 class _OverlaysMixin:
@@ -144,7 +149,12 @@ class _OverlaysMixin:
             self._overlay_items = items_backup
 
     def _draw_group_overlays(self):
-        for g in self.building_groups:
-            self._overlay_rect(g.rect_x, g.rect_y,
-                               max(1, g.rect_width), max(1, g.rect_height),
-                               _GROUP_COLOR, g.name)
+        # Bau- (rect_*), Kampf- und Mining-Gruppen (idle_*) haben einen
+        # Bereich; Verstaerkungsgruppen nicht.
+        # Building (rect_*), fight and mining groups (idle_*) have an area.
+        for g in self._alle_gruppen():
+            r = self._gruppen_rechteck(g)
+            if r is None or not self._gruppe_sichtbar(g):
+                continue
+            farbe = _GROUP_FARBEN.get(type(g).__name__, _GROUP_COLOR)
+            self._overlay_rect(*r, farbe, g.name)

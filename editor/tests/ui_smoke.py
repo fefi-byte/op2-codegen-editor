@@ -314,6 +314,28 @@ def check_mission_layout(win, app) -> None:
     check("Ecke zieht den Bereich auf", g.rect_width == w0 + 2, f"{w0} -> {g.rect_width}")
     check("Auswahl gezeichnet", len(win._auswahl_items) > 0)
 
+    # Kampfgruppe: Bereich heisst idle_*, muss genauso zieh- und sichtbar sein;
+    # der Baubereich wird dabei ausgeblendet.
+    win.list.setCurrentRow(0)
+    check("verdeckter Katalog schaltet das Platzieren nicht scharf",
+          not win._placement_active)
+    win._neu_anlegen("group_fight")
+    f = win.fight_groups[-1]
+    pump(app)
+    texte = [it.text() for it in win._overlay_items if hasattr(it, "text")]
+    check("Kampfgruppen-Bereich auf der Karte", f.name in texte, str(texte))
+    check("Baubereich beim Kampfgruppen-Bearbeiten ausgeblendet", g.name not in texte)
+    win._bearbeiten_bestaetigen()
+    win._auswahl = ("group", f.name)
+    x, y = f.idle_x, f.idle_y
+    win._letzter_klick = (None, 0.0)
+    win._karte_klick(x + 2, y + 2)
+    win._karte_ziehen(x + 4, y + 3)
+    win._karte_loslassen(0, 0)
+    check("Kampfgruppen-Bereich laesst sich verschieben",
+          (f.idle_x, f.idle_y) == (x + 2, y + 1), f"({x},{y}) -> ({f.idle_x},{f.idle_y})")
+    check("nach Bestaetigen nicht im Platziermodus", not win._placement_active)
+
 
 def check_terrain(win, app) -> None:
     """Gelaende-Tab: Overlay am Tab, Stempeln, Zelltyp, Rueckgaengig."""

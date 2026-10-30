@@ -196,7 +196,12 @@ class _SidebarMixin:
 
     def _on_place_selection_changed(self, *_args):
         self._update_params()
-        self._activate_placement()
+        # Nur scharf schalten, wenn man den Katalog auch sieht -- eine
+        # verdeckte Liste kann ihre Auswahl z.B. durch einen Fokuswechsel
+        # aendern, und dann hing ploetzlich ein Gebaeude am Mauszeiger.
+        # Only arm placement when the catalog is actually visible.
+        if self.list.isVisible():
+            self._activate_placement()
 
     def _activate_placement(self):
         sel = self._selected()
