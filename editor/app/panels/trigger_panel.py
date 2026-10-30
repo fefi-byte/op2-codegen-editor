@@ -136,6 +136,7 @@ class TriggerPanel(QWidget):
             self.form.addRow(clabels[key], w)
 
         self.name.textChanged.connect(self._store_current)
+        self.name.editingFinished.connect(self.umbenennen_nachziehen)
         self.folder.textChanged.connect(self._store_current)
         self.comment.textChanged.connect(self._store_current)
         self.folder.editingFinished.connect(self._refresh_list)
@@ -475,7 +476,23 @@ class TriggerPanel(QWidget):
         if item:
             self.tlist.setCurrentItem(item)
 
+    def umbenennen_nachziehen(self):
+        """Neuer Triggername -> createTrigger-Aktionen mitziehen (nach der
+        Eingabe, nicht je Tastendruck). / Follow a rename in createTrigger."""
+        triggers = self._window.triggers
+        if not (0 <= self._idx < len(triggers)):
+            return
+        alt = getattr(self, "_name_alt", "")
+        neu = triggers[self._idx].name
+        if not alt or alt == neu:
+            return
+        andere = [t.name for j, t in enumerate(triggers) if j != self._idx]
+        if alt not in andere and neu not in andere:
+            self._window._trigger_umbenennen(alt, neu)
+        self._name_alt = neu
+
     def _on_item_changed(self, current, previous):
+        self.umbenennen_nachziehen()
         if current is None:
             self._idx = -1
             self._set_form_enabled(False)
@@ -521,6 +538,7 @@ class TriggerPanel(QWidget):
     def _load(self, i):
         triggers = self._window.triggers
         t = triggers[i]
+        self._name_alt = t.name
         self._loading = True
         dv = self._diff_values()
         if dv:

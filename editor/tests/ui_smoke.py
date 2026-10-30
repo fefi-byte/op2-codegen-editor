@@ -368,6 +368,42 @@ def check_mission_layout(win, app) -> None:
           f"{form.cu_x.lineEdit().width()} px")
     win._bearbeiten_bestaetigen()
 
+    # Umbenennen einer Gruppe zieht die Verweise in Triggern mit; Abbrechen
+    # nimmt beides zurueck.
+    bg = win.building_groups[0]
+    alt = bg.name
+    tr_ = TriggerDef(name="Ref", condition="time", marks=5)
+    tr_.actions.append(TriggerAction(kind="recordBuilding", group_name=alt))
+    win.triggers.append(tr_)
+    win._refresh_overview()
+    win._bearbeiten_oeffnen("group", alt)
+    pump(app)
+    win.groups_panel.name.setText(alt + "_neu")
+    win._bearbeiten_bestaetigen()
+    check("Umbenennen zieht Aktions-Verweis mit",
+          win.triggers[-1].actions[0].group_name == alt + "_neu",
+          win.triggers[-1].actions[0].group_name)
+    win._bearbeiten_oeffnen("group", alt + "_neu")
+    pump(app)
+    win.groups_panel.name.setText("Zwischen")
+    win.groups_panel.umbenennen_nachziehen()
+    win._bearbeiten_abbrechen()
+    check("Abbrechen nimmt Umbenennung samt Verweisen zurueck",
+          win.building_groups[0].name == alt + "_neu"
+          and win.triggers[-1].actions[0].group_name == alt + "_neu",
+          f"{win.building_groups[0].name} / {win.triggers[-1].actions[0].group_name}")
+    ziel = TriggerDef(name="Ziel", condition="time", marks=5)
+    tr_ = win.triggers[-1]
+    win.triggers.append(ziel)
+    tr_.actions.append(TriggerAction(kind="createTrigger", target="Ziel"))
+    win._refresh_overview()
+    win._bearbeiten_oeffnen("trigger", len(win.triggers) - 1)
+    pump(app)
+    win.trigger_panel.name.setText("Ziel2")
+    win._bearbeiten_bestaetigen()
+    check("Trigger umbenennen zieht createTrigger mit",
+          tr_.actions[-1].target == "Ziel2", tr_.actions[-1].target)
+
 
 def check_terrain(win, app) -> None:
     """Gelaende-Tab: Overlay am Tab, Stempeln, Zelltyp, Rueckgaengig."""

@@ -288,6 +288,7 @@ class _ProjectMixin:
         # Jetzt gesammelt und am Ende gemeldet.
         # Entries that fail to load used to be skipped silently and were then
         # lost for good on the next save; now they are collected and reported.
+        self._editor_schliessen()
         fehler: list[tuple[str, Exception]] = []
         self.mission_name = data.get("mission_name", "Editor Mission")
         self.mission_type = MissionType(data.get("mission_type", int(MissionType.Colony)))

@@ -264,6 +264,14 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(self.form)
 
+        # Auswahllisten nicht nach ihrem laengsten Eintrag bemessen -- sonst
+        # ragen Zeilen mit mehreren Listen im Seitenbereich ueber den Rand.
+        # Don't size combos by their longest entry; rows with several combos
+        # would overflow the side area otherwise.
+        for cb in self.findChildren(QComboBox):
+            cb.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            cb.setMinimumContentsLength(6)
+
         self._load(action)
         self._connect_save_signals()
 

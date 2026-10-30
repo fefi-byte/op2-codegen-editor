@@ -118,6 +118,7 @@ class GroupsPanel(QWidget):
         self.form.addRow(tr("groups.row_targets"), self.target_text)
 
         self.name.textChanged.connect(self._store_current)
+        self.name.editingFinished.connect(self.umbenennen_nachziehen)
         self.folder.textChanged.connect(self._store_current)
         self.folder.editingFinished.connect(self._refresh_list)
         for w in (self.player, self.rect_x, self.rect_y, self.rect_w, self.rect_h):
@@ -392,7 +393,27 @@ class GroupsPanel(QWidget):
         if item:
             self.glist.setCurrentItem(item)
 
+    def umbenennen_nachziehen(self):
+        """Hat die gewaehlte Gruppe seit dem Laden einen neuen Namen, alle
+        Verweise darauf (Trigger, Aktionen, Bedingungen, andere Gruppen)
+        mitziehen. Erst nach der Eingabe, nicht je Tastendruck: unterwegs
+        koennte der Name kurz mit einer anderen Gruppe uebereinstimmen.
+
+        If the selected group was renamed since it was loaded, update every
+        reference to it. Done after editing, not per keystroke."""
+        if not (0 <= self._idx < len(self.groups)):
+            return
+        alt = getattr(self, "_name_alt", "")
+        neu = self.groups[self._idx].name
+        if not alt or alt == neu:
+            return
+        andere = [g.name for j, g in enumerate(self.groups) if j != self._idx]
+        if alt not in andere and neu not in andere:
+            self._window._gruppe_umbenennen(alt, neu)
+        self._name_alt = neu
+
     def _on_item_changed(self, current, previous):
+        self.umbenennen_nachziehen()
         if current is None:
             self._idx = -1
             self._set_form_enabled(False)
@@ -493,6 +514,7 @@ class GroupsPanel(QWidget):
         is_mining = isinstance(group, MiningGroupSpec)
         has_rect = not is_reinforce
         self._loading = True
+        self._name_alt = group.name
         self.name.setText(group.name)
         self.folder.setText(getattr(group, 'folder', '') or '')
         gtype_name = ("MiningGroup" if is_mining else

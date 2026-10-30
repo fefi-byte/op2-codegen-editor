@@ -488,6 +488,11 @@ class _MapPickMixin:
         self._action_pick = None
         self._action_pick_start = None
         self._clear_action_preview()
+        # Das weisse Auswahl-Rechteck des Aufziehens blieb sonst auf der
+        # Karte stehen. / The white drag rectangle used to stay on the map.
+        if self._rect_pick_group is None and self._rect_pick_item is not None:
+            self.scene.removeItem(self._rect_pick_item)
+            self._rect_pick_item = None
         if reopen:
             if was_cond:
                 self.conditions_panel.reload_current()

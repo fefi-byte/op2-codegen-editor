@@ -443,15 +443,21 @@ class _FelderMixin:
         self.rb_name = QLineEdit()
         self.rb_name.setPlaceholderText(tr("action_editor.ph_rb_name"))
         self.rb_name.setToolTip(tr("action_editor.tooltip_rb_name"))
-        rb_row = QHBoxLayout()
-        rb_row.addWidget(self.rb_building, 3)
-        rb_row.addWidget(self.rb_weapon, 2)
-        rb_row.addWidget(self.rb_x, 1)
-        rb_row.addWidget(self.rb_y, 1)
-        rb_row.addWidget(self.rb_name, 2)
-        rb_row.addWidget(rb_pick_btn)
-        rb_row.addWidget(rb_add_btn)
-        rb_row.addWidget(rb_rm_btn)
+        # Zwei Zeilen: einzeilig ragte die Eingabe im Seitenbereich ~140 px
+        # ueber den Rand. / Two rows: one row overflowed the side area.
+        rb_row = QVBoxLayout()
+        rb_typ = QHBoxLayout()
+        rb_typ.addWidget(self.rb_building, 3)
+        rb_typ.addWidget(self.rb_weapon, 2)
+        rb_pos = QHBoxLayout()
+        rb_pos.addWidget(self.rb_x, 1)
+        rb_pos.addWidget(self.rb_y, 1)
+        rb_pos.addWidget(self.rb_name, 2)
+        rb_pos.addWidget(rb_pick_btn)
+        rb_pos.addWidget(rb_add_btn)
+        rb_pos.addWidget(rb_rm_btn)
+        rb_row.addLayout(rb_typ)
+        rb_row.addLayout(rb_pos)
         self.building_editor = QWidget()
         rb_lay = QVBoxLayout(self.building_editor)
         rb_lay.setContentsMargins(0, 0, 0, 0)
@@ -590,8 +596,10 @@ class _FelderMixin:
         diff_values = self._diff_values
         # --- repairBuildings v2: Zonenliste + Schwellenliste + Standard ---
         # repairBuildings v2: zone list + threshold list + default
-        self.rz_x, self.rz_y = QSpinBox(), QSpinBox()
-        self.rz_x2, self.rz_y2 = QSpinBox(), QSpinBox()
+        # Ohne Pfeile wie die anderen Koordinaten -- mit Pfeilen passten die
+        # vier Felder samt Knoepfen nicht in den Seitenbereich.
+        self.rz_x, self.rz_y = self._mk_spin(), self._mk_spin()
+        self.rz_x2, self.rz_y2 = self._mk_spin(), self._mk_spin()
         for w in (self.rz_x, self.rz_y, self.rz_x2, self.rz_y2):
             w.setRange(0, 1023)
         self.repair_zones_tree = QTreeWidget()

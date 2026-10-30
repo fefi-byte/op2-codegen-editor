@@ -41,6 +41,7 @@ class ConditionFormWidget(QWidget):
         self.marks.setValue(600)
         self.marks.setPlaceholderText(tr("cond_form.marks_placeholder"))
         self.marks_hint = QLabel()
+        self.marks_hint.setWordWrap(True)
         self.marks_hint.setStyleSheet("color: #6c7086; font-size: 9pt;")
         self.count = QSpinBox(); self.count.setRange(0, 1000); self.count.setValue(1)
         self.compare = QComboBox(); self.compare.addItems(COMPARE.keys())

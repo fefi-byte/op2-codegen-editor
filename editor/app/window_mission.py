@@ -272,6 +272,22 @@ class _MissionMixin:
         self._linke_seite.setCurrentIndex(0)
         self._sidebar_tabs.setCurrentIndex(0)
 
+    def _editor_schliessen(self):
+        """Editor ohne Rueckfrage zu, Auswahl weg -- vor dem Laden eines
+        Projekts oder dem Loeschen aller Objekte. Sonst wuerde ein spaeteres
+        "Abbrechen" den alten Missionsstand zurueckholen.
+        Close the editor and drop the selection before loading a project or
+        clearing everything; a later Cancel would restore the old mission."""
+        if getattr(self, "outline", None) is None:
+            return
+        if self._placement_active:
+            self._cancel_placement()
+        if self._bearbeitung is not None:
+            self._bearbeiten_ende()
+        self._auswahl = None
+        self._zug = None
+        self._auswahl_weg()
+
     def _bearbeiten_bestaetigen(self):
         if self._placement_active:
             self._cancel_placement()
@@ -284,6 +300,10 @@ class _MissionMixin:
             self._gliederung_auffrischen()
             return
         art, bezug = b["art"], b["bezug"]
+        if art in ("group", "groups"):
+            self.groups_panel.umbenennen_nachziehen()
+        if art in ("trigger", "triggers"):
+            self.trigger_panel.umbenennen_nachziehen()
         if art in ("groups", "triggers", "conditions"):
             self._bearbeiten_ende()
             self._gliederung_auffrischen()
@@ -363,6 +383,60 @@ class _MissionMixin:
             self.conditions_panel._add(art)
             liste = self.victories if art == "win" else self.defeats
             self._bearbeiten_oeffnen(art, len(liste) - 1, stand)
+
+    def _trigger_umbenennen(self, alt: str, neu: str) -> int:
+        """createTrigger-Aktionen, die Trigger `alt` anlegen, auf `neu` umstellen."""
+        n = self._verweise_umbenennen(("target",), alt, neu,
+                                      lambda x: getattr(x, "kind", None) == "createTrigger"
+                                      or (isinstance(x, dict) and x.get("kind") == "createTrigger"))
+        if n:
+            self.statusBar().showMessage(
+                tr("outline.status_renamed_trigger", alt=alt, neu=neu, n=n))
+        return n
+
+    def _gruppe_umbenennen(self, alt: str, neu: str) -> int:
+        """Alle Verweise auf Gruppe `alt` auf `neu` umstellen (rekursiv durch
+        Trigger, Aktionen inkl. Wenn/Sonst, Bedingungen und Gruppen).
+        Rename every reference to group `alt`; returns the count."""
+        n = self._verweise_umbenennen(("group_name", "source_group_name"), alt, neu)
+        if n:
+            self.statusBar().showMessage(
+                tr("outline.status_renamed", alt=alt, neu=neu, n=n))
+            self.trigger_panel.refresh()
+        return n
+
+    def _verweise_umbenennen(self, felder, alt, neu, passt=lambda _x: True) -> int:
+        gesehen = set()
+        n = 0
+
+        def lauf(x):
+            nonlocal n
+            if id(x) in gesehen or isinstance(x, (str, int, float, bool, type(None))):
+                return
+            gesehen.add(id(x))
+            if isinstance(x, dict):
+                for k, v in list(x.items()):
+                    if k in felder and v == alt and passt(x):
+                        x[k] = neu
+                        n += 1
+                    else:
+                        lauf(v)
+            elif isinstance(x, (list, tuple)):
+                for v in x:
+                    lauf(v)
+            elif hasattr(x, "__dict__"):
+                for k, v in list(vars(x).items()):
+                    if k in felder and v == alt and passt(x):
+                        setattr(x, k, neu)
+                        n += 1
+                    elif not k.startswith("_"):
+                        lauf(v)
+
+        for liste in (self.triggers, self.victories, self.defeats,
+                      self.building_groups, self.reinforce_groups,
+                      self.fight_groups, self.mining_groups):
+            lauf(liste)
+        return n
 
     def _gliederung_auffrischen(self):
         if getattr(self, "outline", None) is None:
@@ -554,16 +628,21 @@ class _MissionMixin:
 
     def _treffer(self, tx, ty):
         """Was liegt auf der Kachel? -> (art, bezug) | None."""
-        for i in range(len(self.objects) - 1, -1, -1):
-            if self.objects[i].covers(tx, ty):
-                return ("object", i)
+        # Ausgeblendete Ebenen sind auch nicht anklickbar.
+        # Hidden layers are not clickable either.
+        if self._objekte_sichtbar:
+            for i in range(len(self.objects) - 1, -1, -1):
+                if self.objects[i].covers(tx, ty):
+                    return ("object", i)
         for g in self._alle_gruppen():
-            if not self._gruppe_sichtbar(g):
+            if not self._overlay_groups_on or not self._gruppe_sichtbar(g):
                 continue
             r = self._gruppen_rechteck(g)
             if r and r[0] <= tx < r[0] + r[2] and r[1] <= ty < r[1] + r[3]:
                 return ("group", g.name)
         for i, t in enumerate(self.triggers):
+            if not self._overlay_triggers_on:
+                break
             if t.condition == "rect" and t.x <= tx < t.x + max(1, t.width) \
                     and t.y <= ty < t.y + max(1, t.height):
                 return ("trigger", i)
@@ -591,7 +670,8 @@ class _MissionMixin:
                     return
                 # Ein Objekt im Bereich (z.B. Gebaeude in der Basis) geht vor:
                 # Klick darauf waehlt das Objekt, statt den Bereich zu ziehen.
-                auf_objekt = any(o.covers(tx, ty) for o in self.objects)
+                auf_objekt = self._objekte_sichtbar and any(
+                    o.covers(tx, ty) for o in self.objects)
                 if x <= tx < x + w and y <= ty < y + h and not doppelt \
                         and not auf_objekt:
                     self._zug = {"art": "schieben", "g": g, "start": (tx, ty),

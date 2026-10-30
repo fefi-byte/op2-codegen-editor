@@ -76,6 +76,8 @@ class _PlacementMixin:
             for item in obj.items:
                 self.scene.removeItem(item)
             self.objects.remove(obj)
+            if self._auswahl and self._auswahl[0] == "object":
+                self._auswahl = None
 
     def _restore_object_silent(self, obj: PlacedObject):
         if obj not in self.objects:
@@ -352,6 +354,11 @@ class _PlacementMixin:
             for item in obj.items:
                 self.scene.removeItem(item)
             self.objects.remove(obj)
+            # Objekt-Auswahl laeuft ueber den Index -- nach dem Entfernen
+            # zeigte sie sonst auf das naechste Objekt.
+            # Object selection is by index; it would now point at the next one.
+            if self._auswahl and self._auswahl[0] == "object":
+                self._auswahl = None
             self._push_undo("remove", obj)
             self._refresh_overview()
             self.statusBar().showMessage(tr("window.status_removed", display=obj.display, n=len(self.objects)))
@@ -422,7 +429,8 @@ class _PlacementMixin:
     def clear_objects_fragen(self):
         """Alle Objekte und Gruppen loeschen -- erst nach Rueckfrage."""
         n = len(self.objects)
-        g = len(self.building_groups) + len(self.reinforce_groups) + len(self.fight_groups)
+        g = (len(self.building_groups) + len(self.reinforce_groups)
+             + len(self.fight_groups) + len(self.mining_groups))
         if QMessageBox.question(
                 self, tr("window.clear_confirm_title"),
                 tr("window.clear_confirm_text", n=n, g=g),
@@ -431,6 +439,7 @@ class _PlacementMixin:
         self.clear_objects()
 
     def clear_objects(self):
+        self._editor_schliessen()
         for obj in self.objects:
             for it in obj.items:
                 self.scene.removeItem(it)
@@ -439,6 +448,7 @@ class _PlacementMixin:
         self.building_groups.clear()
         self.reinforce_groups.clear()
         self.fight_groups.clear()
+        self.mining_groups.clear()      # fehlte: Mining-Gruppen blieben stehen
         self.groups_panel.load()
         self._refresh_overview()
         self.statusBar().showMessage(tr("window.status_objects_cleared"))
