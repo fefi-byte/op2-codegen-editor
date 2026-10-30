@@ -175,14 +175,40 @@ class SpriteSatz:
                 i = liste[FAHRZEUG_RICHTUNG] if liste[FAHRZEUG_RICHTUNG] is not None else liste[0]
             else:
                 i = liste[GEBAEUDE_NORMAL] if len(liste) > GEBAEUDE_NORMAL else None
+                if i is None and liste[1] is not None:
+                    # Ohne Normalansicht (Wachposten, Garage): die Stufe
+                    # "leicht beschaedigt" -- sie zeigt das ganze Gebaeude.
+                    # No normal view: "lightly damaged" shows the whole building.
+                    i = liste[1]
             if i is not None and i >= 0:
                 return i
         return None
 
-    def bild(self, map_id: str, plymouth: bool, spieler: int = 0):
+    # Waffentuerme: Index in den Tabellen [Wachposten, Tiger, Lynx, Panther]
+    _TURM_SPALTE = {"mapGuardPost": 0, "mapTiger": 1, "mapLynx": 2, "mapPanther": 3}
+    # Standardwaffe, wenn keine gewaehlt ist (Eden / Plymouth)
+    _TURM_STANDARD = ("mapLaser", "mapMicrowave")
+
+    def _turm_index(self, map_id, plymouth, waffe) -> int | None:
+        spalte = self._TURM_SPALTE.get(map_id)
+        if spalte is None:
+            return None
+        tuerme = self._tabelle.get("turrets", {})
+        if not waffe or waffe in ("mapNone", "mapAny"):
+            waffe = self._TURM_STANDARD[1 if plymouth else 0]
+        # Waffen ohne Turm-Tabelle (z.B. EMP: Grafik haengt am Spieler) --
+        # lieber nur das Fahrgestell als einen falschen Turm.
+        # Weapons without a turret table: chassis only, never a wrong turret.
+        tab = tuerme.get(waffe)
+        if not tab or not tab[spalte]:
+            return None
+        return tab[spalte][FAHRZEUG_RICHTUNG]
+
+    def bild(self, map_id: str, plymouth: bool, spieler: int = 0, waffe: str | None = None):
         """(QPixmap, QPoint) -- Bild und Versatz zur Mitte der Bezugskachel,
-        oder None, wenn es fuer diesen Typ keine Grafik gibt."""
-        schl = (map_id, plymouth, spieler)
+        oder None, wenn es fuer diesen Typ keine Grafik gibt. Kampffahrzeuge
+        und Wachposten bekommen den Turm ihrer Waffe obenauf."""
+        schl = (map_id, plymouth, spieler, waffe)
         if schl in self._cache:
             return self._cache[schl]
         self._laden()
@@ -191,7 +217,12 @@ class SpriteSatz:
             a = self._anim_index(map_id, plymouth)
             if a is not None and 0 <= a < len(self._anims):
                 (dx, dy), ebenen = self._anims[a]
-                erg = self._zusammensetzen(ebenen, dx, dy, spieler)
+                ebenen = [(bi, ox - dx, oy - dy) for bi, ox, oy in ebenen]
+                t = self._turm_index(map_id, plymouth, waffe)
+                if t is not None and 0 <= t < len(self._anims):
+                    (tx, ty), turm = self._anims[t]
+                    ebenen += [(bi, ox - tx, oy - ty) for bi, ox, oy in turm]
+                erg = self._zusammensetzen(ebenen, 0, 0, spieler)
         self._cache[schl] = erg
         return erg
 

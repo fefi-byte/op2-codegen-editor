@@ -120,7 +120,9 @@ class _PlacementMixin:
         rect.setZValue(1050)
         self.scene.addItem(rect)
         if kind in ("structure", "vehicle"):
-            geist = self._sprite_item(_map_id, self.player_spin.value(), tx, ty, alpha=0.75)
+            waffe = self.weapon_combo.currentData() if self.weapon_row.isVisible() else None
+            geist = self._sprite_item(_map_id, self.player_spin.value(), tx, ty, alpha=0.75,
+                                      waffe=waffe)
             if geist is not None:
                 geist.setZValue(1049)
                 rect.setBrush(Qt.NoBrush)
@@ -187,13 +189,13 @@ class _PlacementMixin:
             return self.players[spieler].colony == Colony.Plymouth
         return False
 
-    def _sprite_item(self, map_id, spieler, tx, ty, alpha=1.0):
+    def _sprite_item(self, map_id, spieler, tx, ty, alpha=1.0, waffe=None):
         """QGraphicsPixmapItem mit der echten Grafik -- Eden oder Plymouth je
         nach Kolonie des Spielers, in seiner Spielerfarbe. None ohne Grafik."""
         satz = self._sprites()
         if satz is None:
             return None
-        b = satz.bild(map_id, self._ist_plymouth(spieler), spieler)
+        b = satz.bild(map_id, self._ist_plymouth(spieler), spieler, waffe)
         if b is None:
             return None
         pm, off = b
@@ -479,7 +481,8 @@ class _PlacementMixin:
         x0 = (obj.tile_x - fw // 2) * SCENE_TILE
         y0 = (obj.tile_y - fh // 2) * SCENE_TILE
         rect = QGraphicsRectItem(x0, y0, fw * SCENE_TILE, fh * SCENE_TILE)
-        sprite = self._sprite_item(obj.map_id, obj.player, obj.tile_x, obj.tile_y) \
+        sprite = self._sprite_item(obj.map_id, obj.player, obj.tile_x, obj.tile_y,
+                                   waffe=(obj.params or {}).get("weapon")) \
             if obj.kind in ("structure", "vehicle") else None
         if sprite is not None:
             # Echte Grafik: das Rechteck bleibt nur als feiner Rahmen der
