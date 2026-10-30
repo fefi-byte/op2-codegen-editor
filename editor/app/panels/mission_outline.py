@@ -31,6 +31,28 @@ _TYP_FARBE = {
 }
 
 
+def _suchtext(t) -> str:
+    """Alles Durchsuchbare eines Triggers in Kleinbuchstaben: Kommentar,
+    Ordner und je Aktion die Zusammenfassung plus Namensfelder."""
+    from ..summary import action_summary
+    teile = [getattr(t, "comment", "") or "", getattr(t, "folder", "") or "",
+             getattr(t, "group_name", "") or "", getattr(t, "target_unit", "") or ""]
+
+    def lauf(aktionen):
+        for a in aktionen or []:
+            try:
+                teile.append(action_summary(a))
+            except Exception:
+                pass
+            for feld in ("group_name", "source_group_name", "target", "unit_ref",
+                         "text", "var_name", "comment", "custom_name"):
+                teile.append(str(getattr(a, feld, "") or ""))
+            lauf(getattr(a, "then_actions", None))
+            lauf(getattr(a, "else_actions", None))
+    lauf(t.actions)
+    return " ".join(teile).lower()
+
+
 def _punkt(farbe: QColor, groesse: int = 10, rund: bool = False) -> QIcon:
     pix = QPixmap(groesse, groesse)
     pix.fill(Qt.transparent)
@@ -55,6 +77,7 @@ class MissionOutline(QWidget):
     ausgewaehlt = Signal(str, object)
     bearbeiten = Signal(str, object)
     neu = Signal(str)
+    kontext = Signal(str, object, object)     # Art, Bezug, globale Position
 
     def __init__(self, window):
         super().__init__()
@@ -98,6 +121,8 @@ class MissionOutline(QWidget):
         self.baum.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.baum.currentItemChanged.connect(self._geaendert)
         self.baum.itemDoubleClicked.connect(self._doppelklick)
+        self.baum.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.baum.customContextMenuRequested.connect(self._rechtsklick)
         self.baum.itemExpanded.connect(lambda it: self._merken(it, True))
         self.baum.itemCollapsed.connect(lambda it: self._merken(it, False))
 
@@ -150,6 +175,24 @@ class MissionOutline(QWidget):
             it.setToolTip(0, "\n".join(t for _s, t in befunde))
             it.setText(0, f"{text}   ⚠")
         eltern.addChild(it)
+        return it
+
+    def _trigger_eintrag(self, eltern, text, i, t, befunde):
+        """Trigger-Zeile: Farbmarke, Kommentar als Tooltip, inaktive gedimmt,
+        und ein Suchtext aus allen Aktionen (Gruppen, Ziele, Texte ...)."""
+        from ..style import TRIGGER_FARBEN
+        farbe = TRIGGER_FARBEN.get(getattr(t, "color", "") or "")
+        icon = _punkt(QColor(farbe), 10, rund=True) if farbe else None
+        if not t.enabled_at_start:
+            text = "⏸ " + text
+        it = self._eintrag(eltern, text, "trigger", i, befunde, icon=icon)
+        if not t.enabled_at_start and not befunde:
+            it.setForeground(0, QBrush(_GEDIMMT))
+        kommentar = (getattr(t, "comment", "") or "").strip()
+        if kommentar:
+            alt = it.toolTip(0)
+            it.setToolTip(0, kommentar + (("\n\n" + alt) if alt else ""))
+        it.setData(0, Qt.UserRole + 3, _suchtext(t))
         return it
 
     # ------------------------------------------------------------------
@@ -229,16 +272,16 @@ class MissionOutline(QWidget):
                     return 10 ** 9
             for i, t in sorted(zeit, key=lambda it: marke(it[1])):
                 wdh = "1×" if t.one_shot else "↻"
-                self._eintrag(zw, f"M {t.marks}  {t.name}   {wdh}", "trigger", i,
-                              befunde.get(("trigger", i)))
+                self._trigger_eintrag(zw, f"M {t.marks}  {t.name}   {wdh}", i, t,
+                                      befunde.get(("trigger", i)))
         if rest:
             zw = self._zwischen(ab, "ablauf_ereignis",
                                 tr("outline.by_event", n=len(rest)))
             for i, t in rest:
                 wdh = "1×" if t.one_shot else "↻"
                 art = tr(f"trigger_conditions.{t.condition}")
-                self._eintrag(zw, f"{t.name}  ·  {art}   {wdh}", "trigger", i,
-                              befunde.get(("trigger", i)))
+                self._trigger_eintrag(zw, f"{t.name}  ·  {art}   {wdh}", i, t,
+                                      befunde.get(("trigger", i)))
 
         # Sieg & Niederlage
         sn = self._abschnitt("sieg", tr("outline.conditions"),
@@ -293,6 +336,14 @@ class MissionOutline(QWidget):
         if daten:
             self.ausgewaehlt.emit(daten[0], daten[1])
 
+    def _rechtsklick(self, pos):
+        it = self.baum.itemAt(pos)
+        daten = it.data(0, Qt.UserRole) if it is not None else None
+        if not daten:
+            schl = it.data(0, Qt.UserRole + 1) if it is not None else None
+            daten = ("abschnitt", schl)
+        self.kontext.emit(daten[0], daten[1], self.baum.viewport().mapToGlobal(pos))
+
     def _doppelklick(self, item, _spalte):
         daten = item.data(0, Qt.UserRole)
         if daten:
@@ -302,7 +353,8 @@ class MissionOutline(QWidget):
         text = (text or "").strip().lower()
 
         def zeigen(it) -> bool:
-            eigen = not text or text in it.text(0).lower()
+            extra = it.data(0, Qt.UserRole + 3) or ""
+            eigen = not text or text in it.text(0).lower() or text in extra
             kinder = False
             for k in range(it.childCount()):
                 if zeigen(it.child(k)):

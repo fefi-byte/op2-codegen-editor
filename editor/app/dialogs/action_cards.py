@@ -18,9 +18,83 @@ from .action_daten import (
     _NoWheelFilter,
     schleifen_ref_name,
     schleifen_var,
+    zaehler_var,
 )
 from .condition_dialog import ConditionEditDialog
 from .action_form import ActionInlineForm
+
+
+import copy as _copy
+
+from PySide6.QtCore import QMimeData
+from PySide6.QtGui import QDrag
+
+# Zwischenablage fuer Aktionen -- im ganzen Fenster gueltig, also auch von
+# einem Trigger in einen anderen. Immer Kopien, nie die Originale.
+# Action clipboard, valid window-wide (also across triggers); always copies.
+_ABLAGE: dict = {"aktionen": []}
+_MIME = "application/x-op2-aktion"
+_ZIEHEN: dict = {}          # laufender Zug: {"aktion", "liste"}
+
+
+def ablage_setzen(aktionen) -> None:
+    _ABLAGE["aktionen"] = [_copy.deepcopy(a) for a in aktionen]
+
+
+def ablage_holen() -> list:
+    return [_copy.deepcopy(a) for a in _ABLAGE["aktionen"]]
+
+
+def ablage_anzahl() -> int:
+    return len(_ABLAGE["aktionen"])
+
+
+def _enthaelt_liste(aktion, liste) -> bool:
+    """Liegt `liste` (als Objekt) irgendwo in `aktion`? Verhindert, dass ein
+    Wenn-Block in sich selbst gezogen wird."""
+    for unter in (getattr(aktion, "then_actions", None), getattr(aktion, "else_actions", None)):
+        if unter is None:
+            continue
+        if unter is liste:
+            return True
+        if any(_enthaelt_liste(k, liste) for k in unter):
+            return True
+    return False
+
+
+class _Griff(QLabel):
+    """Anfasser einer Aktionskarte zum Verschieben per Ziehen."""
+    def __init__(self, karte):
+        super().__init__("⠿")
+        self._karte = karte
+        self._start = None
+        self.setCursor(Qt.OpenHandCursor)
+        self.setToolTip(tr("action_editor.tip_drag"))
+        self.setFixedWidth(16)
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet("color: #7f849c; font-size: 13pt;")
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self._start = e.position().toPoint()
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._start is None or not (e.buttons() & Qt.LeftButton):
+            return
+        if (e.position().toPoint() - self._start).manhattanLength() < QApplication.startDragDistance():
+            return
+        self._start = None
+        k = self._karte
+        _ZIEHEN.clear()
+        _ZIEHEN.update({"aktion": k.a, "liste": k.parent_list.actions})
+        mime = QMimeData()
+        mime.setData(_MIME, b"1")
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.setPixmap(k.grab().scaledToWidth(min(320, k.width()), Qt.SmoothTransformation))
+        drag.exec(Qt.MoveAction)
+        _ZIEHEN.clear()
 
 
 def _layout_leeren(lay):
@@ -141,7 +215,99 @@ class ActionListWidget(QWidget):
         self._button_color = button_color
         self.box = QVBoxLayout(self); self.box.setContentsMargins(0, 0, 0, 0)
         self.box.setSpacing(4)
+        self.setAcceptDrops(True)
+        # Einfuege-Strich waehrend des Ziehens / drop indicator
+        self._strich = QFrame(self)
+        self._strich.setFixedHeight(3)
+        self._strich.setStyleSheet("background-color: #89b4fa; border-radius: 1px;")
+        self._strich.hide()
         self.rebuild()
+
+    # --- Struktur geaendert / structure changed -------------------------
+    def _gemeldet(self):
+        cb = self.ctx.get("on_struktur") if isinstance(self.ctx, dict) else None
+        if callable(cb):
+            cb()
+
+    def _alles_neu(self):
+        """Ganzen Aktionsbaum neu aufbauen (Verschieben zwischen Listen)."""
+        cb = self.ctx.get("neu_aufbauen") if isinstance(self.ctx, dict) else None
+        if callable(cb):
+            QTimer.singleShot(0, cb)
+        else:
+            self.rebuild()
+
+    # --- Ziehen und Ablegen / drag and drop -----------------------------
+    def _karten(self):
+        return [self.box.itemAt(i).widget() for i in range(self.box.count())
+                if isinstance(self.box.itemAt(i).widget(), ActionCard)]
+
+    def _index_bei(self, y: int) -> int:
+        for n, k in enumerate(self._karten()):
+            if y < k.geometry().center().y():
+                return n
+        return len(self._karten())
+
+    def _darf(self) -> bool:
+        a = _ZIEHEN.get("aktion")
+        return a is not None and not (a is not None and _enthaelt_liste(a, self.actions))
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasFormat(_MIME) and self._darf():
+            e.acceptProposedAction()
+        else:
+            e.ignore()
+
+    def dragMoveEvent(self, e):
+        if not (e.mimeData().hasFormat(_MIME) and self._darf()):
+            e.ignore()
+            return
+        e.acceptProposedAction()
+        n = self._index_bei(int(e.position().y()))
+        karten = self._karten()
+        if n < len(karten):
+            y = karten[n].geometry().top() - 3
+        elif karten:
+            y = karten[-1].geometry().bottom() + 1
+        else:
+            y = 0
+        self._strich.setGeometry(0, max(0, y), self.width(), 3)
+        self._strich.show()
+        self._strich.raise_()
+
+    def dragLeaveEvent(self, e):
+        self._strich.hide()
+
+    def dropEvent(self, e):
+        self._strich.hide()
+        if not (e.mimeData().hasFormat(_MIME) and self._darf()):
+            e.ignore()
+            return
+        e.acceptProposedAction()
+        self.verschieben(_ZIEHEN["aktion"], _ZIEHEN["liste"],
+                         self._index_bei(int(e.position().y())))
+
+    def verschieben(self, aktion, quelle: list, index: int):
+        """Aktion aus `quelle` an Position `index` dieser Liste setzen."""
+        if _enthaelt_liste(aktion, self.actions):
+            return
+        alt = next(i for i, x in enumerate(quelle) if x is aktion)
+        if quelle is self.actions and alt < index:
+            index -= 1
+        del quelle[alt]
+        self.actions.insert(max(0, min(index, len(self.actions))), aktion)
+        self._alles_neu()
+        self._gemeldet()
+
+    def einfuegen(self, index: int | None = None):
+        neu = ablage_holen()
+        if not neu:
+            return
+        if index is None:
+            index = len(self.actions)
+        self.actions[index:index] = neu
+        self.rebuild()
+        self._gemeldet()
 
     def rebuild(self, expand_last=False):
         while self.box.count():
@@ -188,6 +354,10 @@ class ActionListWidget(QWidget):
 
     def _add(self):
         menu = QMenu(self)
+        if ablage_anzahl():
+            einf = menu.addAction(tr("action_editor.menu_paste", n=ablage_anzahl()))
+            einf.setData("__einfuegen__")
+            menu.addSeparator()
         for gkey, kinds in ACTION_MENU_GROUPS.items():
             sub = menu.addMenu(tr(f"action_groups.{gkey}"))
             for k in kinds:
@@ -205,6 +375,9 @@ class ActionListWidget(QWidget):
         if picked is None:
             return
         k = picked.data()
+        if k == "__einfuegen__":
+            self.einfuegen()
+            return
         if isinstance(k, tuple):
             self.actions.append(TriggerAction(kind="custom", custom_name=k[1]))
             self.rebuild(expand_last=True)
@@ -214,17 +387,78 @@ class ActionListWidget(QWidget):
             neu.unit_type = "mapAny"     # Schleifen-Filter: alle Typen
         self.actions.append(neu)
         self.rebuild(expand_last=(k not in ("noop", "if")))
+        self._gemeldet()
+
+    def _pos(self, a) -> int:
+        # Ueber die Identitaet suchen: Aktionen sind Datenklassen mit ==,
+        # zwei gleiche Kopien wuerden sonst verwechselt.
+        return next(i for i, x in enumerate(self.actions) if x is a)
 
     def _remove(self, a):
-        self.actions.remove(a)
+        del self.actions[self._pos(a)]
         self.rebuild()
+        self._gemeldet()
 
     def _move(self, a, delta):
-        i = self.actions.index(a)
+        i = self._pos(a)
         j = i + delta
         if 0 <= j < len(self.actions):
             self.actions[i], self.actions[j] = self.actions[j], self.actions[i]
             self.rebuild()
+            self._gemeldet()
+
+    def _menue(self, a, knopf):
+        """Menue einer Aktionskarte: verschieben, kopieren, einfuegen ..."""
+        i = self._pos(a)
+        m = QMenu(self)
+        hoch = m.addAction(tr("action_editor.menu_up"))
+        hoch.setEnabled(i > 0)
+        runter = m.addAction(tr("action_editor.menu_down"))
+        runter.setEnabled(i < len(self.actions) - 1)
+        m.addSeparator()
+        kopieren = m.addAction(tr("action_editor.menu_copy"))
+        ausschneiden = m.addAction(tr("action_editor.menu_cut"))
+        duplizieren = m.addAction(tr("action_editor.menu_duplicate"))
+        einfuegen = m.addAction(tr("action_editor.menu_paste_below", n=ablage_anzahl()))
+        einfuegen.setEnabled(ablage_anzahl() > 0)
+        m.addSeparator()
+        einpacken = m.addAction(tr("action_editor.menu_wrap_if"))
+        auspacken = None
+        if a.kind == "if" and not a.else_actions:
+            auspacken = m.addAction(tr("action_editor.menu_unwrap_if"))
+        m.addSeparator()
+        loeschen = m.addAction(tr("action_editor.menu_delete"))
+        gewaehlt = m.exec(knopf.mapToGlobal(knopf.rect().bottomLeft()))
+        if gewaehlt is None:
+            return
+        if gewaehlt is hoch:
+            self._move(a, -1)
+        elif gewaehlt is runter:
+            self._move(a, 1)
+        elif gewaehlt is kopieren:
+            ablage_setzen([a])
+        elif gewaehlt is ausschneiden:
+            ablage_setzen([a])
+            self._remove(a)
+        elif gewaehlt is duplizieren:
+            self.actions.insert(i + 1, _copy.deepcopy(a))
+            self.rebuild()
+            self._gemeldet()
+        elif gewaehlt is einfuegen:
+            self.einfuegen(i + 1)
+        elif gewaehlt is einpacken:
+            # Aktion in einen neuen Wenn-Block stecken (Bedingung danach setzen).
+            block = TriggerAction(kind="if", unit_type="mapAny", then_actions=[a])
+            self.actions[i] = block
+            self.rebuild()
+            self._gemeldet()
+        elif auspacken is not None and gewaehlt is auspacken:
+            # Wenn-Block aufloesen: die Dann-Aktionen ruecken an seine Stelle.
+            self.actions[i:i + 1] = list(a.then_actions)
+            self.rebuild()
+            self._gemeldet()
+        elif gewaehlt is loeschen:
+            self._remove(a)
 
 
 def _zaehle(aktionen) -> int:
@@ -272,16 +506,20 @@ class ActionCard(QFrame):
             self._block_btn.clicked.connect(self._block_umschalten)
             header.addWidget(self._block_btn)
         header.addWidget(self._title_lbl, 1)
-        up = QPushButton("↑"); up.setFixedWidth(26); up.clicked.connect(lambda: parent_list._move(action, -1))
-        dn = QPushButton("↓"); dn.setFixedWidth(26); dn.clicked.connect(lambda: parent_list._move(action, 1))
-        header.addWidget(up); header.addWidget(dn)
+        # Verschieben per Ziehen am Griff; Pfeile, Kopieren & Co. im Menue.
+        # Drag by the handle; arrows, copy & co. live in the menu.
+        header.insertWidget(0, _Griff(self))
+        mehr = QPushButton("⋯"); mehr.setFixedWidth(26)
+        mehr.setToolTip(tr("action_editor.tip_more"))
+        mehr.clicked.connect(lambda: parent_list._menue(action, mehr))
+        header.addWidget(mehr)
         if action.kind not in ("if", "noop"):
             self._toggle_btn = QPushButton("▼"); self._toggle_btn.setFixedWidth(24)
             self._toggle_btn.clicked.connect(self._toggle_form)
             header.addWidget(self._toggle_btn)
         else:
             self._toggle_btn = None
-        rm = QPushButton("✕"); rm.setFixedWidth(28); rm.clicked.connect(lambda: parent_list._remove(action))
+        rm = QPushButton("✕"); rm.setFixedWidth(26); rm.clicked.connect(lambda: parent_list._remove(action))
         apply_role(rm, "danger")
         header.addWidget(rm)
         lay.addLayout(header)
@@ -320,8 +558,11 @@ class ActionCard(QFrame):
             aussen = int(basis.get("foreach_tiefe", 0) or 0)
             mode = getattr(action, "loop_mode", "none") or "none"
             innen = aussen + (1 if mode == "forEach" else 0)
+            z_aussen = int(basis.get("zaehler_tiefe", 0) or 0)
+            z_innen = z_aussen + (1 if mode == "count" else 0)
             self._tiefe_aussen = aussen
-            kind_ctx = dict(basis, foreach_tiefe=innen,
+            self._zaehler_aussen = z_aussen
+            kind_ctx = dict(basis, foreach_tiefe=innen, zaehler_tiefe=z_innen,
                             block_tiefe=int(basis.get("block_tiefe", 0) or 0) + 1)
             ctx = kind_ctx
             loop_box = self._build_loop_row(action, ctx)
@@ -338,11 +579,20 @@ class ActionCard(QFrame):
             body.setSpacing(4)
             body.addWidget(loop_box)
             # Welche Schleifen-Einheit gilt hier? Nur innerhalb von Schleifen.
-            if innen >= 1:
-                teile = [tr("action_editor.loop_here", var=schleifen_var(innen))]
+            teile = []
+            if mode == "forEach" or (mode != "count" and innen >= 1):
+                teile.append(tr("action_editor.loop_here", var=schleifen_var(innen)))
                 if innen >= 2:
                     teile.append(tr("action_editor.loop_outer_var",
                                     var=schleifen_var(innen - 1)))
+            if mode == "count":
+                teile.append(tr("action_editor.loop_here", var=zaehler_var(z_innen)))
+                if z_innen >= 2:
+                    teile.append(tr("action_editor.loop_outer_var",
+                                    var=", ".join(zaehler_var(k) for k in range(z_innen - 1, 0, -1))))
+                if innen >= 1:
+                    teile.append(tr("action_editor.loop_unit_var", var=schleifen_var(innen)))
+            if teile:
                 hinweis = QLabel("   ·   ".join(teile))
                 hinweis.setStyleSheet("color: #a6adc8; font-size: 10pt; padding-left: 2px;")
                 hinweis.setToolTip(tr("action_editor.loop_here_tip"))
@@ -394,11 +644,18 @@ class ActionCard(QFrame):
             if ebene >= 2:
                 titel += "  ·  " + tr("action_editor.block_level", n=ebene)
         elif mode == "count":
-            titel = tr("action_editor.block_count")
+            ebene = getattr(self, "_zaehler_aussen", 0) + 1
+            titel = tr("action_editor.block_count_var", var=zaehler_var(ebene))
+            if ebene >= 2:
+                titel += "  ·  " + tr("action_editor.block_level", n=ebene)
         else:
             titel = tr("action_editor.block_if")
         self._title_lbl.setText(f"<b>{titel}</b>")
         # Auswahl-Text der Schleifenart mit dem Namen, den sie bekaeme.
+        j = self._loop_mode.findData("count")
+        if j >= 0:
+            self._loop_mode.setItemText(j, tr("action_editor.loop_kopf_count_var",
+                                              var=zaehler_var(getattr(self, "_zaehler_aussen", 0) + 1)))
         i = self._loop_mode.findData("forEach")
         if i >= 0:
             self._loop_mode.setItemText(i, tr("action_editor.loop_kopf_foreach_var",

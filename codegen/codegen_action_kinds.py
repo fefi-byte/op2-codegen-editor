@@ -231,6 +231,16 @@ def _emit_createTrigger(action: TriggerAction, indent: str, ctx: dict, depth: in
     return _unbekannt(indent, k)
 
 
+def _emit_stopTrigger(action: TriggerAction, indent: str, ctx: dict, depth: int, k: str) -> list[str]:
+    """Aktion "Trigger beenden": schaltet einen laufenden Trigger ab -- nur,
+    solange er lebt (ein verbrauchter Stub kann neu vergeben sein).
+    Stop a running trigger, guarded by its alive flag."""
+    h = ctx["trigger_helpers"].get(action.target, None)
+    if not h:
+        return [f"{indent}// TODO(editor) stopTrigger target '{action.target}' not found"]
+    return [f"{indent}if (g_save.{h}_an) {{ g_save.{h}_self.Disable(); g_save.{h}_an = false; }}"]
+
+
 def _emit_recordBuilding(action: TriggerAction, indent: str, ctx: dict, depth: int, k: str) -> list[str]:
     """Aktion recordBuilding."""
     # Editor: pick a BuildingGroup, then add a building to its roster so
@@ -834,6 +844,7 @@ _EMITTER = {
     'createUnit': _emit_createUnit,
     'createDisaster': _emit_createDisaster,
     'createTrigger': _emit_createTrigger,
+    'stopTrigger': _emit_stopTrigger,
     'recordBuilding': _emit_recordBuilding,
     'recordTube': _emit_recordTube,
     'recordWall': _emit_recordWall,

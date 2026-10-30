@@ -83,6 +83,7 @@ class EditorWindow(
         self._letzter_klick = (None, 0.0)
         self._objekte_sichtbar = True
         self._overlay_typ = None
+        self.zeitleiste = None
 
     def __init__(self):
         super().__init__()

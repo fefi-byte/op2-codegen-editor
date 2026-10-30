@@ -19,7 +19,36 @@ from codegen_cpp import (
     _compare, _cpp_string, _expr_or_int, _ident, _rect, _resource,
     _strip_map, _xy, _xypos, mapid,
 )
-from codegen_actions import _emit_action_list
+from codegen_actions import _emit_action_list, _emit_action_condition_expr
+
+
+def _extra_expr(t) -> str | None:
+    """Zusatzbedingungen eines Triggers als ein C++-Ausdruck (UND/ODER)."""
+    conds = list(getattr(t, "extra_conditions", None) or [])
+    if not conds:
+        return None
+    parts = [_emit_action_condition_expr(c, 0) for c in conds]
+    op = " || " if (getattr(t, "extra_logic", "and") or "and").lower() == "or" else " && "
+    return parts[0] if len(parts) == 1 else "(" + op.join(parts) + ")"
+
+
+def _gate_lines(t, helper: str, ctx: dict, native: bool) -> list[str]:
+    """Anfang des Callbacks: Zusatzbedingungen pruefen, Handle-Status pflegen.
+
+    native=True: Engine-Trigger. Ohne Zusatzbedingungen verbraucht die Engine
+    einen einmaligen Trigger selbst -> nur "_an" loeschen. Mit Zusatz laeuft
+    er wiederholend; erst wenn die Bedingungen gelten, schaltet er sich ab.
+    Start of the callback: check extra conditions, keep the handle state."""
+    has_handle = helper in ctx.get("trigger_handles", ())
+    extra = _extra_expr(t)
+    out: list[str] = []
+    if extra is not None:
+        out.append(f"    if (!({extra})) return;   // Zusatzbedingungen / extra conditions")
+    if native and has_handle and t.one_shot:
+        if extra is not None:
+            out.append(f"    g_save.{helper}_self.Disable();")
+        out.append(f"    g_save.{helper}_an = false;")
+    return out
 
 
 
@@ -263,6 +292,7 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
         # checks the condition, the callback just has to run the actions (see
         # _trigger_call below for the trigger creation).
         lines.append(f"Export void {cb_fn}() {{")
+        lines.extend(_gate_lines(t, helper, ctx, native=True))
         lines.extend(_emit_action_list(t.actions, "    ", ctx))
         lines.append(f"}}")
     elif t.condition == "unitDied":
@@ -278,9 +308,11 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
             lines.append(f"    if ({uvar}.unitID == 0 || {uvar}.IsLive()) return;")
         else:
             lines.append(f"    return;  // TODO(editor) unitDied: unit '{t.target_unit}' not declared")
+        lines.extend(_gate_lines(t, helper, ctx, native=False))
         lines.extend(_emit_action_list(t.actions, "    ", ctx))
         if t.one_shot:
             lines.append(f"    g_save.{helper}_self.Disable();")
+            lines.append(f"    g_save.{helper}_an = false;")
         lines.append(f"}}")
     elif t.condition == "findUnit":
         # Pollt jede 10 Ticks (wiederholender TimeTrigger), prueft jeden
@@ -302,21 +334,31 @@ def _emit_trigger_helper(t: TriggerDef, helper: str, ctx: dict) -> list[str]:
                          f"&& _u{i}.GetType() == {mapid(c.unit_type)};")
         all_ready = " && ".join(f"_ready{i}" for i in range(len(checks)))
         lines.append(f"    if (!({all_ready})) return;")
+        lines.extend(_gate_lines(t, helper, ctx, native=False))
         for line in _emit_action_list(t.actions, "    ", ctx):
             lines.append(line)
         if t.one_shot:
             lines.append(f"    g_save.{helper}_self.Disable();")
+            lines.append(f"    g_save.{helper}_an = false;")
         lines.append(f"}}")
     else:
         lines.append(f"Export void {cb_fn}() {{}}  // TODO(editor) unsupported condition: {t.condition}")
 
     # --- Helper: erzeugt den Engine-Trigger / creates the engine trigger ---
     lines.append(f"static void {helper}() {{")
+    has_handle = helper in ctx.get("trigger_handles", ())
     if t.condition in ("findUnit", "unitDied"):
         lines.append(f'    g_save.{helper}_self = CreateTimeTrigger(1, 0, 10, "{cb_fn}");')
+        lines.append(f"    g_save.{helper}_an = true;")
     else:
-        expr = _trigger_call(t.condition, t, ctx, "1", one_shot, cb_fn)
-        if expr is not None:
+        # Mit Zusatzbedingungen wiederholt der Engine-Trigger, bis sie gelten.
+        # With extra conditions the engine trigger repeats until they hold.
+        engine_one_shot = "0" if _extra_expr(t) is not None else one_shot
+        expr = _trigger_call(t.condition, t, ctx, "1", engine_one_shot, cb_fn)
+        if expr is not None and has_handle:
+            lines.append(f"    g_save.{helper}_self = {expr};")
+            lines.append(f"    g_save.{helper}_an = true;")
+        elif expr is not None:
             lines.append(f"    {expr};")
         elif t.condition in ("attacked", "damaged"):
             lines.append(f"    // TODO(editor) {t.condition}: group '{getattr(t, 'group_name', '')}' not declared")

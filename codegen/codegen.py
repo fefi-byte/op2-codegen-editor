@@ -68,6 +68,22 @@ def _build_codegen_context(mission: Mission) -> dict:
         ctx["trigger_helpers_list"].append(helper)
         if t.name not in ctx["trigger_helpers"]:
             ctx["trigger_helpers"][t.name] = helper
+    # Trigger, die ein Handle in g_save brauchen: Ziel einer "Trigger
+    # beenden"-Aktion, oder einmalig mit Zusatzbedingungen (schaltet sich nach
+    # dem erfolgreichen Durchlauf selbst ab), oder die Poll-Arten.
+    # Triggers that need a handle in g_save: targets of stopTrigger, one-shot
+    # triggers with extra conditions (self-disable), and the polling kinds.
+    handles: set[str] = set()
+    for t in (mission.triggers or []):
+        for a in _walk_actions(t.actions):
+            if a.kind == "stopTrigger" and a.target in ctx["trigger_helpers"]:
+                handles.add(ctx["trigger_helpers"][a.target])
+    for i, t in enumerate(mission.triggers or []):
+        h = ctx["trigger_helpers_list"][i]
+        if (t.extra_conditions and t.one_shot) or t.condition == "unitDied" \
+                or (t.condition == "findUnit" and list(getattr(t, "unit_checks", None) or [])):
+            handles.add(h)
+    ctx["trigger_handles"] = handles
     idx = 0
     for g in (getattr(mission, "building_groups", None) or []):
         ctx["group_vars"][g.name] = f"_grp_{idx}_{_ident(g.name)}"; idx += 1
@@ -392,11 +408,14 @@ def generate_levelmain(mission: Mission) -> str:
         add(f"    UnitEx {var};")
     # findUnit-/unitDied-Trigger-Handles (zum Disable nach dem ersten Feuern)
     # findUnit/unitDied trigger handles (to Disable after the first fire)
-    for i, t in enumerate(mission.triggers or []):
-        if t.condition == "findUnit" and list(getattr(t, "unit_checks", None) or []):
-            add(f"    Trigger {ctx['trigger_helpers_list'][i]}_self;")
-        elif t.condition == "unitDied":
-            add(f"    Trigger {ctx['trigger_helpers_list'][i]}_self;")
+    # plus "_an": lebt der Trigger noch? Nur dann darf er abgeschaltet werden --
+    # ein verbrauchter Stub kann von der Engine neu vergeben sein.
+    # plus "_an": is the trigger still alive? Only then may it be disabled --
+    # a spent stub may have been reused by the engine.
+    for h in ctx["trigger_helpers_list"]:
+        if h in ctx["trigger_handles"]:
+            add(f"    Trigger {h}_self;")
+            add(f"    bool {h}_an;")
     add("};")
     add("static MissionSave g_save;")
     add("")

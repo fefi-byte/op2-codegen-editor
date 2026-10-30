@@ -359,6 +359,7 @@ ACTION_KINDS = {
     "Einheit erzeugen":                  "createUnit",
     "Katastrophe ausloesen":             "createDisaster",
     "Anderen Trigger erstellen (Laufzeit)": "createTrigger",
+    "Trigger beenden":                   "stopTrigger",
     "RecordBuilding":                    "recordBuilding",
     "RecordTube-Linie":                  "recordTube",
     "RecordWall-Linie":                  "recordWall",
@@ -391,7 +392,7 @@ ACTION_KINDS = {
 # resp. superseded by FightGroups + group command); existing projects using
 # them still load and build.
 ACTION_MENU_GROUPS = {
-    "general":  ["if", "message", "showDialog", "modVar", "createTrigger",
+    "general":  ["if", "message", "showDialog", "modVar", "createTrigger", "stopTrigger",
                  "addVictory", "addDefeat", "customCode"],
     "units":    ["createUnit", "unitCmd", "fightGroupCmd",
                  "assignToGroup", "setTargCount"],

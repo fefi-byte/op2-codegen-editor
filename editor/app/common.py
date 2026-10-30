@@ -49,7 +49,7 @@ from mission_model import (
     ActionCondition, BeaconSpec, BuildingGroupSpec, Colony, Condition, DifficultySetup,
     FightGroupSpec, FindUnitCheck, MiningGroupSpec, Mission, MissionType, PlayerSpec,
     ReinforceGroupSpec, ReinforceTargetSpec, StartMessage, TriggerAction, TriggerDef,
-    UnitSpec, VariableDef, WallTubeSpec, action_from_dict,
+    UnitSpec, VariableDef, WallTubeSpec, action_from_dict, trigger_from_dict,
 )
 from techs import load_techs
 

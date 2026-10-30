@@ -54,6 +54,8 @@ class _MissionMixin:
         self.outline.ausgewaehlt.connect(self._auswahl_aus_liste)
         self.outline.bearbeiten.connect(self._bearbeiten_oeffnen)
         self.outline.neu.connect(self._neu_anlegen)
+        self.outline.kontext.connect(self._gliederung_menue)
+        self._trigger_ablage = None
 
         editor = QWidget()
         ev = QVBoxLayout(editor)
@@ -424,8 +426,8 @@ class _MissionMixin:
     def _trigger_umbenennen(self, alt: str, neu: str) -> int:
         """createTrigger-Aktionen, die Trigger `alt` anlegen, auf `neu` umstellen."""
         n = self._verweise_umbenennen(("target",), alt, neu,
-                                      lambda x: getattr(x, "kind", None) == "createTrigger"
-                                      or (isinstance(x, dict) and x.get("kind") == "createTrigger"))
+                                      lambda x: getattr(x, "kind", None) in ("createTrigger", "stopTrigger")
+                                      or (isinstance(x, dict) and x.get("kind") in ("createTrigger", "stopTrigger")))
         if n:
             self.statusBar().showMessage(
                 tr("outline.status_renamed_trigger", alt=alt, neu=neu, n=n))
@@ -474,6 +476,123 @@ class _MissionMixin:
                       self.fight_groups, self.mining_groups):
             lauf(liste)
         return n
+
+    # ------------------------------------------------------------------
+    # Rechtsklick in der Gliederung, Trigger kopieren/duplizieren
+    # Right-click in the outline, copy/duplicate triggers
+
+    def _freier_triggername(self, basis: str) -> str:
+        namen = {t.name for t in self.triggers}
+        if basis not in namen:
+            return basis
+        n = 2
+        while f"{basis} {n}" in namen:
+            n += 1
+        return f"{basis} {n}"
+
+    def _trigger_einsetzen(self, t, index=None) -> int:
+        t.name = self._freier_triggername(t.name)
+        if index is None:
+            index = len(self.triggers)
+        self.triggers.insert(index, t)
+        self.trigger_panel.refresh()
+        self._refresh_overview()
+        self._gliederung_auffrischen()
+        self._auswahl = ("trigger", index)
+        self.outline.waehle("trigger", index, signal=False)
+        return index
+
+    def _zu_trigger_springen(self, i: int):
+        """Aus der Ablaufleiste: aktuellen Trigger uebernehmen, anderen oeffnen."""
+        if 0 <= i < len(self.triggers):
+            self._bearbeiten_oeffnen("trigger", i)
+
+    def _trigger_duplizieren(self, i: int) -> int:
+        return self._trigger_einsetzen(copy.deepcopy(self.triggers[i]), i + 1)
+
+    def _trigger_kopieren(self, i: int) -> None:
+        self._trigger_ablage = copy.deepcopy(self.triggers[i])
+        self.statusBar().showMessage(tr("outline.status_copied", name=self.triggers[i].name))
+
+    def _trigger_einfuegen(self, nach=None) -> int | None:
+        if self._trigger_ablage is None:
+            return None
+        return self._trigger_einsetzen(copy.deepcopy(self._trigger_ablage),
+                                       None if nach is None else nach + 1)
+
+    def _gliederung_menue(self, art, bezug, pos):
+        """Kontextmenue der Gliederung -- vor allem fuer Trigger."""
+        from .style import TRIGGER_FARBEN
+        m = QMenu(self)
+        einfuegen = None
+        if self._trigger_ablage is not None:
+            einfuegen = m.addAction(tr("outline.menu_paste_trigger",
+                                       name=self._trigger_ablage.name))
+        if art != "trigger":
+            if einfuegen is None:
+                return
+            if m.exec(pos) is einfuegen:
+                self._trigger_einfuegen()
+            return
+        t = self.triggers[bezug]
+        bearbeiten = m.addAction(tr("outline.menu_edit"))
+        m.addSeparator()
+        aktiv = m.addAction(tr("outline.menu_active"))
+        aktiv.setCheckable(True)
+        aktiv.setChecked(t.enabled_at_start)
+        einmal = m.addAction(tr("outline.menu_one_shot"))
+        einmal.setCheckable(True)
+        einmal.setChecked(t.one_shot)
+        farb_menue = m.addMenu(tr("outline.menu_color"))
+        farb_akt = {}
+        keine = farb_menue.addAction(tr("triggers.color_none"))
+        farb_akt[keine] = ""
+        for key, hexwert in TRIGGER_FARBEN.items():
+            pm = QPixmap(12, 12)
+            pm.fill(QColor(hexwert))
+            a = farb_menue.addAction(QIcon(pm), tr(f"triggers.color_{key}"))
+            farb_akt[a] = key
+        m.addSeparator()
+        dupl = m.addAction(tr("outline.menu_duplicate"))
+        kopieren = m.addAction(tr("outline.menu_copy"))
+        if einfuegen is not None:
+            m.removeAction(einfuegen)
+            m.addAction(einfuegen)
+        m.addSeparator()
+        loeschen = m.addAction(tr("outline.menu_delete"))
+        g = m.exec(pos)
+        if g is None:
+            return
+        if g is bearbeiten:
+            self._bearbeiten_oeffnen("trigger", bezug)
+            return
+        if g is aktiv:
+            t.enabled_at_start = not t.enabled_at_start
+        elif g is einmal:
+            t.one_shot = not t.one_shot
+        elif g in farb_akt:
+            t.color = farb_akt[g]
+        elif g is dupl:
+            self._trigger_duplizieren(bezug)
+            return
+        elif g is kopieren:
+            self._trigger_kopieren(bezug)
+            return
+        elif einfuegen is not None and g is einfuegen:
+            self._trigger_einfuegen(bezug)
+            return
+        elif g is loeschen:
+            if QMessageBox.question(self, tr("outline.delete_title"),
+                                    tr("outline.delete_text"),
+                                    QMessageBox.Yes | QMessageBox.No,
+                                    QMessageBox.No) != QMessageBox.Yes:
+                return
+            del self.triggers[bezug]
+            self._auswahl = None
+            self.trigger_panel.load()
+        self.trigger_panel.refresh()
+        self._refresh_overview()
+        self._gliederung_auffrischen()
 
     def _gliederung_auffrischen(self):
         if getattr(self, "outline", None) is None:
@@ -795,7 +914,8 @@ class _MissionMixin:
         self._ebenen_knoepfe = {}
         for schl, art, an in (("window.layer_objects", "objekte", True),
                               ("window.layer_groups", "gruppen", True),
-                              ("window.layer_triggers", "trigger", True)):
+                              ("window.layer_triggers", "trigger", True),
+                              ("window.layer_timeline", "zeitleiste", True)):
             b = QPushButton(tr(schl))
             b.setCheckable(True)
             b.setChecked(an)
@@ -804,6 +924,12 @@ class _MissionMixin:
             lay.addWidget(b)
             self._ebenen_knoepfe[art] = b
         leiste.adjustSize()
+        from .zeitleiste import Zeitleiste
+        self.zeitleiste = Zeitleiste(self.view, self)
+        self.zeitleiste.gewaehlt.connect(self._zeitleiste_gewaehlt)
+        self.zeitleiste.geoeffnet.connect(lambda i: self._bearbeiten_oeffnen("trigger", i))
+        self.view.oben = self.zeitleiste
+        self.zeitleiste.auffrischen()
         self.view.unten_links = leiste
         self.view.ecken_platzieren()
         # Gruppen und Trigger-Orte von Anfang an zeigen.
@@ -814,7 +940,22 @@ class _MissionMixin:
         self.trigger_overlay_action.toggled.connect(
             lambda on: self._ebenen_knoepfe["trigger"].setChecked(on))
 
+    def _zeitleiste_gewaehlt(self, i: int):
+        if self._bearbeitung is not None:
+            return
+        self.outline.waehle("trigger", i, signal=True)
+
+    def _zeitleiste_auffrischen(self):
+        z = getattr(self, "zeitleiste", None)
+        if z is not None:
+            z.auffrischen()
+            self.view.ecken_platzieren()
+
     def _ebene_setzen(self, art, an):
+        if art == "zeitleiste":
+            self.zeitleiste.setze_an(an)
+            self.view.ecken_platzieren()
+            return
         if art == "gruppen":
             self.group_overlay_action.setChecked(an)
         elif art == "trigger":

@@ -72,6 +72,7 @@ class MapView(QGraphicsView):
         self._links_unten = False
         # Schwebendes Widget unten links (Ebenenleiste). Floating widget.
         self.unten_links = None
+        self.oben = None            # Zeitleiste / timeline
         # Kachelgitter standardmaessig aus (via set_grid umschaltbar).
         # Tile grid off by default (toggled via set_grid).
         self.show_grid = False
@@ -160,6 +161,12 @@ class MapView(QGraphicsView):
         self._emit_zoom()
 
     def ecken_platzieren(self):
+        o = self.oben
+        if o is not None:
+            vp = self.viewport().geometry()
+            breite = min(vp.width() - 20, 1100)
+            o.setGeometry(vp.left() + 10, vp.top() + 10, max(200, breite), o.height())
+            o.raise_()
         w = self.unten_links
         if w is not None:
             w.adjustSize()

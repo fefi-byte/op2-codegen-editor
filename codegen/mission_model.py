@@ -339,7 +339,7 @@ class TriggerAction:
     x2: int = 0
     y2: int = 0
     player: int = 0
-    target: str = ""          # createTrigger -> Name eines anderen Triggers (Laufzeit-Erstellung)
+    target: str = ""          # createTrigger/stopTrigger -> Name eines anderen Triggers
     group_name: str = ""      # BuildingGroup-Aktionen
     source_group_name: str = ""  # ReinforceGroup, die SetTargCount-Zielgruppe beliefert
     reinforce_priority: int = 1000
@@ -564,6 +564,30 @@ class TriggerDef:
     # "mapAny"/"mapNone", or "code:part" for Spaceport/Garbage subtype).
     unit_type: str = "mapCargoTruck"
     cargo: str = "mapAny"
+    # Zusaetzliche Ausloeser-Bedingungen: der Engine-Trigger (oben) feuert,
+    # die Aktionen laufen aber nur, wenn auch diese gelten (UND/ODER). Bei
+    # einmaligen Triggern wird der Engine-Trigger dann wiederholend angelegt
+    # und erst nach dem erfolgreichen Durchlauf abgeschaltet.
+    # Extra trigger conditions: the engine trigger fires, the actions only run
+    # if these hold too. One-shot triggers then repeat until they succeed.
+    extra_conditions: list[ActionCondition] = field(default_factory=list)
+    extra_logic: str = "and"
+    # Nur fuer den Editor: Farbe in der Gliederung ("" = keine).
+    # Editor-only: colour tag in the outline.
+    color: str = ""
+
+
+def trigger_from_dict(d: dict) -> "TriggerDef":
+    """TriggerDef aus einem Dict (Projektdatei, Zwischenablage); unbekannte
+    Schluessel aelterer/neuerer Dateien werden ignoriert."""
+    import dataclasses
+    d = dict(d)
+    actions = [action_from_dict(a) for a in d.pop("actions", [])]
+    checks = [FindUnitCheck(**c) for c in d.pop("unit_checks", [])]
+    extra = [ActionCondition(**c) for c in d.pop("extra_conditions", [])]
+    valid = {f.name for f in dataclasses.fields(TriggerDef)}
+    d = {k: v for k, v in d.items() if k in valid}
+    return TriggerDef(actions=actions, unit_checks=checks, extra_conditions=extra, **d)
 
 
 @dataclass

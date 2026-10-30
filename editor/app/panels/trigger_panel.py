@@ -106,6 +106,16 @@ class TriggerPanel(QWidget):
         self.form = QFormLayout()
         self.form.addRow(tr("triggers.lbl_name"), self.name)
         self.form.addRow(tr("triggers.lbl_folder"), self.folder)
+        # Farbe: nur fuer die Uebersicht in der Gliederung.
+        # Colour: only for orientation in the outline.
+        from ..style import TRIGGER_FARBEN
+        self.farbe = QComboBox()
+        self.farbe.addItem(tr("triggers.color_none"), "")
+        for key, hexwert in TRIGGER_FARBEN.items():
+            pm = QPixmap(12, 12)
+            pm.fill(QColor(hexwert))
+            self.farbe.addItem(QIcon(pm), tr(f"triggers.color_{key}"), key)
+        self.form.addRow(tr("triggers.lbl_color"), self.farbe)
         self.form.addRow(tr("triggers.lbl_comment"), self.comment)
         self.form.addRow(self.at_start)
         self.form.addRow(self.one_shot)
@@ -138,6 +148,8 @@ class TriggerPanel(QWidget):
         self.name.textChanged.connect(self._store_current)
         self.name.editingFinished.connect(self.umbenennen_nachziehen)
         self.folder.textChanged.connect(self._store_current)
+        self.farbe.currentIndexChanged.connect(self._store_current)
+        self.at_start.toggled.connect(lambda *_: self.ablauf_auffrischen())
         self.comment.textChanged.connect(self._store_current)
         self.folder.editingFinished.connect(self._refresh_list)
         for w in (self.cond, self.compare, self.resource, self.building,
@@ -162,6 +174,22 @@ class TriggerPanel(QWidget):
         self.unit_checks_widget = None
         cond_layout.addWidget(self.unit_checks_container)
         self.unit_checks_container.setVisible(False)
+        # Zusaetzliche Bedingungen (UND/ODER) -- gelten zusaetzlich zum
+        # Ausloeser. / Extra conditions on top of the trigger condition.
+        self.zusatz_box = QWidget()
+        zl = QVBoxLayout(self.zusatz_box)
+        zl.setContentsMargins(0, 6, 0, 0)
+        zt = QLabel(tr("triggers.lbl_extra"))
+        zt.setProperty("role", "section")
+        zl.addWidget(zt)
+        zh = QLabel(tr("triggers.hint_extra"))
+        zh.setWordWrap(True)
+        zh.setProperty("secondary", "true")
+        zl.addWidget(zh)
+        self.zusatz_layout = QVBoxLayout()
+        zl.addLayout(self.zusatz_layout)
+        self.zusatz_widget = None
+        cond_layout.addWidget(self.zusatz_box)
         cond_layout.addStretch(1)
         cond_scroll = QScrollArea()
         cond_scroll.setWidgetResizable(True)
@@ -229,6 +257,18 @@ class TriggerPanel(QWidget):
         d_lay.addWidget(cond_section)
         # Bei vielen verschachtelten Wenn-Bloecken: alle auf einmal ein- oder
         # ausklappen. / Collapse or expand all if blocks at once.
+        # Ablaufleiste: wer startet/beendet diesen Trigger, wen startet/
+        # beendet er? Klick springt dorthin.
+        # Flow strip: who starts/stops this trigger, whom does it start/stop.
+        self.ablauf = QLabel("")
+        self.ablauf.setWordWrap(True)
+        self.ablauf.setTextFormat(Qt.RichText)
+        self.ablauf.setStyleSheet(
+            "QLabel { background: #1e1e2e; border: 1px solid #313244; border-radius: 4px;"
+            " padding: 4px 6px; color: #a6adc8; }")
+        self.ablauf.linkActivated.connect(self._ablauf_klick)
+        self.ablauf.hide()
+        d_lay.addWidget(self.ablauf)
         act_kopf = QHBoxLayout()
         act_kopf.addWidget(act_title)
         act_kopf.addStretch(1)
@@ -276,6 +316,70 @@ class TriggerPanel(QWidget):
 
     def refresh(self):
         self._refresh_list()
+
+    def _struktur_geaendert(self):
+        """Aktionen hinzugefuegt/verschoben/geloescht: Validierung, Overlays
+        und Ablaufleiste nachziehen."""
+        self._window._refresh_overview()
+        self.ablauf_auffrischen()
+
+    def _aktionen_neu_aufbauen(self):
+        """Aktionsbaum neu aufbauen und die Scrollposition behalten."""
+        bar = self.act_scroll.verticalScrollBar()
+        pos = bar.value()
+        self.refresh_actions()
+        QTimer.singleShot(0, lambda: bar.setValue(pos))
+
+    def ablauf_auffrischen(self):
+        """Verweise von und zu diesem Trigger als Links anzeigen."""
+        triggers = self._window.triggers
+        if not (0 <= self._idx < len(triggers)):
+            self.ablauf.hide()
+            return
+        t = triggers[self._idx]
+
+        def alle(aktionen):
+            for a in aktionen or []:
+                yield a
+                yield from alle(getattr(a, "then_actions", None))
+                yield from alle(getattr(a, "else_actions", None))
+
+        index = {}
+        for i, x in enumerate(triggers):
+            index.setdefault(x.name, i)
+
+        def link(name):
+            i = index.get(name)
+            if i is None:
+                return f"<span style='color:#f38ba8'>{name} ?</span>"
+            return f"<a style='color:#89b4fa' href='trigger:{i}'>{name}</a>"
+
+        gestartet_von = [x.name for x in triggers if x is not t and any(
+            a.kind == "createTrigger" and a.target == t.name for a in alle(x.actions))]
+        beendet_von = [x.name for x in triggers if x is not t and any(
+            a.kind == "stopTrigger" and a.target == t.name for a in alle(x.actions))]
+        startet = list(dict.fromkeys(a.target for a in alle(t.actions)
+                                     if a.kind == "createTrigger" and a.target))
+        beendet = list(dict.fromkeys(a.target for a in alle(t.actions)
+                                     if a.kind == "stopTrigger" and a.target))
+        zeilen = []
+        quelle = [tr("triggers.flow_at_start")] if t.enabled_at_start else []
+        quelle += [link(n) for n in gestartet_von]
+        zeilen.append(tr("triggers.flow_started_by") + " " +
+                      (", ".join(quelle) if quelle else
+                       "<span style='color:#f9e2af'>" + tr("triggers.flow_never") + "</span>"))
+        if startet:
+            zeilen.append(tr("triggers.flow_starts") + " " + ", ".join(link(n) for n in startet))
+        if beendet:
+            zeilen.append(tr("triggers.flow_stops") + " " + ", ".join(link(n) for n in beendet))
+        if beendet_von:
+            zeilen.append(tr("triggers.flow_stopped_by") + " " + ", ".join(link(n) for n in beendet_von))
+        self.ablauf.setText("<br>".join(zeilen))
+        self.ablauf.show()
+
+    def _ablauf_klick(self, href: str):
+        if href.startswith("trigger:"):
+            self._window._zu_trigger_springen(int(href.split(":", 1)[1]))
 
     def refresh_actions(self, expand_index: int = -1):
         if 0 <= self._idx < len(self._window.triggers):
@@ -356,6 +460,8 @@ class TriggerPanel(QWidget):
             "all_groups": all_groups,
             "on_map_pick": self._on_action_map_pick,
             "on_area_preview": self._on_area_preview,
+            "on_struktur": self._struktur_geaendert,
+            "neu_aufbauen": self._aktionen_neu_aufbauen,
             "variables": w.variables,
             "diff_values": self._diff_values(),
         }
@@ -423,7 +529,9 @@ class TriggerPanel(QWidget):
         arrow = "▾" if self.cond_toggle.isChecked() else "▸"
         title = tr("triggers.lbl_section_condition")
         if 0 <= self._idx < len(self._window.triggers):
-            self.cond_toggle.setText(f"{arrow}  {title}:  {self.cond.currentText()}")
+            n_extra = len(getattr(self._window.triggers[self._idx], "extra_conditions", None) or [])
+            extra = ("  " + tr("triggers.extra_count", n=n_extra)) if n_extra else ""
+            self.cond_toggle.setText(f"{arrow}  {title}:  {self.cond.currentText()}{extra}")
             self.cond_toggle.setEnabled(True)
         else:
             self.cond_toggle.setText(f"{arrow}  {title}")
@@ -487,6 +595,49 @@ class TriggerPanel(QWidget):
         item = find_in(self.tlist.invisibleRootItem())
         if item:
             self.tlist.setCurrentItem(item)
+
+    def _zusatz_laden(self, t):
+        from ..dialogs.action_cards import ConditionListWidget
+        if self.zusatz_widget is not None:
+            self.zusatz_layout.removeWidget(self.zusatz_widget)
+            self.zusatz_widget.deleteLater()
+        panel = self
+
+        class _Adapter:
+            """Bietet dem Bedingungs-Widget die Felder eines Wenn-Blocks."""
+            @property
+            def conditions(self):
+                return t.extra_conditions
+
+            @property
+            def condition_logic(self):
+                return t.extra_logic
+
+            @condition_logic.setter
+            def condition_logic(self, wert):
+                t.extra_logic = wert
+                panel._window._refresh_overview()
+
+        class _Liste(ConditionListWidget):
+            def rebuild(self):
+                super().rebuild()
+                if getattr(self, "_fertig", False):
+                    panel._window._refresh_overview()
+                    panel._update_cond_header()
+
+        w = _Liste(_Adapter(), ctx=self._action_ctx(), button_color=None)
+        w._fertig = True
+        # Verknuepfung erst ab zwei Bedingungen, hier in eigener Zeile.
+        zeile = QHBoxLayout()
+        zeile.addWidget(w.logic)
+        zeile.addStretch(1)
+        halter = QWidget()
+        hl = QVBoxLayout(halter)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.addLayout(zeile)
+        hl.addWidget(w)
+        self.zusatz_widget = halter
+        self.zusatz_layout.addWidget(halter)
 
     def bloecke_setzen(self, zu: bool):
         from ..dialogs.action_cards import ActionCard
@@ -628,11 +779,15 @@ class TriggerPanel(QWidget):
             self.unit_checks_widget = None
         self.unit_checks_widget = UnitChecksWidget(t.unit_checks)
         self.unit_checks_layout.addWidget(self.unit_checks_widget)
+        fi = self.farbe.findData(getattr(t, "color", "") or "")
+        self.farbe.setCurrentIndex(max(0, fi))
+        self._zusatz_laden(t)
         self._loading = False
         self._update_cond_fields()
         self._update_cond_header()
         self._window.clear_action_area_preview()
         self.act_scroll.setWidget(ActionListWidget(t.actions, self._action_ctx()))
+        self.ablauf_auffrischen()
 
     def _store_current(self):
         triggers = self._window.triggers
@@ -641,6 +796,7 @@ class TriggerPanel(QWidget):
         t = triggers[self._idx]
         t.name = self.name.text() or f"Trigger{self._idx + 1}"
         t.folder = self.folder.text().strip()
+        t.color = self.farbe.currentData() or ""
         t.comment = self.comment.text().strip()
         t.enabled_at_start = self.at_start.isChecked()
         t.one_shot = self.one_shot.isChecked()

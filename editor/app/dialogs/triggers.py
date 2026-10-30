@@ -260,12 +260,8 @@ class TriggersDialog(QDialog):
 
     @staticmethod
     def _copy(t):
-        d = asdict(t)
-        acts = [action_from_dict(a) for a in d.pop("actions", [])]
-        checks = [FindUnitCheck(**c) for c in d.pop("unit_checks", [])]
-        valid = {f.name for f in dataclasses.fields(TriggerDef)} - {"actions", "unit_checks"}
-        d = {k: v for k, v in d.items() if k in valid}
-        return TriggerDef(actions=acts, unit_checks=checks, **d)
+        from mission_model import trigger_from_dict
+        return trigger_from_dict(asdict(t))
 
     def _set_form_enabled(self, on):
         for w in list(self._cond_rows.values()) + [self.name, self.folder, self.at_start,

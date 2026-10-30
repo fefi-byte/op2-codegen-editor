@@ -183,3 +183,8 @@ def schleifen_ref_text(ref: str, tiefe) -> str:
     if ref == "<loop:outer>" and tiefe < 2:
         return tr(schl) + f" → {name}  (" + tr("action_editor.loop_outer_is_current") + ")"
     return tr(schl) + f" → {name}"
+
+
+def zaehler_var(ebene: int) -> str:
+    """Zaehler der N-mal-Schleife je Ebene: i, i2, i3 (wie im Codegenerator)."""
+    return "i" if ebene <= 1 else f"i{ebene}"

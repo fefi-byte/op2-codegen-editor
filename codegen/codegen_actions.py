@@ -44,6 +44,11 @@ def _loop_var(depth: int) -> str:
     return "unit" if depth <= 1 else f"unit{depth}"
 
 
+def _count_var(ebene: int) -> str:
+    """Zaehler der N-mal-Schleife: i, i2, i3 ... (wie unit, unit2 ...)."""
+    return "i" if ebene <= 1 else f"i{ebene}"
+
+
 def _resolve_loop_ref(ref: str, depth: int) -> str | None:
     """Resolve a "<loop>"/"<loop:outer>" sentinel to a concrete loop variable
     name at the given nesting depth. Returns None if `ref` isn't a loop
@@ -412,9 +417,15 @@ def _emit_action(action: TriggerAction, indent: str, ctx: dict, depth: int = 0) 
         inner = indent
         inner_depth = depth
         extra_close = 0
+        zaehler_vorher = ctx.get("_zaehler_tiefe", 0)
         if loop_mode == "count":
+            # Je Ebene ein eigener Zaehler (i, i2, i3 ...) -- sonst verdeckt
+            # der innere den aeusseren. / One counter per level.
             n = _expr_or_int(getattr(action, "loop_count", 1))
-            out.append(f"{indent}for (int i = 0; i < {n}; ++i) {{")
+            ebene = zaehler_vorher + 1
+            ctx["_zaehler_tiefe"] = ebene
+            iv = _count_var(ebene)
+            out.append(f"{indent}for (int {iv} = 0; {iv} < {n}; ++{iv}) {{")
             inner = indent + "    "
         elif loop_mode == "forEach":
             inner_depth = depth + 1
@@ -452,6 +463,7 @@ def _emit_action(action: TriggerAction, indent: str, ctx: dict, depth: int = 0) 
             for child in action.else_actions:
                 out.extend(_emit_action(child, inner + "    ", ctx, inner_depth))
         out.append(f"{inner}}}")
+        ctx["_zaehler_tiefe"] = zaehler_vorher
         if loop_mode == "count":
             out.append(f"{indent}}}")
         elif loop_mode == "forEach":

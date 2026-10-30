@@ -116,6 +116,7 @@ class _OverviewMixin:
             self._redraw_planned_actions()
         self._gliederung_auffrischen()
         self._auswahl_zeichnen()
+        self._zeitleiste_auffrischen()
         expanded = {self.overview.topLevelItem(i).text(0).split(" (")[0]
                     for i in range(self.overview.topLevelItemCount())
                     if self.overview.topLevelItem(i).isExpanded()}

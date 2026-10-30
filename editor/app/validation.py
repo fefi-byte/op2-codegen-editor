@@ -36,6 +36,7 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_campaign(w)
     findings += _check_custom_actions(w)
     findings += _check_text_vars(w)
+    findings += _check_trigger_ablauf(w)
     return findings
 
 
@@ -63,13 +64,24 @@ def _check_players(w):
 def _check_triggers(w):
     out = []
     names = {t.name for t in w.triggers}
-    created = {a.target for t in w.triggers for a in t.actions
+    # Auch in Wenn-Bloecken suchen -- vorher galt ein dort erstellter
+    # Trigger faelschlich als "wird nie erstellt".
+    # Also look inside if blocks.
+    created = {a.target for t in w.triggers for a in _walk_actions(t.actions)
                if a.kind == "createTrigger" and a.target}
     for ti, t in enumerate(w.triggers):
         if not t.actions:
             out.append(("warning", tr("validation.trigger_no_actions", name=t.name),
                         ("trigger", ti)))
-        for a in t.actions:
+        for a in _walk_actions(t.actions):
+            if a.kind == "stopTrigger":
+                if not a.target:
+                    out.append(("error", tr("validation.stop_trigger_empty", name=t.name),
+                                ("trigger", ti)))
+                elif a.target not in names:
+                    out.append(("error",
+                                tr("validation.create_trigger_missing", name=t.name, target=a.target),
+                                ("trigger", ti)))
             if a.kind == "createTrigger":
                 if not a.target:
                     out.append(("error", tr("validation.create_trigger_empty", name=t.name),
@@ -679,4 +691,60 @@ def _check_text_vars(w):
 
     for ti, t in enumerate(getattr(w, "triggers", None) or []):
         walk(t.actions, ti, t.name)
+    return out
+
+
+def _check_trigger_ablauf(w):
+    """Ablauf-Pruefungen: Gruppe ohne Einheiten als Ausloeser, gleichzeitige
+    Zeit-Trigger auf dieselbe Gruppe, Trigger beendet sich nur selbst.
+    Flow checks: group without units as a trigger condition, simultaneous
+    time triggers commanding the same group."""
+    out = []
+    gruppen = {g.name: g for g in (list(w.building_groups) + list(w.reinforce_groups)
+                                   + list(w.fight_groups) + list(w.mining_groups))}
+    # Gruppen, die zur Laufzeit gefuellt werden (Welle, Zuweisen, Nachschub).
+    # Groups filled at runtime (wave, assign, reinforcement).
+    gefuellt = set()
+    for t in w.triggers:
+        for a in _walk_actions(t.actions):
+            if a.kind in ("sendAttackWave", "assignToGroup", "setTargCount") and a.group_name:
+                gefuellt.add(a.group_name)
+    for g in w.reinforce_groups:
+        for ziel in getattr(g, "targets", None) or []:
+            gefuellt.add(getattr(ziel, "group_name", ""))
+
+    def leer(name):
+        g = gruppen.get(name)
+        return g is not None and not (getattr(g, "unit_ids", None) or []) and name not in gefuellt
+
+    for ti, t in enumerate(w.triggers):
+        if t.condition in ("attacked", "damaged") and t.group_name and leer(t.group_name):
+            out.append(("warning", tr("validation.trigger_group_empty", name=t.name,
+                                       group=t.group_name), ("trigger", ti)))
+    for c in list(w.victories) + list(w.defeats):
+        if getattr(c, "kind", "") in ("attacked", "damaged") and getattr(c, "group_name", "") \
+                and leer(c.group_name):
+            out.append(("warning", tr("validation.condition_group_empty", group=c.group_name),
+                        ("conditions", None)))
+
+    # Zeit-Trigger zur selben Mark, die dieselbe Gruppe befehligen.
+    # Time triggers at the same mark commanding the same group.
+    def befehligt(t):
+        return {a.group_name for a in _walk_actions(t.actions)
+                if a.kind in ("sendAttackWave", "fightGroupCmd") and a.group_name}
+    gesehen = {}
+    for ti, t in enumerate(w.triggers):
+        if t.condition != "time" or not t.enabled_at_start:
+            continue
+        try:
+            m = int(t.marks)
+        except (TypeError, ValueError):
+            continue
+        for g in befehligt(t):
+            schl = (m, g)
+            if schl in gesehen:
+                out.append(("warning", tr("validation.time_collision", a=gesehen[schl], b=t.name,
+                                           m=m, group=g), ("trigger", ti)))
+            else:
+                gesehen[schl] = t.name
     return out

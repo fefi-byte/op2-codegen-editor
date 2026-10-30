@@ -475,6 +475,70 @@ def check_mission_layout(win, app) -> None:
     check("neue je-Einheit-Schleife ohne Scout-Filter", neu_if.unit_type == "mapAny", neu_if.unit_type)
     win._bearbeiten_bestaetigen()
 
+    # --- Trigger-Funktionen: Beenden, Kopieren, Ziehen, Ablauf, Suche ---
+    from app.dialogs import action_cards as ac
+    t1 = TriggerDef(name="Welle", condition="time", marks=40, one_shot=False,
+                    actions=[TriggerAction(kind="sendAttackWave", group_name="FG")])
+    t2 = TriggerDef(name="Stopper", condition="time", marks=60,
+                    actions=[TriggerAction(kind="stopTrigger", target="Welle"),
+                             TriggerAction(kind="message", text="a"),
+                             TriggerAction(kind="if", unit_type="mapAny",
+                                           then_actions=[TriggerAction(kind="message", text="b")])])
+    win.triggers += [t1, t2]
+    win._refresh_overview()
+    i2 = len(win.triggers) - 1
+    win._bearbeiten_oeffnen("trigger", i2)
+    pump(app)
+    check("Ablaufleiste nennt beendeten Trigger", "Welle" in win.trigger_panel.ablauf.text(),
+          win.trigger_panel.ablauf.text()[:120])
+    liste = win.trigger_panel.act_scroll.widget()
+    # Nachricht "a" in den Wenn-Block ziehen
+    innen = [w_ for w_ in liste.findChildren(ac.ActionListWidget) if w_.actions is t2.actions[2].then_actions][0]
+    innen.verschieben(t2.actions[1], t2.actions, 0)
+    pump(app)
+    check("Aktion in Wenn-Block gezogen", len(t2.actions) == 2 and
+          [a_.text for a_ in t2.actions[1].then_actions] == ["a", "b"],
+          str([a_.kind for a_ in t2.actions]))
+    # Block nicht in sich selbst ziehen
+    liste = win.trigger_panel.act_scroll.widget()
+    innen = [w_ for w_ in liste.findChildren(ac.ActionListWidget) if w_.actions is t2.actions[1].then_actions][0]
+    innen.verschieben(t2.actions[1], t2.actions, 0)
+    check("Wenn-Block nicht in sich selbst", len(t2.actions) == 2)
+    # Kopieren + Einfuegen in einen anderen Trigger
+    ac.ablage_setzen([t2.actions[1]])
+    win._bearbeiten_bestaetigen()
+    win._bearbeiten_oeffnen("trigger", i2 - 1)
+    pump(app)
+    win.trigger_panel.act_scroll.widget().einfuegen()
+    check("Einfuegen in anderen Trigger", t1.actions[-1].kind == "if"
+          and t1.actions[-1] is not t2.actions[1], str([a_.kind for a_ in t1.actions]))
+    win._bearbeiten_bestaetigen()
+    # Trigger duplizieren / Suche nach Gruppe in Aktionen
+    n = len(win.triggers)
+    win._trigger_duplizieren(i2 - 1)
+    check("Trigger dupliziert mit freiem Namen", len(win.triggers) == n + 1
+          and win.triggers[i2].name == "Welle 2", win.triggers[i2].name)
+    from mission_model import ActionCondition as AC
+    t1.extra_conditions.append(AC(kind="buildingCount", value=3))
+    win.outline.suche.setText("fg")
+    pump(app)
+    baum = win.outline.baum
+    sichtbar = []
+    def sammeln(it):
+        for k_ in range(it.childCount()):
+            c_ = it.child(k_)
+            if not c_.isHidden() and c_.data(0, 256):
+                sichtbar.append(c_.text(0))
+            sammeln(c_)
+    sammeln(baum.invisibleRootItem())
+    check("Suche findet Trigger ueber Gruppe in Aktion", any("Welle" in x for x in sichtbar), str(sichtbar))
+    win.outline.suche.setText("")
+    check("Zeitleiste zeigt Zeit-Trigger", win.zeitleiste.isVisible()
+          and len(win.zeitleiste.eintraege()) >= 2)
+    from app.validation import validate_mission
+    texte = " ".join(t_ for _s, t_, _z in validate_mission(win))
+    check("Validierung: gleiche Mark + Gruppe", "Mark 40" in texte or "mark 40" in texte, "")
+
     # Bereich ziehen landet in Rueckgaengig/Wiederholen.
     g = win.building_groups[0]
     win._auswahl = ("group", g.name)

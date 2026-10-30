@@ -332,10 +332,7 @@ class _ProjectMixin:
             self.triggers = []
             for td in data["triggers"]:
                 try:
-                    td = dict(td)
-                    actions = [action_from_dict(a) for a in td.pop("actions", [])]
-                    checks = [FindUnitCheck(**c) for c in td.pop("unit_checks", [])]
-                    self.triggers.append(TriggerDef(actions=actions, unit_checks=checks, **td))
+                    self.triggers.append(trigger_from_dict(td))
                 except Exception as e:
                     fehler.append((f"Trigger {td.get('name', '?')}", e))
                     continue

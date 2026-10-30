@@ -46,6 +46,7 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
         "createUnit": ["unit_editor", "player"],
         "createDisaster": ["disaster_type", "x_expr", "y_expr"],
         "createTrigger": ["target"],
+        "stopTrigger": ["target"],
         "recordBuilding": ["group", "building_editor"],
         "recordTube": ["group", "tube_editor"],
         "recordWall": ["group", "wall_editor"],

@@ -153,6 +153,8 @@ def _action_summary_core(a) -> str:
         return f"Disaster: {dtype}"
     if a.kind == "createTrigger":
         return tr("sum.act_createtrigger", target=a.target)
+    if a.kind == "stopTrigger":
+        return tr("sum.act_stoptrigger", target=a.target)
     if a.kind == "recordBuilding":
         entries = list(getattr(a, "building_list", None) or [])
         if not entries:
@@ -303,6 +305,7 @@ _KIND_TITLE = {
     "createUnit": "Einheit erzeugen",
     "createDisaster": "Katastrophe",
     "createTrigger": "Trigger starten",
+    "stopTrigger": "Trigger beenden",
     "recordBuilding": "recordBuilding",
     "recordTube": "recordTube",
     "recordWall": "recordWall",
@@ -373,6 +376,8 @@ def action_params_summary(a) -> str:
         return tr("sum.p_disaster_at", t=dtype, x=x, y=y)
     if a.kind == "createTrigger":
         return f"→ {getattr(a, 'target', '?')}"
+    if a.kind == "stopTrigger":
+        return f"■ {getattr(a, 'target', '?')}"
     if a.kind == "recordBuilding":
         entries = list(getattr(a, "building_list", None) or [])
         if len(entries) <= 1:

@@ -26,6 +26,7 @@ ACTION_CATEGORY_COLOR: dict[str, str] = {
     "createUnit":      GREEN,
     "createDisaster":  PEACH,
     "createTrigger":   MAUVE,
+    "stopTrigger":     MAUVE,
     "recordBuilding":  YELLOW,
     "recordTube":      YELLOW,
     "recordWall":      YELLOW,
@@ -58,6 +59,14 @@ IF_LOOP_COLOR: dict[str, str] = {
 # Colors for the When/Then-Else sub-sections inside an if/for block.
 CONDITION_SECTION_COLOR = GREEN
 ACTION_SECTION_COLOR = YELLOW
+
+
+# Farbmarken fuer Trigger in der Gliederung (Schluessel bleibt in der Datei).
+# Colour tags for triggers in the outline (the key is stored in the file).
+TRIGGER_FARBEN = {
+    "red": "#f38ba8", "orange": "#fab387", "yellow": "#f9e2af",
+    "green": "#a6e3a1", "blue": "#89b4fa", "purple": "#cba6f7", "grey": "#7f849c",
+}
 
 
 def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
