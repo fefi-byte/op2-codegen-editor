@@ -185,12 +185,34 @@ class _PlacementMixin:
         try:
             dlg = ObjectEditDialog(self, obj, len(self.players))
             if dlg.exec() == QDialog.Accepted:
+                alt = obj.unit_name
                 dlg.apply_to(obj)
                 self._redraw_object(obj)
+                self._einheit_umbenannt(obj, alt)
                 label = obj.unit_name or obj.display
                 self.statusBar().showMessage(tr("window.status_updated", label=label))
         finally:
             self._object_dialog_open = False
+
+    def _einheit_umbenannt(self, obj, alt):
+        """Neuer Einheitenname -> Verweise (unitCmd, Bedingungen, Mine/Smelter
+        der Mining-Gruppen) mitziehen, sofern der alte Name eindeutig war.
+        Follow a unit rename in unit_ref/target_unit/mine_ref/smelter_ref."""
+        neu = obj.unit_name
+        if not alt or alt == neu:
+            return
+        if any(o is not obj and o.unit_name in (alt, neu) for o in self.objects if neu):
+            return
+        if not neu:
+            return
+        n = self._verweise_umbenennen(
+            ("unit_ref", "target_unit", "mine_ref", "smelter_ref"), alt, neu)
+        if n:
+            self.trigger_panel.refresh_actions()
+            self.conditions_panel.load()
+            self.groups_panel.load()
+            self._refresh_overview()
+            self.statusBar().showMessage(tr("outline.status_renamed_unit", alt=alt, neu=neu, n=n))
 
     def on_place(self, tx, ty):
         if self._action_pick and self._action_pick.get("kind") == "lava_paint":

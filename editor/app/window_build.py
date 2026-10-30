@@ -238,6 +238,7 @@ class _BuildMixin:
         )
 
     def show_code(self):
+        self._editor_uebernehmen()
         if self.map is None:
             return
         try:
@@ -263,6 +264,7 @@ class _BuildMixin:
         dlg.exec()
 
     def do_build(self):
+        self._editor_uebernehmen()
         if self.map is None:
             return
         if self.mission_folder is None or not self.mission_folder.is_dir():
@@ -353,6 +355,7 @@ class _BuildMixin:
         return CONTENT_ROOT / "op2launcher.exe"
 
     def _launch_op2(self):
+        self._editor_uebernehmen()
         launcher = self._op2launcher_path()
         if not launcher.exists():
             QMessageBox.warning(self, tr("window.launcher_missing_title"),

@@ -404,6 +404,15 @@ def check_mission_layout(win, app) -> None:
     check("Trigger umbenennen zieht createTrigger mit",
           tr_.actions[-1].target == "Ziel2", tr_.actions[-1].target)
 
+    # Einheit umbenennen zieht unitCmd mit.
+    o = win.objects[0]
+    o.unit_name = "Held"
+    tr_.actions.append(TriggerAction(kind="unitCmd", unit_ref="Held"))
+    o.unit_name = "Held2"
+    win._einheit_umbenannt(o, "Held")
+    check("Einheit umbenennen zieht unitCmd mit",
+          tr_.actions[-1].unit_ref == "Held2", tr_.actions[-1].unit_ref)
+
 
 def check_terrain(win, app) -> None:
     """Gelaende-Tab: Overlay am Tab, Stempeln, Zelltyp, Rueckgaengig."""

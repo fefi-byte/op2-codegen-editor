@@ -272,6 +272,14 @@ class _MissionMixin:
         self._linke_seite.setCurrentIndex(0)
         self._sidebar_tabs.setCurrentIndex(0)
 
+    def _editor_uebernehmen(self):
+        """Offenen Editor bestaetigen, bevor gespeichert oder gebaut wird --
+        sonst landet ein Stand im Projekt/in der DLL, den ein spaeteres
+        "Abbrechen" im Editor wieder verwirft.
+        Confirm an open editor before saving or building."""
+        if getattr(self, "outline", None) is not None and self._bearbeitung is not None:
+            self._bearbeiten_bestaetigen()
+
     def _editor_schliessen(self):
         """Editor ohne Rueckfrage zu, Auswahl weg -- vor dem Laden eines
         Projekts oder dem Loeschen aller Objekte. Sonst wuerde ein spaeteres

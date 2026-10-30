@@ -233,6 +233,7 @@ class _ProjectMixin:
 
     def save_project(self):
         """Speichert in den bekannten Mission-Ordner; sonst fragt nach einem neuen."""
+        self._editor_uebernehmen()
         if self.mission_folder and self.mission_folder.is_dir():
             self._save_to_folder(self.mission_folder)
             return
@@ -240,6 +241,7 @@ class _ProjectMixin:
 
     def save_project_as(self):
         """Fragt nach einem Mission-Namen und schreibt die Mission self-contained."""
+        self._editor_uebernehmen()
         from PySide6.QtWidgets import QInputDialog
         default_name = mission_project._slugify(self.mission_name)
         name, ok = QInputDialog.getText(
