@@ -227,7 +227,19 @@ class TriggerPanel(QWidget):
         d_lay.addWidget(self.empty_hint)
         d_lay.addWidget(self.cond_toggle)
         d_lay.addWidget(cond_section)
-        d_lay.addWidget(act_title)
+        # Bei vielen verschachtelten Wenn-Bloecken: alle auf einmal ein- oder
+        # ausklappen. / Collapse or expand all if blocks at once.
+        act_kopf = QHBoxLayout()
+        act_kopf.addWidget(act_title)
+        act_kopf.addStretch(1)
+        for schl, zu in (("triggers.btn_blocks_collapse", True),
+                         ("triggers.btn_blocks_expand", False)):
+            b = QPushButton(tr(schl))
+            b.setFlat(True)
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(lambda _=False, z=zu: self.bloecke_setzen(z))
+            act_kopf.addWidget(b)
+        d_lay.addLayout(act_kopf)
         d_lay.addWidget(act_widget, 1)
 
         self._listenteil = left
@@ -475,6 +487,16 @@ class TriggerPanel(QWidget):
         item = find_in(self.tlist.invisibleRootItem())
         if item:
             self.tlist.setCurrentItem(item)
+
+    def bloecke_setzen(self, zu: bool):
+        from ..dialogs.action_cards import ActionCard
+        w = self.act_scroll.widget()
+        if w is None:
+            return
+        for karte in w.findChildren(ActionCard):
+            karte.setze_block(zu)
+            if zu:
+                karte.collapse()
 
     def umbenennen_nachziehen(self):
         """Neuer Triggername -> createTrigger-Aktionen mitziehen (nach der

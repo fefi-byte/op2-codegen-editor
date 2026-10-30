@@ -65,12 +65,19 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-def tint_stylesheet(color: str, *, border_px: int = 2, alpha: int = 140) -> str:
+def tint_stylesheet(color: str, *, border_px: int = 2, alpha: int = 140,
+                    objekt: str | None = None) -> str:
     """Nur eine Umrandung in `color` (kein Flaechenhintergrund) -- `alpha`
-    (0-255) blasst den Rand ab, damit er nicht zu grell wirkt."""
+    (0-255) blasst den Rand ab, damit er nicht zu grell wirkt.
+
+    `objekt`: nur das QFrame mit diesem objectName umranden. Ohne erbt jedes
+    Kind-QFrame (auch jedes QLabel!) den Rahmen -- daher die vielen Kaestchen.
+    `objekt`: outline only the frame with this objectName; otherwise every
+    child QFrame, including every QLabel, inherits the border."""
     r, g, b = _hex_to_rgb(color)
+    sel = f"QFrame#{objekt}" if objekt else "QFrame"
     return (
-        "QFrame {"
+        sel + " {"
         f" border: {border_px}px solid rgba({r}, {g}, {b}, {alpha});"
         " border-radius: 4px;"
         " background-color: transparent;"

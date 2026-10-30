@@ -425,6 +425,30 @@ def check_mission_layout(win, app) -> None:
           tr_.actions[-1].unit_ref)
     del win._name_loeschen_fragen
 
+    # Wenn-Bloecke einklappbar; Zustand uebersteht den Neuaufbau der Liste,
+    # und der Seitenbereich wird beim Trigger breiter und danach wieder schmal.
+    wenn = TriggerAction(kind="if", then_actions=[TriggerAction(kind="message")])
+    tw = TriggerDef(name="Wenn", condition="time", marks=5)
+    tw.actions.append(wenn)
+    win.triggers.append(tw)
+    win._refresh_overview()
+    b0 = win._mission_dock.width()
+    win._bearbeiten_oeffnen("trigger", len(win.triggers) - 1)
+    pump(app)
+    check("Seitenbereich beim Trigger breiter", win._mission_dock.width() > b0,
+          f"{b0} -> {win._mission_dock.width()}")
+    win.trigger_panel.bloecke_setzen(True)
+    win.trigger_panel.refresh_actions()
+    pump(app)
+    karten = [k for k in win.trigger_panel.act_scroll.widget().findChildren(ActionCard)
+              if k.a.kind == "if"]
+    check("Wenn-Block bleibt nach Neuaufbau zu",
+          karten and not karten[0]._if_body.isVisible() and karten[0]._if_kurz.isVisible())
+    win._bearbeiten_bestaetigen()
+    pump(app)
+    check("Seitenbereich danach wieder schmal", abs(win._mission_dock.width() - b0) < 30,
+          f"{win._mission_dock.width()} vs {b0}")
+
     # Bereich ziehen landet in Rueckgaengig/Wiederholen.
     g = win.building_groups[0]
     win._auswahl = ("group", g.name)

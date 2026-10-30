@@ -88,6 +88,8 @@ class _MissionMixin:
         self._linke_seite.addWidget(self.outline)
         self._linke_seite.addWidget(editor)
         dock.setWidget(self._linke_seite)
+        self._mission_dock = dock
+        self._dock_breite_vorher = None
         # Kein Titel ueber der Seite: der Modus steht oben in der Leiste.
         dock.setTitleBarWidget(QWidget())
         self._sidebar_tabs.knoepfe_zeigen(False)
@@ -229,6 +231,7 @@ class _MissionMixin:
             self.groups_panel.select(bezug)
             pfad = f"{tr('outline.groups')}  ›  {bezug}"
         elif art == "trigger":
+            self._seite_verbreitern()
             self.trigger_panel.refresh()
             self._sidebar_tabs.setCurrentWidget(self.trigger_panel)
             self.trigger_panel.als_editor(True)
@@ -263,7 +266,26 @@ class _MissionMixin:
         self._auswahl_zeichnen()
         self._ort_zeigen(self._auswahl_ort(art, bezug))
 
+    def _seite_verbreitern(self):
+        """Trigger mit verschachtelten Wenn-Bloecken brauchen Breite: die
+        Seite fuer die Dauer der Bearbeitung auf ~45 % des Fensters ziehen
+        (nie schmaler machen), beim Schliessen zurueck.
+        Widen the side area to ~45 % while a trigger is edited."""
+        dock = self._mission_dock
+        jetzt = dock.width()
+        ziel = min(760, int(self.width() * 0.45))
+        if ziel > jetzt + 20:
+            if self._dock_breite_vorher is None:
+                self._dock_breite_vorher = jetzt
+            self.resizeDocks([dock], [ziel], Qt.Horizontal)
+
+    def _seite_zuruecksetzen(self):
+        if self._dock_breite_vorher is not None:
+            self.resizeDocks([self._mission_dock], [self._dock_breite_vorher], Qt.Horizontal)
+            self._dock_breite_vorher = None
+
     def _bearbeiten_ende(self):
+        self._seite_zuruecksetzen()
         for p in (self.groups_panel, self.trigger_panel, self.conditions_panel):
             p.als_editor(False)
         self._bearbeitung = None

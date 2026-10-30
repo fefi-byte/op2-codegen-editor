@@ -21,6 +21,26 @@ from .condition_dialog import ConditionEditDialog
 from .action_form import ActionInlineForm
 
 
+def _layout_leeren(lay):
+    while lay.count():
+        item = lay.takeAt(0)
+        if item.widget():
+            item.widget().deleteLater()
+        elif item.layout():
+            _layout_leeren(item.layout())
+
+
+def _klein_knopf(text, farbe=None) -> QPushButton:
+    """Flacher, niedriger Hinzufuegen-Knopf -- die vollen Knoepfe machten
+    verschachtelte Bloecke unnoetig hoch. / Low add button."""
+    b = QPushButton(text)
+    b.setCursor(Qt.PointingHandCursor)
+    b.setMaximumHeight(24)
+    if farbe:
+        b.setStyleSheet(tint_button_stylesheet(farbe) + "QPushButton { padding: 1px 6px; }")
+    return b
+
+
 class ConditionListWidget(QWidget):
     """Wenn-Block: Liste von Bedingungen + Verknuepfung.
 
@@ -32,7 +52,18 @@ class ConditionListWidget(QWidget):
         self.ctx = ctx or {}
         self._button_color = button_color
         self._wheel_filter = _NoWheelFilter(self)
+        # Die Verknuepfung steht im Kopf des Wenn-Abschnitts (siehe ActionCard)
+        # statt in einer eigenen Zeile. / The AND/OR link sits in the section
+        # header instead of its own row.
+        self.logic = QComboBox()
+        self.logic.addItems([tr("action_editor.logic_and"), tr("action_editor.logic_or")])
+        self.logic.setCurrentIndex(1 if self.a.condition_logic == "or" else 0)
+        self.logic.currentIndexChanged.connect(self._set_logic)
+        self.logic.setFocusPolicy(Qt.StrongFocus)
+        self.logic.installEventFilter(self._wheel_filter)
+        self.logic.setToolTip(tr("action_editor.lbl_logic"))
         self.box = QVBoxLayout(self); self.box.setContentsMargins(0, 0, 0, 0)
+        self.box.setSpacing(2)
         self.rebuild()
 
     def rebuild(self):
@@ -40,14 +71,9 @@ class ConditionListWidget(QWidget):
             item = self.box.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        logic_row = QHBoxLayout()
-        logic = QComboBox(); logic.addItems([tr("action_editor.logic_and"), tr("action_editor.logic_or")])
-        logic.setCurrentIndex(1 if self.a.condition_logic == "or" else 0)
-        logic.currentIndexChanged.connect(self._set_logic)
-        logic.setFocusPolicy(Qt.StrongFocus)
-        logic.installEventFilter(self._wheel_filter)
-        logic_row.addWidget(QLabel(tr("action_editor.lbl_logic"))); logic_row.addWidget(logic); logic_row.addStretch(1)
-        self.box.addLayout(logic_row)
+            elif item.layout():
+                _layout_leeren(item.layout())
+        self.logic.setVisible(len(self.a.conditions) > 1)
         for c in list(self.a.conditions):
             row = QHBoxLayout()
             row.addWidget(QLabel(((tr("action_editor.not_prefix") + " ") if c.negate else "") + action_condition_summary(c)), 1)
@@ -55,13 +81,17 @@ class ConditionListWidget(QWidget):
             rm = QPushButton("✕"); rm.setFixedWidth(28); rm.clicked.connect(lambda _, cc=c: self._remove(cc))
             row.addWidget(edit); row.addWidget(rm)
             self.box.addLayout(row)
-        add = QPushButton(tr("action_editor.btn_add_condition")); add.clicked.connect(self._add)
-        if self._button_color:
-            add.setStyleSheet(tint_button_stylesheet(self._button_color))
+        add = _klein_knopf(tr("action_editor.btn_add_condition"), self._button_color)
+        add.clicked.connect(self._add)
         self.box.addWidget(add)
 
     def _set_logic(self, idx):
         self.a.condition_logic = "or" if idx == 1 else "and"
+        karte = self.parent()
+        while karte is not None and not isinstance(karte, ActionCard):
+            karte = karte.parent()
+        if karte is not None:
+            karte._if_zusammenfassung_auffrischen()
 
     def _add(self):
         dlg = ConditionEditDialog(self,
@@ -96,6 +126,7 @@ class ActionListWidget(QWidget):
         self.ctx = ctx
         self._button_color = button_color
         self.box = QVBoxLayout(self); self.box.setContentsMargins(0, 0, 0, 0)
+        self.box.setSpacing(4)
         self.rebuild()
 
     def rebuild(self, expand_last=False):
@@ -105,9 +136,8 @@ class ActionListWidget(QWidget):
                 item.widget().deleteLater()
         for a in list(self.actions):
             self.box.addWidget(ActionCard(a, self, self.ctx))
-        add = QPushButton(tr("action_editor.btn_add_action")); add.clicked.connect(self._add)
-        if self._button_color:
-            add.setStyleSheet(tint_button_stylesheet(self._button_color))
+        add = _klein_knopf(tr("action_editor.btn_add_action"), self._button_color)
+        add.clicked.connect(self._add)
         self.box.addWidget(add)
         # Restplatz unten aufsaugen: Karten behalten ihre natuerliche Hoehe,
         # statt auf die volle Panelhoehe auseinandergezogen zu werden.
@@ -180,6 +210,16 @@ class ActionListWidget(QWidget):
             self.rebuild()
 
 
+def _zaehle(aktionen) -> int:
+    """Aktionen inkl. verschachtelter Wenn-Zweige zaehlen."""
+    n = 0
+    for a in aktionen:
+        n += 1
+        if a.kind == "if":
+            n += _zaehle(a.then_actions) + _zaehle(a.else_actions)
+    return n
+
+
 class ActionCard(QFrame):
     """Eine einzelne Aktions-Karte (Kopfzeile + Inline-Formular; bei 'if' Wenn/Dann/Sonst).
 
@@ -193,12 +233,27 @@ class ActionCard(QFrame):
         self.ctx = ctx
         self._expanded = False
         self.setFrameShape(QFrame.StyledPanel)
+        self.setObjectName("aktionskarte")
         self._apply_card_style(action)
         lay = QVBoxLayout(self)
-        lay.setSpacing(2)
+        lay.setSpacing(1)
+        lay.setContentsMargins(6, 4, 4, 4)
 
         self._title_lbl = QLabel(f"<b>{action_kind_label(action.kind)}</b>")
         header = QHBoxLayout()
+        header.setSpacing(3)
+        self._block_btn = None
+        if action.kind == "if":
+            # Wenn-Block einklappbar: zugeklappt bleibt eine Zeile mit der
+            # Zusammenfassung. Der Zustand haengt an der Aktion, damit er einen
+            # Neuaufbau der Liste (z.B. nach einem Karten-Pick) uebersteht.
+            # Collapsible if block; the state lives on the action so it
+            # survives list rebuilds.
+            self._block_btn = QPushButton()
+            self._block_btn.setFixedWidth(24)
+            self._block_btn.setToolTip(tr("action_editor.tip_block_toggle"))
+            self._block_btn.clicked.connect(self._block_umschalten)
+            header.addWidget(self._block_btn)
         header.addWidget(self._title_lbl, 1)
         up = QPushButton("↑"); up.setFixedWidth(26); up.clicked.connect(lambda: parent_list._move(action, -1))
         dn = QPushButton("↓"); dn.setFixedWidth(26); dn.clicked.connect(lambda: parent_list._move(action, 1))
@@ -240,27 +295,100 @@ class ActionCard(QFrame):
             self._form = None
 
         if action.kind == "if":
-            lay.addWidget(self._build_loop_row(action, ctx))
-            lay.addWidget(self._section(
-                tr("action_editor.lbl_if"), ConditionListWidget(action, ctx=ctx, button_color=CONDITION_SECTION_COLOR),
-                CONDITION_SECTION_COLOR))
-            lay.addWidget(self._section(
-                tr("action_editor.lbl_then"), ActionListWidget(action.then_actions, ctx, button_color=ACTION_SECTION_COLOR),
+            loop_box = self._build_loop_row(action, ctx)
+            # Schleifenart sitzt in der Kopfzeile statt in eigener Zeile.
+            header.insertWidget(header.indexOf(self._title_lbl) + 1, self._loop_mode)
+            self._if_kurz = QLabel("")
+            self._if_kurz.setWordWrap(True)
+            self._if_kurz.setStyleSheet("color: #a6adc8; font-size: 10pt; padding: 0 2px 2px 6px;")
+            lay.addWidget(self._if_kurz)
+            self._if_body = QWidget()
+            body = QVBoxLayout(self._if_body)
+            body.setContentsMargins(0, 2, 0, 0)
+            body.setSpacing(4)
+            body.addWidget(loop_box)
+            self._cond_list = ConditionListWidget(action, ctx=ctx, button_color=CONDITION_SECTION_COLOR)
+            body.addWidget(self._section(tr("action_editor.lbl_if"), self._cond_list,
+                                         CONDITION_SECTION_COLOR, kopf_extra=self._cond_list.logic))
+            body.addWidget(self._section(
+                tr("action_editor.lbl_then"),
+                ActionListWidget(action.then_actions, ctx, button_color=ACTION_SECTION_COLOR),
                 ACTION_SECTION_COLOR))
-            lay.addWidget(self._section(
-                tr("action_editor.lbl_else"), ActionListWidget(action.else_actions, ctx, button_color=ACTION_SECTION_COLOR),
-                ACTION_SECTION_COLOR))
+            # Leerer Sonst-Zweig nur als kleiner Knopf -- ein ganzer leerer
+            # Abschnitt kostete pro Block rund 70 px.
+            # An empty else branch is just a small button.
+            self._else_frame = self._section(
+                tr("action_editor.lbl_else"),
+                ActionListWidget(action.else_actions, ctx, button_color=ACTION_SECTION_COLOR),
+                ACTION_SECTION_COLOR)
+            self._else_btn = _klein_knopf(tr("action_editor.btn_add_else"), ACTION_SECTION_COLOR)
+            self._else_btn.clicked.connect(self._sonst_zeigen)
+            body.addWidget(self._else_frame)
+            body.addWidget(self._else_btn)
+            hat_sonst = bool(action.else_actions)
+            self._else_frame.setVisible(hat_sonst)
+            self._else_btn.setVisible(not hat_sonst)
+            lay.addWidget(self._if_body)
+            self._block_anzeigen()
 
-    def _section(self, title: str, body: QWidget, color: str) -> QWidget:
+    # --- Wenn-Block ein-/ausklappen / collapse an if block ---------------
+
+    def _block_zu(self) -> bool:
+        return bool(getattr(self.a, "_ui_zu", False))
+
+    def _block_umschalten(self):
+        self.a._ui_zu = not self._block_zu()
+        self._block_anzeigen()
+
+    def setze_block(self, zu: bool):
+        if self.a.kind == "if":
+            self.a._ui_zu = zu
+            self._block_anzeigen()
+
+    def _block_anzeigen(self):
+        zu = self._block_zu()
+        self._if_body.setVisible(not zu)
+        self._block_btn.setText("▶" if zu else "▼")
+        self._if_zusammenfassung_auffrischen()
+
+    def _if_zusammenfassung_auffrischen(self):
+        if self.a.kind != "if":
+            return
+        zu = self._block_zu()
+        self._if_kurz.setVisible(zu)
+        if not zu:
+            return
+        a = self.a
+        verb = " " + (tr("action_editor.kurz_oder") if a.condition_logic == "or"
+                      else tr("action_editor.kurz_und")) + " "
+        teile = [((tr("action_editor.not_prefix") + " ") if c.negate else "")
+                 + action_condition_summary(c) for c in a.conditions[:2]]
+        wenn = verb.join(teile) + (" …" if len(a.conditions) > 2 else "")
+        text = tr("action_editor.kurz_if", wenn=wenn or "–", n=_zaehle(a.then_actions))
+        if a.else_actions:
+            text += "  ·  " + tr("action_editor.kurz_else", n=_zaehle(a.else_actions))
+        self._if_kurz.setText(text)
+
+    def _sonst_zeigen(self):
+        self._else_frame.setVisible(True)
+        self._else_btn.setVisible(False)
+
+    def _section(self, title: str, body: QWidget, color: str, kopf_extra=None) -> QWidget:
         """Bedingungen-/Aktionen-Unterbereich eines if/for-Blocks, farblich abgehoben.
 
         Conditions/actions sub-section of an if/for block, visually tinted."""
         frame = QFrame()
-        frame.setStyleSheet(tint_stylesheet(color, border_px=1, alpha=100))
+        frame.setObjectName("abschnitt")
+        frame.setStyleSheet(tint_stylesheet(color, border_px=1, alpha=100, objekt="abschnitt"))
         flay = QVBoxLayout(frame)
-        flay.setContentsMargins(4, 4, 4, 4)
-        lbl = QLabel(f"<b>{title}</b>")
-        flay.addWidget(lbl)
+        flay.setContentsMargins(6, 3, 3, 3)
+        flay.setSpacing(3)
+        kopf = QHBoxLayout()
+        kopf.addWidget(QLabel(f"<b>{title}</b>"))
+        if kopf_extra is not None:
+            kopf.addWidget(kopf_extra)
+        kopf.addStretch(1)
+        flay.addLayout(kopf)
         flay.addWidget(body)
         return frame
 
@@ -274,14 +402,13 @@ class ActionCard(QFrame):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(2)
 
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel(tr("action_editor.lbl_loop")))
+        # Die Auswahl selbst setzt der Aufrufer in die Kopfzeile.
+        # The caller puts the mode combo into the card header.
         self._loop_mode = QComboBox()
-        self._loop_mode.addItem(tr("action_editor.loop_mode_none"), "none")
-        self._loop_mode.addItem(tr("action_editor.loop_mode_count"), "count")
-        self._loop_mode.addItem(tr("action_editor.loop_mode_foreach"), "forEach")
-        mode_row.addWidget(self._loop_mode, 1)
-        lay.addLayout(mode_row)
+        self._loop_mode.setToolTip(tr("action_editor.lbl_loop"))
+        self._loop_mode.addItem(tr("action_editor.loop_kopf_none"), "none")
+        self._loop_mode.addItem(tr("action_editor.loop_kopf_count"), "count")
+        self._loop_mode.addItem(tr("action_editor.loop_kopf_foreach"), "forEach")
 
         # count: Anzahl (Ausdruck erlaubt)
         self._loop_count = ExprEdit(diff_values=diff_values)
@@ -410,11 +537,11 @@ class ActionCard(QFrame):
             # loop visible at a glance without looking garish.
             loop_mode = getattr(action, "loop_mode", "none") or "none"
             accent = IF_LOOP_COLOR.get(loop_mode, IF_LOOP_COLOR["none"])
-            self.setStyleSheet(tint_stylesheet(accent, border_px=2))
+            self.setStyleSheet(tint_stylesheet(accent, border_px=2, objekt="aktionskarte"))
         else:
             accent = ACTION_CATEGORY_COLOR.get(kind, SURFACE1)
             self.setStyleSheet(
-                "QFrame {"
+                "QFrame#aktionskarte {"
                 " border: 1px solid #3a3a5c;"
                 f" border-left: 3px solid {accent};"
                 " border-radius: 4px;"
