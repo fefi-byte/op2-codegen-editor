@@ -134,6 +134,7 @@ class _BuildMixin:
         if dlg.exec() == QDialog.Accepted:
             self.players = dlg.players
             self._refresh_player_range()
+            self._objekte_neu_zeichnen()      # Eden/Plymouth-Grafik nachziehen
             self._refresh_overview()
             self.statusBar().showMessage(tr("window.status_players_configured", n=len(self.players)))
 

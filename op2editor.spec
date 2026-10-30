@@ -25,6 +25,7 @@ datas = [
     (str(ROOT / "config.example.ini"), "."),
     # App icon
     (str(APP / "resources" / "Structure.ico"), "app/resources"),
+    (str(APP / "resources" / "unit_anims.json"), "app/resources"),
     # C++ mission templates (written to project folder by mission_project.py)
     (str(APP / "templates"), "app/templates"),
     # codegen + mapview Python sources

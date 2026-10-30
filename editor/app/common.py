@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QProgressDialog, QPushButton, QSpinBox, QTabWidget, QTableWidget, QTableWidgetItem,
     QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
     QGraphicsItem, QGraphicsPathItem, QGraphicsEllipseItem, QMenu, QFrame, QScrollArea,
+    QGraphicsPixmapItem,
 )
 from PySide6.QtGui import QFont, QPainterPath, QPolygonF, QCursor
 from PySide6.QtCore import QPointF

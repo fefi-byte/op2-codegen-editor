@@ -119,6 +119,12 @@ class _PlacementMixin:
         rect.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 55)))
         rect.setZValue(1050)
         self.scene.addItem(rect)
+        if kind in ("structure", "vehicle"):
+            geist = self._sprite_item(_map_id, self.player_spin.value(), tx, ty, alpha=0.75)
+            if geist is not None:
+                geist.setZValue(1049)
+                rect.setBrush(Qt.NoBrush)
+                self._placement_preview_items.append(geist)
         label = QGraphicsSimpleTextItem(display.split()[0][:10])
         label.setBrush(QBrush(Qt.white))
         label.setPos(x0 + 2, y0 + 1)
@@ -168,6 +174,44 @@ class _PlacementMixin:
             if obj.covers(tx, ty):
                 return obj
         return None
+
+    def _sprites(self):
+        """Spielgrafik (lazy). None, wenn op2_art.prt/OP2_ART.BMP fehlen."""
+        if getattr(self, "_sprite_satz", None) is None:
+            from .sprites import SpriteSatz
+            self._sprite_satz = SpriteSatz(OP2_DIR)
+        return self._sprite_satz if self._sprite_satz.verfuegbar else None
+
+    def _ist_plymouth(self, spieler: int) -> bool:
+        if 0 <= spieler < len(self.players):
+            return self.players[spieler].colony == Colony.Plymouth
+        return False
+
+    def _sprite_item(self, map_id, spieler, tx, ty, alpha=1.0):
+        """QGraphicsPixmapItem mit der echten Grafik -- Eden oder Plymouth je
+        nach Kolonie des Spielers, in seiner Spielerfarbe. None ohne Grafik."""
+        satz = self._sprites()
+        if satz is None:
+            return None
+        b = satz.bild(map_id, self._ist_plymouth(spieler), spieler)
+        if b is None:
+            return None
+        pm, off = b
+        it = QGraphicsPixmapItem(pm)
+        it.setPos(tx * SCENE_TILE + SCENE_TILE / 2 + off.x(),
+                  ty * SCENE_TILE + SCENE_TILE / 2 + off.y())
+        # Weiter unten stehende Einheiten verdecken die oberen (wie im Spiel).
+        it.setZValue(5 + ty * 0.001)
+        it.setOpacity(alpha)
+        self.scene.addItem(it)
+        return it
+
+    def _objekte_neu_zeichnen(self):
+        """Alle Objekte neu zeichnen -- z.B. wenn ein Spieler die Kolonie
+        (Eden/Plymouth) wechselt."""
+        for o in self.objects:
+            self._redraw_object(o)
+        self._update_label_zoom()
 
     def _redraw_object(self, obj: PlacedObject):
         for item in obj.items:
@@ -435,14 +479,30 @@ class _PlacementMixin:
         x0 = (obj.tile_x - fw // 2) * SCENE_TILE
         y0 = (obj.tile_y - fh // 2) * SCENE_TILE
         rect = QGraphicsRectItem(x0, y0, fw * SCENE_TILE, fh * SCENE_TILE)
-        rect.setPen(QPen(color, 2))
-        rect.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 120)))
+        sprite = self._sprite_item(obj.map_id, obj.player, obj.tile_x, obj.tile_y) \
+            if obj.kind in ("structure", "vehicle") else None
+        if sprite is not None:
+            # Echte Grafik: das Rechteck bleibt nur als feiner Rahmen der
+            # belegten Kacheln in Spielerfarbe.
+            # Real graphics: the rect stays as a thin footprint outline.
+            pen = QPen(QColor(color.red(), color.green(), color.blue(), 150), 1)
+            pen.setCosmetic(True)
+            rect.setPen(pen)
+            rect.setBrush(Qt.NoBrush)
+        else:
+            rect.setPen(QPen(color, 2))
+            rect.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 120)))
         self.scene.addItem(rect)
         text = obj.unit_name or obj.display.split()[0]
         label = QGraphicsSimpleTextItem(text[:10])
         label.setBrush(QBrush(Qt.black if obj.kind == "beacon" else Qt.white))
         label.setPos(x0 + 2, y0 + 1)
         self._style_map_label(label)
+        if sprite is not None and not obj.unit_name:
+            # Mit echter Grafik ist der Typ zu sehen -- Beschriftung nur fuer
+            # benannte Einheiten. / With real graphics only named units get a label.
+            label.setData(1, "ohne")
+            label.setVisible(False)
         self.scene.addItem(label)
         # Weit herausgezoomt: Punkt in Spielerfarbe in fester Bildschirmgroesse,
         # damit Objekte nicht zu Kruemeln werden.
@@ -456,7 +516,7 @@ class _PlacementMixin:
         marke.setZValue(1090)
         marke.setData(0, "marke")
         self.scene.addItem(marke)
-        obj.items = [rect, label, marke]
+        obj.items = [rect, label, marke] + ([sprite] if sprite is not None else [])
         an = self._objekte_sichtbar
         for it in obj.items:
             it.setVisible(an and it.isVisible())
@@ -483,7 +543,7 @@ class _PlacementMixin:
         for obj in self.objects:
             for item in obj.items:
                 if isinstance(item, QGraphicsSimpleTextItem):
-                    item.setVisible(an and visible)
+                    item.setVisible(an and visible and item.data(1) != "ohne")
                 elif item.data(0) == "marke":
                     item.setVisible(an and not visible)
 
