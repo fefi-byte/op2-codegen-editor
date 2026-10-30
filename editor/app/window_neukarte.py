@@ -25,14 +25,13 @@ class _NeueKarteMixin:
         if self.map is None:
             return
         if getattr(self, "newmap_panel", None) is not None:
-            self._sidebar_tabs.setCurrentIndex(
-                self._sidebar_tabs.indexOf(self.newmap_panel))
+            self._modus_setzen("map")
             return
         from .panels.newmap_panel import NewMapPanel
         panel = NewMapPanel(self)
         self.newmap_panel = panel
-        index = self._sidebar_tabs.addTab(panel, tr("window.tab_newmap"), "karte")
-        self._sidebar_tabs.setCurrentIndex(index)
+        self._sidebar_tabs.addTab(panel, tr("window.tab_newmap"), "karte")
+        self._modus_setzen("map")          # zeigt das Karten-Panel links
         panel.start()
 
     def close_newmap_panel(self, keep: bool):
@@ -47,6 +46,8 @@ class _NeueKarteMixin:
         self.newmap_panel = None
         if index >= 0:
             self._sidebar_tabs.removeTab(index)
+        if self._modus == "map":
+            self._sidebar_tabs.setCurrentWidget(self.terrain_panel)
         self._refresh_overview()
 
     def apply_generated_map(self, generated, params):

@@ -136,6 +136,7 @@ class GroupsPanel(QWidget):
         detail_scroll.setWidgetResizable(True)
         detail_scroll.setWidget(detail_inner)
 
+        self._listenteil = left
         splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(left)
         splitter.addWidget(detail_scroll)
@@ -148,6 +149,12 @@ class GroupsPanel(QWidget):
         self._set_form_enabled(False)
 
     # --- Öffentliche API ---
+
+    def als_editor(self, an: bool) -> None:
+        """Im neuen Layout: nur das Formular zeigen, die Liste steht links in
+        der Missionsgliederung. / Show the form only; the list lives in the
+        mission outline."""
+        self._listenteil.setVisible(not an)
 
     def load(self):
         w = self._window

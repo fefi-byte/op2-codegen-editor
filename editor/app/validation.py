@@ -159,18 +159,18 @@ def _check_building_group_builders(w):
         # Mines are built by a Robo-Miner (beacon deploy), not ConVec+kit.
         if records_mines and "mapRoboMiner" not in roster:
             out.append(("warning", tr("validation.bg_no_miner", name=g.name),
-                        ("group", None)))
+                        ("group", g.name)))
         if records_other:
             if "mapConVec" not in roster:
                 out.append(("warning", tr("validation.bg_no_convec", name=g.name),
-                            ("group", None)))
+                            ("group", g.name)))
             if "mapStructureFactory" not in roster:
                 out.append(("warning", tr("validation.bg_no_structure_factory", name=g.name),
-                            ("group", None)))
+                            ("group", g.name)))
         p = int(getattr(g, "player", 0))
         if 0 <= p < len(players) and getattr(players[p], "is_human", True):
             out.append(("warning", tr("validation.bg_human_player", name=g.name, p=p),
-                        ("group", None)))
+                        ("group", g.name)))
     # Mehrere record_all-Gruppen desselben Spielers rekordieren dieselben
     # Gebaeude doppelt -- beide Gruppen wuerden um den Wiederaufbau
     # konkurrieren.
@@ -230,13 +230,13 @@ def _check_unit_names(w):
              "validation.mining_no_smelter_ref"),
         ):
             if not ref:
-                out.append(("warning", tr(key_missing, name=g.name), ("group", None)))
+                out.append(("warning", tr(key_missing, name=g.name), ("group", g.name)))
             elif ref not in name_types:
                 out.append(("error", tr("validation.ref_unknown", name=g.name, ref=ref),
-                            ("group", None)))
+                            ("group", g.name)))
             elif name_types[ref] not in ok_types:
                 out.append(("error", tr("validation.ref_wrong_type", name=g.name, ref=ref,
-                                        t=name_types[ref]), ("group", None)))
+                                        t=name_types[ref]), ("group", g.name)))
     for attr in ("building_groups", "reinforce_groups", "fight_groups", "mining_groups"):
         for g in (getattr(w, attr, None) or []):
             for uid in (getattr(g, "unit_ids", None) or []):
@@ -254,10 +254,10 @@ def _check_unit_names(w):
         src_name = (getattr(g, "source_group_name", "") or "").strip()
         if not src_name:
             out.append(("warning", tr("validation.mining_no_source", name=g.name),
-                        ("group", None)))
+                        ("group", g.name)))
         elif src_name not in rg_names:
             out.append(("error", tr("validation.mining_source_missing", name=g.name,
-                                    ref=src_name), ("group", None)))
+                                    ref=src_name), ("group", g.name)))
     return out
 
 

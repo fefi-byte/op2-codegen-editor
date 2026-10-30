@@ -271,7 +271,7 @@ class _PlacementMixin:
         if self.map is None or not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
             return
         if not self._placement_active:
-            self._edit_object_at(tx, ty)
+            self._karte_klick(tx, ty)
             return
         sel = self._selected()
         if not sel:
@@ -366,7 +366,23 @@ class _PlacementMixin:
         label.setPos(x0 + 2, y0 + 1)
         self._style_map_label(label)
         self.scene.addItem(label)
-        obj.items = [rect, label]
+        # Weit herausgezoomt: Punkt in Spielerfarbe in fester Bildschirmgroesse,
+        # damit Objekte nicht zu Kruemeln werden.
+        # Zoomed far out: a constant-size dot in the player colour.
+        marke = QGraphicsEllipseItem(-5, -5, 10, 10)
+        marke.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        marke.setPos(obj.tile_x * SCENE_TILE + SCENE_TILE / 2,
+                     obj.tile_y * SCENE_TILE + SCENE_TILE / 2)
+        marke.setBrush(QBrush(color))
+        marke.setPen(QPen(QColor(17, 17, 27), 1.5))
+        marke.setZValue(1090)
+        marke.setData(0, "marke")
+        self.scene.addItem(marke)
+        obj.items = [rect, label, marke]
+        an = self._objekte_sichtbar
+        for it in obj.items:
+            it.setVisible(an and it.isVisible())
+        marke.setVisible(an and self.view.tile_screen_px() < MapView.LABEL_MIN_TILE_PX)
 
     # --- Beschriftungen auf der Karte / map labels ---------------------
 
@@ -385,10 +401,13 @@ class _PlacementMixin:
 
         Update the visibility of all map labels for the current zoom."""
         visible = self.view.tile_screen_px() >= MapView.LABEL_MIN_TILE_PX
+        an = self._objekte_sichtbar
         for obj in self.objects:
             for item in obj.items:
                 if isinstance(item, QGraphicsSimpleTextItem):
-                    item.setVisible(visible)
+                    item.setVisible(an and visible)
+                elif item.data(0) == "marke":
+                    item.setVisible(an and not visible)
 
     def clear_objects_fragen(self):
         """Alle Objekte und Gruppen loeschen -- erst nach Rueckfrage."""

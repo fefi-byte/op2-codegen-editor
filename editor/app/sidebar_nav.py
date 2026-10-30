@@ -39,7 +39,8 @@ class SidebarNav(QWidget):
         self._gruppen: dict[str, QGridLayout] = {}
         self._titel: dict[str, str] = {}
 
-        self._kopf = QVBoxLayout()
+        self._kopf_widget = QWidget()
+        self._kopf = QVBoxLayout(self._kopf_widget)
         self._kopf.setContentsMargins(0, 0, 0, 0)
         self._kopf.setSpacing(2)
 
@@ -52,8 +53,13 @@ class SidebarNav(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
-        lay.addLayout(self._kopf)
+        lay.addWidget(self._kopf_widget)
         lay.addWidget(self._stack, 1)
+
+    def knoepfe_zeigen(self, an: bool) -> None:
+        """Die Umschaltknoepfe ein-/ausblenden (das neue Layout navigiert
+        ueber die Missionsgliederung und den Moduswechsel oben)."""
+        self._kopf_widget.setVisible(an)
 
     def gruppe_anlegen(self, schluessel: str, titel: str) -> None:
         """Eine Gruppe mit Ueberschrift; Reihenfolge = Reihenfolge des Anlegens."""
@@ -121,6 +127,11 @@ class SidebarNav(QWidget):
 
     def indexOf(self, widget: QWidget) -> int:
         return self._stack.indexOf(widget)
+
+    def setCurrentWidget(self, widget: QWidget) -> None:
+        i = self.indexOf(widget)
+        if i >= 0:
+            self.setCurrentIndex(i)
 
     def setCurrentIndex(self, index: int) -> None:
         if not (0 <= index < self._stack.count()) or index == self._stack.currentIndex():

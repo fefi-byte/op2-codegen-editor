@@ -88,6 +88,7 @@ class ConditionsPanel(QWidget):
         form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         form_scroll.setWidget(form_inner)
 
+        self._listenteil = top
         splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(top)
         splitter.addWidget(form_scroll)
@@ -100,6 +101,12 @@ class ConditionsPanel(QWidget):
         self.cond_form.setEnabled(False)
 
     # --- Oeffentliche API / public API ---
+
+    def als_editor(self, an: bool) -> None:
+        """Im neuen Layout: nur das Formular zeigen, die Liste steht links in
+        der Missionsgliederung. / Show the form only; the list lives in the
+        mission outline."""
+        self._listenteil.setVisible(not an)
 
     def load(self):
         """Panel-Inhalt aus dem Fensterzustand neu aufbauen."""

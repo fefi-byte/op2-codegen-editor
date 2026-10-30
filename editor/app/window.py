@@ -17,13 +17,14 @@ from .window_terrain import _TerrainMixin
 from .window_klippen import _KlippenMixin
 from .window_neukarte import _NeueKarteMixin
 from .verlauf import _VerlaufMixin
+from .window_mission import _MissionMixin
 
 
 class EditorWindow(
     _MenuMixin, _SidebarMixin, _OverviewMixin,
     _PlacementMixin, _MapPickMixin, _ProjectMixin,
     _BuildMixin, _OverlaysMixin, _TerrainMixin, _KlippenMixin,
-    _NeueKarteMixin, _VerlaufMixin, QMainWindow,
+    _NeueKarteMixin, _VerlaufMixin, _MissionMixin, QMainWindow,
 ):
     def _zustand_anlegen(self):
         """Jeden Zustand des Fensters VOR allem anderen anlegen.
@@ -71,6 +72,16 @@ class EditorWindow(
         self._undo_stack = None
         self._view_menu = None
         self.verlauf_liste = None
+        # Neues Layout / new layout (window_mission.py)
+        self.outline = None
+        self._titel = None
+        self._bearbeitung = None
+        self._modus = "mission"
+        self._auswahl = None
+        self._auswahl_items = []
+        self._zug = None
+        self._letzter_klick = (None, 0.0)
+        self._objekte_sichtbar = True
 
     def __init__(self):
         super().__init__()
@@ -140,6 +151,8 @@ class EditorWindow(
         self.view.rectDragFinished.connect(self._rect_drag_finish)
         self.view.rectDragCanceled.connect(self._rect_drag_cancel)
         self.view.zoomChanged.connect(self._on_zoom_changed)
+        self.view.tileDragged.connect(self._karte_ziehen)
+        self.view.tileReleased.connect(self._karte_loslassen)
         self.setCentralWidget(self.view)
         self._rect_pick_group = None
         self._rect_pick_start = None
@@ -158,6 +171,11 @@ class EditorWindow(
         self._build_overview()
         self._build_verlauf()
         self._refresh_player_range()
+        # Rechte Docks sind im neuen Layout aus; ueber "Ansicht" erreichbar.
+        # The right docks are off in the new layout; reachable via "View".
+        for d in (self.overview_dock, self.verlauf_dock, self.validation_dock):
+            d.hide()
+        self._baue_ebenenleiste()
 
         # Klick auf den Zaehler blendet die Validierung ein oder aus.
         # Clicking the counter shows or hides the validation dock.
@@ -180,7 +198,7 @@ class EditorWindow(
 
     # Fenstergroesse und Docks (sichtbar, Breite, Position) ueberdauern den
     # Neustart. Window size and docks survive a restart.
-    _LAYOUT_VERSION = 1
+    _LAYOUT_VERSION = 2
 
     def _einstellungen(self):
         from PySide6.QtCore import QSettings

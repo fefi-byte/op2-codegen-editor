@@ -114,6 +114,8 @@ class _OverviewMixin:
         # trigger/action edit goes through _refresh_overview.
         if hasattr(self, "_planned_items"):
             self._redraw_planned_actions()
+        self._gliederung_auffrischen()
+        self._auswahl_zeichnen()
         expanded = {self.overview.topLevelItem(i).text(0).split(" (")[0]
                     for i in range(self.overview.topLevelItemCount())
                     if self.overview.topLevelItem(i).isExpanded()}

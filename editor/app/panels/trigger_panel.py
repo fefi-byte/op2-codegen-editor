@@ -225,6 +225,7 @@ class TriggerPanel(QWidget):
         d_lay.addWidget(act_title)
         d_lay.addWidget(act_widget, 1)
 
+        self._listenteil = left
         splitter = QSplitter(Qt.Vertical)
         splitter.addWidget(left)
         splitter.addWidget(detail)
@@ -238,6 +239,15 @@ class TriggerPanel(QWidget):
         self._set_form_enabled(False)
 
     # --- Öffentliche API ---
+
+    def als_editor(self, an: bool) -> None:
+        """Im neuen Layout: nur das Formular zeigen, die Liste steht links in
+        der Missionsgliederung. / Show the form only; the list lives in the
+        mission outline."""
+        self._listenteil.setVisible(not an)
+        if an:
+            # Doppelklick auf einen Trigger: Name und Ausloeser gleich zeigen.
+            self.cond_toggle.setChecked(True)
 
     def load(self):
         self._idx = -1

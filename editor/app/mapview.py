@@ -41,6 +41,11 @@ class MapView(QGraphicsView):
     # zoomChanged(scale): neuer Massstab (1.0 = 1:1, 32px je Kachel).
     # zoomChanged(scale): new scale factor (1.0 = 1:1, 32px per tile).
     zoomChanged = Signal(float)
+    # tileDragged / tileReleased: Linksziehen ohne Rechteckauswahl -- fuer das
+    # Verschieben und Aufziehen von Bereichen mit dem Auswahlwerkzeug.
+    # Left-drag without rect selection -- moving and resizing areas.
+    tileDragged = Signal(int, int)
+    tileReleased = Signal(int, int)
 
     # Unterhalb dieser Kachelgroesse (in Bildschirmpixeln) wird das Gitter zu
     # einem Rauschmuster und Beschriftungen ueberlappen sich -- beides wird
@@ -64,6 +69,9 @@ class MapView(QGraphicsView):
         self.terrain_paint_enabled = False
         self._rect_dragging = False
         self._erase_dragging = False
+        self._links_unten = False
+        # Schwebendes Widget unten links (Ebenenleiste). Floating widget.
+        self.unten_links = None
         # Kachelgitter standardmaessig aus (via set_grid umschaltbar).
         # Tile grid off by default (toggled via set_grid).
         self.show_grid = False
@@ -151,6 +159,18 @@ class MapView(QGraphicsView):
         self.centerOn(center)
         self._emit_zoom()
 
+    def ecken_platzieren(self):
+        w = self.unten_links
+        if w is not None:
+            w.adjustSize()
+            vp = self.viewport().geometry()
+            w.move(vp.left() + 10, vp.bottom() - w.height() - 10)
+            w.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.ecken_platzieren()
+
     def zoom_fit(self):
         """
         Zoomt heraus, bis die gesamte Karte ins Fenster passt
@@ -201,6 +221,7 @@ class MapView(QGraphicsView):
                 self._rect_dragging = False
                 self.rectDragCanceled.emit()
         elif event.button() == Qt.LeftButton:
+            self._links_unten = True
             self.tileClicked.emit(*self._tile(event.position()))
         elif event.button() == Qt.RightButton:
             self.tileRemoved.emit(*self._tile(event.position()))
@@ -234,6 +255,8 @@ class MapView(QGraphicsView):
         if self._erase_dragging:
             self.tileRemoved.emit(*self._tile(event.position()))
             return
+        if self._links_unten and not self.terrain_paint_enabled:
+            self.tileDragged.emit(*self._tile(event.position()))
         self.tileHover.emit(*self._tile(event.position()))
         super().mouseMoveEvent(event)
 
@@ -246,6 +269,9 @@ class MapView(QGraphicsView):
             self.rectDragFinished.emit(*self._tile(event.position()))
         elif event.button() == Qt.RightButton and self._erase_dragging:
             self._erase_dragging = False
+        elif event.button() == Qt.LeftButton and self._links_unten:
+            self._links_unten = False
+            self.tileReleased.emit(*self._tile(event.position()))
         else:
             super().mouseReleaseEvent(event)
 

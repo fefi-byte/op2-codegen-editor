@@ -185,7 +185,7 @@ def check_trigger_panel(win, app) -> None:
     from app.game_data import TRIGGER_CONDITIONS
 
     tp = win.trigger_panel
-    win._sidebar_tabs.setCurrentIndex(1)
+    win.edit_triggers()
     pump(app)
 
     # Leerzustand: keine Formularwand / empty state: no wall of fields
@@ -223,7 +223,7 @@ def check_trigger_panel(win, app) -> None:
 
 
 def check_groups_panel(win, app) -> None:
-    win._sidebar_tabs.setCurrentIndex(2)
+    win.edit_groups()
     pump(app)
     gp = win.groups_panel
     actions = gp.add_menu.actions()
@@ -254,6 +254,65 @@ def unbrauchbarer_boden(win) -> int:
     schlecht = {f for f in range(len(tm.families)) if not tm.familie_nutzbar(f)}
     return sum(1 for y in range(win.map.height) for x in range(win.map.width)
                if int(tm.family_of[win.map.tile_mapping_index(x, y)]) in schlecht)
+
+
+def check_mission_layout(win, app) -> None:
+    """Neues Layout: Gliederung, Doppelklick-Editor, Abbrechen, Ziehen."""
+    import copy
+    from mission_model import TriggerDef
+    win._bearbeiten_bestaetigen() if win._bearbeitung else None
+    win._modus_setzen("mission")
+    pump(app)
+    check("Gliederung sichtbar", win._linke_seite.currentIndex() == 0
+          and win.outline.isVisible())
+    check("rechte Docks aus", not win.overview_dock.isVisible())
+
+    # Neue Baugruppe ueber "Neu" -> Editor links, Abbrechen entfernt sie.
+    n = len(win.building_groups)
+    win._neu_anlegen("group_building")
+    pump(app)
+    check("Neu oeffnet den Editor links", win._linke_seite.currentIndex() == 1
+          and win.groups_panel.isVisible())
+    check("Editor zeigt nur das Formular", not win.groups_panel._listenteil.isVisible())
+    win._bearbeiten_abbrechen()
+    pump(app)
+    check("Abbrechen verwirft die neue Gruppe", len(win.building_groups) == n,
+          f"{n} -> {len(win.building_groups)}")
+    check("zurueck in der Gliederung", win._linke_seite.currentIndex() == 0)
+
+    # Trigger umbenennen, bestaetigen -> bleibt.
+    win.triggers.append(TriggerDef(name="ZeitTest", condition="time", marks=10))
+    win._refresh_overview()
+    i = len(win.triggers) - 1
+    win._bearbeiten_oeffnen("trigger", i)
+    pump(app)
+    win.trigger_panel.trigger_name.setText("ZeitTest2") \
+        if hasattr(win.trigger_panel, "trigger_name") else None
+    win.triggers[i].name = "ZeitTest2"
+    win._bearbeiten_bestaetigen()
+    pump(app)
+    check("Bestaetigen behaelt die Aenderung", win.triggers[i].name == "ZeitTest2")
+    check("Auswahl nach Bestaetigen", win._auswahl == ("trigger", i))
+
+    # Gruppenbereich auf der Karte ziehen.
+    win._neu_anlegen("group_building")
+    win._bearbeiten_bestaetigen()
+    g = win.building_groups[-1]
+    x, y = g.rect_x, g.rect_y
+    win._auswahl = ("group", g.name)
+    win._letzter_klick = (None, 0.0)
+    win._karte_klick(x + 2, y + 2)
+    win._karte_ziehen(x + 5, y + 4)
+    win._karte_loslassen(x + 5, y + 4)
+    check("Gruppenbereich laesst sich verschieben", (g.rect_x, g.rect_y) == (x + 3, y + 2),
+          f"({x},{y}) -> ({g.rect_x},{g.rect_y})")
+    w0 = g.rect_width
+    win._letzter_klick = (None, 0.0)
+    win._karte_klick(g.rect_x + g.rect_width - 1, g.rect_y + g.rect_height - 1)
+    win._karte_ziehen(g.rect_x + g.rect_width + 1, g.rect_y + g.rect_height - 1)
+    win._karte_loslassen(0, 0)
+    check("Ecke zieht den Bereich auf", g.rect_width == w0 + 2, f"{w0} -> {g.rect_width}")
+    check("Auswahl gezeichnet", len(win._auswahl_items) > 0)
 
 
 def check_terrain(win, app) -> None:
@@ -631,7 +690,7 @@ def check_terrain_strokes(win, app) -> None:
     from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
     from PySide6.QtGui import QMouseEvent
 
-    win._sidebar_tabs.setCurrentIndex(win._terrain_tab_index)
+    win._modus_setzen("map")
     pump(app, 40)
     panel = win.terrain_panel
     panel.set_brush("mud")
@@ -837,6 +896,8 @@ def run_checks(win, app) -> None:
     check_groups_panel(win, app)
     check_terrain(win, app)
     check_terrain_strokes(win, app)
+    win._modus_setzen("mission")
+    check_mission_layout(win, app)
     check_new_map(win, app)
     check_terrain_save(win, app)
     check_status_and_overview(win, app)

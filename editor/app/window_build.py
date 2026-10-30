@@ -138,22 +138,36 @@ class _BuildMixin:
             self.statusBar().showMessage(tr("window.status_players_configured", n=len(self.players)))
 
     def edit_triggers(self):
-        self._sidebar_tabs.setCurrentIndex(1)
-        if self._pending_trigger_index >= 0:
-            self.trigger_panel.select(self._pending_trigger_index, self._pending_action_index)
+        """Trigger links bearbeiten (auch Rueckkehr nach einem Karten-Pick)."""
+        idx, aidx = self._pending_trigger_index, self._pending_action_index
         self._pending_trigger_index = 0
         self._pending_action_index = -1
+        if not self.triggers:
+            self._bearbeiten_oeffnen("triggers", None)
+            return
+        idx = max(0, min(idx, len(self.triggers) - 1))
+        b = self._bearbeitung
+        if b is None or b["art"] not in ("trigger", "triggers"):
+            self._bearbeiten_oeffnen("trigger", idx)
+        else:
+            self._sidebar_tabs.setCurrentWidget(self.trigger_panel)
+            self._linke_seite.setCurrentIndex(1)
+        self.trigger_panel.select(idx, aidx)
 
     def edit_conditions(self):
-        # Sieg & Niederlage ist jetzt ein Seitenpanel (Tab 4) statt eines
-        # modalen Dialogs -- noetig fuer das Karten-Picking von point/rect.
-        # Victory & defeat is a side panel (tab 4) now instead of a modal
-        # dialog -- required for map picking of point/rect.
-        self.conditions_panel.load()
-        self._sidebar_tabs.setCurrentWidget(self.conditions_panel)
+        """Sieg & Niederlage links bearbeiten (ganze Liste)."""
+        b = self._bearbeitung
+        if b is not None and b["art"] in ("win", "lose", "conditions"):
+            self._sidebar_tabs.setCurrentWidget(self.conditions_panel)
+            self._linke_seite.setCurrentIndex(1)
+            return
+        self._bearbeiten_oeffnen("conditions", None)
 
-    def edit_groups(self):
-        self._sidebar_tabs.setCurrentIndex(2)
+    def edit_groups(self, name=None):
+        if name:
+            self._bearbeiten_oeffnen("group", name)
+        else:
+            self._bearbeiten_oeffnen("groups", None)
 
     def build_mission(self) -> Mission:
         # Bearbeitetes Gelaende bekommt einen eigenen Kartennamen -- muss VOR

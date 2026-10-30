@@ -64,9 +64,9 @@ class _SidebarMixin:
         # wants to see what they are creating.
         self._sidebar_tabs.currentChanged.connect(self._on_sidebar_tab_changed)
 
-        dock.setWidget(self._sidebar_tabs)
+        self._baue_linke_seite(dock)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
-        self.resizeDocks([dock], [560], Qt.Horizontal)
+        self.resizeDocks([dock], [400], Qt.Horizontal)
         self._fill_list(self.cat_combo.currentData())
 
     def _on_sidebar_tab_changed(self, index: int):

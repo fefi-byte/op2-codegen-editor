@@ -107,12 +107,9 @@ class _MenuMixin:
             act.triggered.connect(lambda _checked=False, c=code: self._set_language(c))
             lang_menu.addAction(act)
 
-        # "Mission"-Aktionen als obere Werkzeugleiste statt Menue.
-        # "Mission" actions as a top toolbar instead of a menu.
-        tb = QToolBar("Mission", self)
-        tb.setObjectName("toolbar_mission")
-        tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        self.addToolBar(tb)
+        # Mission-Menue: was frueher links in der Werkzeugleiste stand.
+        # Mission menu: what used to sit on the left of the toolbar.
+        mission_menu = self.menuBar().addMenu(tr("window.menu_mission"))
         for label, slot in [
             (tr("window.tb_setup"), self.edit_setup),
             (tr("window.tb_players"), self.edit_players),
@@ -120,16 +117,16 @@ class _MenuMixin:
         ]:
             act = QAction(label, self)
             act.triggered.connect(slot)
-            tb.addAction(act)
-        tb.addSeparator()
-        for label, slot in [
-            (tr("window.tb_show_code"), self.show_code),
-            (tr("window.tb_build"), self.do_build),
-            (tr("window.tb_test_op2"), self._launch_op2),
-        ]:
-            act = QAction(label, self)
-            act.triggered.connect(slot)
-            tb.addAction(act)
+            mission_menu.addAction(act)
+
+        # Kopfleiste: Mission | Map Editor, Werkzeuge, Bauen.
+        # Header bar: Mission | Map Editor, tools, Build.
+        tb = QToolBar("Mission", self)
+        tb.setObjectName("toolbar_mission")
+        tb.setMovable(False)
+        tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.addToolBar(tb)
+        self._baue_kopfleiste(tb)
 
     def _escape_pressed(self):
         """Abbruch in der Reihenfolge: Karten-Pick, Bereichsauswahl, Platzieren."""

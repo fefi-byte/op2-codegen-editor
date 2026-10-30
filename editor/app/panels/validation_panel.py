@@ -73,7 +73,7 @@ class ValidationPanel(QWidget):
         elif kind == "player":
             w.edit_players()
         elif kind == "group":
-            w.edit_groups()
+            w.edit_groups(index)
         elif kind == "conditions":
             w.edit_conditions()
         elif kind == "object" and index is not None and 0 <= index < len(w.objects):
