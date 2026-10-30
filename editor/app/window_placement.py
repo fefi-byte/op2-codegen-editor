@@ -127,6 +127,11 @@ class _PlacementMixin:
                 geist.setZValue(1049)
                 rect.setBrush(Qt.NoBrush)
                 self._placement_preview_items.append(geist)
+            if kind == "structure":
+                platz = self._planier_item(_map_id, tx, ty, footprint_w, footprint_h, alpha=0.8)
+                if platz is not None:
+                    platz.setZValue(1048)
+                    self._placement_preview_items.append(platz)
         label = QGraphicsSimpleTextItem(display.split()[0][:10])
         label.setBrush(QBrush(Qt.white))
         label.setPos(x0 + 2, y0 + 1)
@@ -204,6 +209,59 @@ class _PlacementMixin:
                   ty * SCENE_TILE + SCENE_TILE / 2 + off.y())
         # Weiter unten stehende Einheiten verdecken die oberen (wie im Spiel).
         it.setZValue(5 + ty * 0.001)
+        it.setOpacity(alpha)
+        self.scene.addItem(it)
+        return it
+
+    # Gebaeude ohne planierte Flaeche im Spiel (Waende/Roehren sind keine
+    # Gebaeude im Katalog; Minen sitzen auf dem Erzfeld).
+    _OHNE_PLANIERUNG = {"mapCommonOreMine", "mapRareOreMine", "mapMagmaWell"}
+
+    def _planier_item(self, map_id, tx, ty, fw, fh, alpha=1.0):
+        """Planierte Flaeche um ein Gebaeude -- nur als Bild auf der Karte,
+        die Karte selbst bleibt unveraendert (das Spiel planiert beim Bau).
+
+        Wie im Spiel: belegte Kacheln plus ein Rand von einer Kachel. Je
+        Kachel die planierte Variante des Untergrunds (TerrainType der Karte,
+        acht Varianten, je Position fest gewaehlt).
+        Bulldozed area around a building -- drawn only, the map stays as is."""
+        if self.map is None or map_id in self._OHNE_PLANIERUNG:
+            return None
+        import struct as _st
+        typen = []
+        for tt in self.map.terrain_types:
+            a, b, doz = _st.unpack_from("<3H", tt, 0)
+            if doz:
+                typen.append((a, b, doz))
+        if not typen:
+            return None
+        x0, y0 = tx - fw // 2 - 1, ty - fh // 2 - 1
+        bw, bh = fw + 2, fh + 2
+        bild = QPixmap(bw * SCENE_TILE, bh * SCENE_TILE)
+        bild.fill(Qt.transparent)
+        p = QPainter(bild)
+        gemalt = False
+        for dy in range(bh):
+            for dx in range(bw):
+                x, y = x0 + dx, y0 + dy
+                if not (0 <= x < self.map.width and 0 <= y < self.map.height):
+                    continue
+                idx = self.map.tile_mapping_index(x, y)
+                for a, b, doz in typen:
+                    if a <= idx <= b:
+                        # Feste "zufaellige" Variante je Kachel (0..7).
+                        var = (x * 7 + y * 13 + (x * y) % 5) % 8
+                        pm = self._tile_pixmap(doz + var)
+                        if pm is not None:
+                            p.drawPixmap(dx * SCENE_TILE, dy * SCENE_TILE, pm)
+                            gemalt = True
+                        break
+        p.end()
+        if not gemalt:
+            return None
+        it = QGraphicsPixmapItem(bild)
+        it.setPos(x0 * SCENE_TILE, y0 * SCENE_TILE)
+        it.setZValue(1)                      # ueber der Karte, unter allem anderen
         it.setOpacity(alpha)
         self.scene.addItem(it)
         return it
@@ -495,6 +553,7 @@ class _PlacementMixin:
         else:
             rect.setPen(QPen(color, 2))
             rect.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 120)))
+        rect.setZValue(2)                    # ueber der planierten Flaeche
         self.scene.addItem(rect)
         text = obj.unit_name or obj.display.split()[0]
         label = QGraphicsSimpleTextItem(text[:10])
@@ -520,6 +579,10 @@ class _PlacementMixin:
         marke.setData(0, "marke")
         self.scene.addItem(marke)
         obj.items = [rect, label, marke] + ([sprite] if sprite is not None else [])
+        if obj.kind == "structure":
+            planiert = self._planier_item(obj.map_id, obj.tile_x, obj.tile_y, fw, fh)
+            if planiert is not None:
+                obj.items.append(planiert)
         an = self._objekte_sichtbar
         for it in obj.items:
             it.setVisible(an and it.isVisible())
