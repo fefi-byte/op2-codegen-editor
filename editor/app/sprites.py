@@ -149,14 +149,23 @@ class SpriteSatz:
     def _bild(self, index: int, spieler: int) -> QImage | None:
         sl, off, h, w, typ, palnr = self._bilder[index]
         start = off + 14 + 40 + 1024
-        daten = bytes(self._pixel[start:start + sl * h])
-        if len(daten) < sl * h:
+        schatten = bool(typ & 4)
+        if schatten:
+            # Schatten sind 1 Bit je Pixel. Das Feld "Zeilenbreite" zaehlt hier
+            # BITS, nicht Bytes -- die echte Zeile ist auf 32 Bit aufgerundet.
+            # Mit sl als Byte-Breite kamen die schraegen Streifen unter den
+            # Fahrzeugen heraus. / Shadows: 1 bpp, the width field is in bits.
+            schritt = ((sl + 31) // 32) * 4
+        else:
+            schritt = sl
+        daten = bytes(self._pixel[start:start + schritt * h])
+        if len(daten) < schritt * h:
             return None
-        if typ & 4:                                     # Schatten, 1 Bit
-            img = QImage(daten, w, h, sl, QImage.Format_Mono)
+        if schatten:
+            img = QImage(daten, w, h, schritt, QImage.Format_Mono)
             img.setColorTable([0, QColor(0, 0, 0, 110).rgba()])
         else:
-            img = QImage(daten, w, h, sl, QImage.Format_Indexed8)
+            img = QImage(daten, w, h, schritt, QImage.Format_Indexed8)
             pal = self._palette(palnr, spieler)
             img.setColorTable([0] + [QColor(*pal[i]).rgba() for i in range(1, 256)])
         # Kopie: QImage teilt sonst den Python-Puffer.
