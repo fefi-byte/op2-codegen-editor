@@ -17,8 +17,9 @@ the border between highland and lowland.
 """
 from __future__ import annotations
 
+from PySide6.QtCore import QSize
 from PySide6.QtGui import QColor, QPixmap, QIcon
-from PySide6.QtWidgets import QGridLayout
+from PySide6.QtWidgets import QButtonGroup, QGridLayout
 
 from ..common import *
 from ..style import apply_role
@@ -50,6 +51,15 @@ BRUSH_ORDER: list[tuple[str, str]] = [
 # sense for those.
 PUNKT_PINSEL = (B_VULKAN, B_KLIPPE)
 
+# Pinsel, die einen Boden malen -- ihr Knopf zeigt eine echte Kachel, und in
+# der Kachel-Palette filtern sie auf diesen Boden.
+# Brushes that paint a ground: their button shows a real tile, and in the
+# tile palette they filter for that ground.
+BODEN_PINSEL = (B_ERDE, B_FELS, B_SAND, B_BEWUCHS, B_SCHNEE)
+
+MODUS_MALEN = "malen"
+MODUS_KACHELN = "kacheln"
+
 
 class TerrainPanel(QWidget):
     def __init__(self, window):
@@ -60,9 +70,41 @@ class TerrainPanel(QWidget):
         # A ground brush is preselected, not the eraser -- the first click
         # should not take anything away.
         self._brush = B_ERDE
+        self._modus = MODUS_MALEN
         self._buttons: dict[str, QPushButton] = {}
 
-        lay = QVBoxLayout(self)
+        aussen = QVBoxLayout(self)
+
+        # Umschalter: Absicht malen oder Kacheln/Gruppen einzeln setzen.
+        # Switch: paint intent, or place tiles/groups one by one.
+        umschalter = QHBoxLayout()
+        umschalter.setSpacing(0)
+        self._modus_knoepfe: dict[str, QPushButton] = {}
+        self._modus_gruppe = QButtonGroup(self)
+        for i, (modus, schl) in enumerate(((MODUS_MALEN, "terrain.mode_paint"),
+                                           (MODUS_KACHELN, "terrain.mode_tiles"))):
+            b = QPushButton(tr(schl))
+            b.setCheckable(True)
+            b.setToolTip(tr(schl + "_hint"))
+            b.setMinimumHeight(30)
+            rund = ("border-top-left-radius:6px;border-bottom-left-radius:6px;"
+                    "border-top-right-radius:0;border-bottom-right-radius:0;" if i == 0 else
+                    "border-top-right-radius:6px;border-bottom-right-radius:6px;"
+                    "border-top-left-radius:0;border-bottom-left-radius:0;")
+            b.setStyleSheet(
+                "QPushButton{font-weight:600;" + rund + "}"
+                "QPushButton:checked{background:#f9e2af;color:#1e1e2e;border-color:#f9e2af;}")
+            b.clicked.connect(lambda _=False, m=modus: self.set_modus(m))
+            self._modus_gruppe.addButton(b)
+            umschalter.addWidget(b, 1)
+            self._modus_knoepfe[modus] = b
+        aussen.addLayout(umschalter)
+
+        # --- Malen ---
+        self.mal_box = QWidget()
+        lay = QVBoxLayout(self.mal_box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        aussen.addWidget(self.mal_box)
 
         lbl = QLabel(tr("terrain.lbl_brushes"))
         lbl.setProperty("role", "section")
@@ -74,6 +116,10 @@ class TerrainPanel(QWidget):
             btn = QPushButton(tr(f"terrain.brush_{brush}"))
             btn.setCheckable(True)
             btn.setIcon(self._farbmarke(farbe))
+            btn.setIconSize(QSize(18, 18))
+            btn.setMinimumHeight(28)
+            btn.setStyleSheet("QPushButton:checked{background:#45475a;border:2px solid #f9e2af;"
+                              "font-weight:600;}")
             btn.setToolTip(tr(f"terrain.brush_{brush}_hint"))
             btn.clicked.connect(lambda _=False, b=brush: self.set_brush(b))
             raster.addWidget(btn, i // 2, i % 2)
@@ -142,6 +188,14 @@ class TerrainPanel(QWidget):
         self.info.setProperty("secondary", "true")
         lay.addWidget(self.info)
 
+        # --- Kacheln & Gruppen ---
+        from .kachel_palette import KachelPalette
+        self.palette = KachelPalette(window)
+        self.palette.auswahl_geaendert.connect(self._kachel_gewaehlt)
+        self.palette.setVisible(False)
+        aussen.addWidget(self.palette, 1)
+        lay = aussen
+
         # Overlay-Schalter: das Einfaerben hilft beim Malen, verdeckt aber die
         # Kachelgrafik -- deshalb abschaltbar, ohne den Tab verlassen zu muessen.
         # Overlay toggle: the tint helps while painting but hides the tile
@@ -153,9 +207,13 @@ class TerrainPanel(QWidget):
         overlay_row = QHBoxLayout()
         self.overlay_toggle = QPushButton(tr("terrain.btn_overlay"))
         self.overlay_toggle.setCheckable(True)
-        self.overlay_toggle.setChecked(True)
+        # Standardmaessig aus: das Einfaerben verdeckt die Kacheln, und wer es
+        # braucht, schaltet es mit einem Klick ein.
+        # Off by default: the tint hides the tiles; one click turns it on.
+        self.overlay_toggle.setChecked(False)
         self.overlay_toggle.toggled.connect(self._on_overlay_changed)
-        apply_role(self.overlay_toggle, "primary")
+        self.overlay_toggle.setStyleSheet(
+            "QPushButton:checked{background:#a6e3a1;color:#1e1e2e;border-color:#a6e3a1;}")
         overlay_row.addWidget(self.overlay_toggle, 1)
         self.overlay_mode = QComboBox()
         self.overlay_mode.addItem(tr("terrain.mode_speed"), "speed")
@@ -174,14 +232,19 @@ class TerrainPanel(QWidget):
         self.btn_aufraeumen.clicked.connect(self._window._uebergaenge_aufraeumen)
         lay.addWidget(self.btn_aufraeumen)
 
-        lay.addWidget(self._build_legend())
-        lay.addStretch(1)
+        self.legende = self._build_legend()
+        lay.addWidget(self.legende)
+        self.legende.setVisible(False)
+        self.overlay_mode.setEnabled(False)
+        self._dehnung = QWidget()
+        lay.addWidget(self._dehnung, 1)
 
-        hint = QLabel(tr("terrain.hint"))
-        hint.setWordWrap(True)
-        hint.setProperty("secondary", "true")
-        lay.addWidget(hint)
+        self.hint = QLabel(tr("terrain.hint"))
+        self.hint.setWordWrap(True)
+        self.hint.setProperty("secondary", "true")
+        lay.addWidget(self.hint)
 
+        self._modus_knoepfe[MODUS_MALEN].setChecked(True)
         self.set_brush(B_ERDE)
 
     # ------------------------------------------------------------------
@@ -206,6 +269,50 @@ class TerrainPanel(QWidget):
         return box
 
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Modus / mode
+
+    def modus(self) -> str:
+        return self._modus
+
+    def set_modus(self, modus: str) -> None:
+        self._modus = modus
+        self._modus_knoepfe[modus].setChecked(True)
+        kacheln = modus == MODUS_KACHELN
+        self.mal_box.setVisible(not kacheln)
+        self.palette.setVisible(kacheln)
+        self._dehnung.setVisible(not kacheln)
+        self.hint.setVisible(not kacheln)
+        if kacheln:
+            self.palette.laden()
+            # Der gewaehlte Boden filtert die Palette: Erde -> alles mit Erde.
+            # The chosen ground filters the palette: mud -> everything with mud.
+            if self._brush in BODEN_PINSEL:
+                self.palette.set_familie(self._brush)
+        w = self._window
+        if hasattr(w, "_klippen_verwerfen") and kacheln and getattr(w, "_klippen_punkte", None):
+            w._klippen_verwerfen()
+        if hasattr(w, "_terrain_modus_gewechselt"):
+            w._terrain_modus_gewechselt()
+
+    def kachel_stempel(self):
+        """Gewaehlter Stempel der Palette (nur im Kachelmodus)."""
+        return self.palette.stempel() if self._modus == MODUS_KACHELN else None
+
+    def _kachel_gewaehlt(self, _stempel):
+        if hasattr(self._window, "_gelaende_banner_aktualisieren"):
+            self._window._gelaende_banner_aktualisieren()
+
+    def _kachel_symbole(self):
+        """Bodenpinsel mit echter Kachel statt Farbfleck."""
+        if getattr(self._window, "map", None) is None:
+            return
+        self.palette.laden()
+        for brush in BODEN_PINSEL:
+            pm = self.palette.repraesentant(brush)
+            if pm is not None and brush in self._buttons:
+                self._buttons[brush].setIcon(QIcon(pm))
+
     def set_brush(self, brush: str) -> None:
         self._brush = brush
         for key, btn in self._buttons.items():
@@ -248,6 +355,8 @@ class TerrainPanel(QWidget):
         self.brush_size.setValue(max(1, min(61, size)))
 
     def load(self) -> None:
+        self.palette._karten_marke = None
+        self._kachel_symbole()
         self._update_info()
 
     def refresh(self, *_args) -> None:
@@ -260,6 +369,7 @@ class TerrainPanel(QWidget):
         # The mode box follows the toggle -- a choice without effect only
         # confuses.
         self.overlay_mode.setEnabled(self.overlay_toggle.isChecked())
+        self.legende.setVisible(self.overlay_toggle.isChecked())
         self._window._set_overlay_options(
             self.overlay_toggle.isChecked(), self.overlay_mode.currentData())
 

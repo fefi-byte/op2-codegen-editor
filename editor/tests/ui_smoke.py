@@ -32,7 +32,7 @@ try:
 except Exception:
     pass
 
-from PySide6.QtCore import QTimer                      # noqa: E402
+from PySide6.QtCore import Qt, QTimer                  # noqa: E402
 from PySide6.QtWidgets import (QApplication,           # noqa: E402
                                QGraphicsLineItem, QPushButton)
 
@@ -654,12 +654,15 @@ def check_terrain(win, app) -> None:
     tabs.setCurrentIndex(terrain_idx)
     pump(app, 60)
     check("Geländemodus aktiv", win._terrain_active and win.view.terrain_paint_enabled)
-    check("Overlay automatisch sichtbar", win._terrain_overlay_item is not None)
+    check("Overlay standardmaessig aus", win._terrain_overlay_item is None)
     check("Pinselleiste vorhanden", len(panel._buttons) >= 8,
           f"({len(panel._buttons)} Pinsel)")
     check("Erdpinsel ist vorausgewählt", panel.selected_brush() == "mud")
 
     # Overlay-Schalter / overlay toggle
+    panel.overlay_toggle.setChecked(True)
+    pump(app)
+    check("Schalter blendet das Overlay ein", win._terrain_overlay_item is not None)
     panel.overlay_toggle.setChecked(False)
     pump(app)
     check("Schalter blendet das Overlay aus", win._terrain_overlay_item is None)
@@ -1003,6 +1006,57 @@ def check_terrain(win, app) -> None:
           len(win.objects) == before + 1, f"({before} -> {len(win.objects)})")
 
 
+def check_tile_palette(win, app) -> None:
+    """Kacheln & Gruppen: Filter nach Boden, Gruppe setzen, Pipette, Rueckgaengig."""
+    tabs = win._sidebar_tabs
+    tabs.setCurrentIndex(win._terrain_tab_index)
+    pump(app, 30)
+    tp = win.terrain_panel
+    tp.set_brush("mud")
+    tp.set_modus("kacheln")
+    pump(app)
+    pal = tp.palette
+    check("Palette sichtbar, Malpinsel verborgen",
+          not pal.isHidden() and tp.mal_box.isHidden())
+    check("Erde gewaehlt -> Palette zeigt Erde", pal._familie == "mud", pal._familie)
+    alle = [pal.raster.item(i).data(Qt.UserRole) for i in range(pal.raster.count())]
+    check("Palette hat Gruppen und Einzelkacheln",
+          any(s.gruppe for s in alle) and any(not s.gruppe for s in alle), pal.anzahl.text())
+    check("Nur Erde in der Liste", all("mud" in s.familien for s in alle))
+    check("Erd-Uebergaenge dabei", any(s.art == "uebergang" for s in alle))
+    pal.sorte.setCurrentIndex(pal.sorte.findData("gruppen"))
+    pal.suche.setText("mudrock")
+    pump(app)
+    if check("Suche findet mudrock-Gruppen", pal.raster.count() > 0, pal.anzahl.text()):
+        pal.raster.setCurrentRow(0)
+        pump(app)
+        st = tp.kachel_stempel()
+        x, y = 150, 150
+        vorher = list(win.map.tiles)
+        n_undo = len(win._undo_stack)
+        win._terrain_strich_beginnen()
+        win._terrain_stamp(x, y)
+        win._terrain_strich_abschliessen()
+        pump(app)
+        x0, y0 = x - (st.breite - 1) // 2, y - (st.hoehe - 1) // 2
+        check("Gruppe am Stueck gesetzt",
+              all(win.map.tile_mapping_index(x0 + dx, y0 + dy) == st.kachel(dx, dy)
+                  for dy in range(st.hoehe) for dx in range(st.breite)))
+        check("Ein Rueckgaengig-Eintrag", len(win._undo_stack) == n_undo + 1)
+        win._terrain_pick(x0, y0)
+        pump(app)
+        check("Rechtsklick nimmt die Kachel auf",
+              tp.kachel_stempel() is not None and tp.kachel_stempel().kacheln[0] == st.kachel(0, 0))
+        win.undo()
+        pump(app)
+        check("Rueckgaengig stellt die Karte wieder her", list(win.map.tiles) == vorher)
+    pal.suche.clear()
+    pal.sorte.setCurrentIndex(0)
+    tp.set_modus("malen")
+    pump(app)
+    check("Zurueck im Malmodus", not tp.mal_box.isHidden())
+
+
 def check_terrain_strokes(win, app) -> None:
     """Mehrere Malstriche hintereinander -- ueber echte Maus-Ereignisse.
 
@@ -1222,6 +1276,7 @@ def run_checks(win, app) -> None:
     check_groups_panel(win, app)
     check_terrain(win, app)
     check_terrain_strokes(win, app)
+    check_tile_palette(win, app)
     win._modus_setzen("mission")
     check_mission_layout(win, app)
     check_new_map(win, app)

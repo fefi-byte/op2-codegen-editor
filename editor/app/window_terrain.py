@@ -25,7 +25,7 @@ from celltypes import (
 from tileset import TILE, load_tileset
 import mapgen
 from .paint_layers import PaintLayers, B_ERDE, B_VULKAN, B_KLIPPE
-from .panels.terrain_panel import PUNKT_PINSEL
+from .panels.terrain_panel import PUNKT_PINSEL, MODUS_KACHELN
 
 # Live-Vorschau der Klippe: so lange muss die Maus stillstehen, bevor
 # gerechnet wird. Der Loeser braucht im Median gut 20 ms; ohne Pause wuerde
@@ -115,7 +115,7 @@ class _TerrainMixin:
         self._klippen_live_timer.timeout.connect(self._klippen_live_rechnen)
         self._klick_neu = False
         self._terrain_brush = 1
-        self._overlay_enabled = True
+        self._overlay_enabled = False
         self._overlay_mode = "speed"
         self._reset_terrain_state()
 
@@ -195,8 +195,14 @@ class _TerrainMixin:
             banner.move(12, 12)
             self.view._gelaende_banner = banner
         pinsel = self.terrain_panel.selected_brush()
-        banner.setText(tr("window.terrain_banner",
-                          brush=tr(f"terrain.brush_{pinsel}")))
+        if self.terrain_panel.modus() == MODUS_KACHELN:
+            s = self.terrain_panel.kachel_stempel()
+            name = (s.name if s is not None and s.gruppe else
+                    tr("tiles.single", n=s.kacheln[0]) if s is not None else tr("tiles.none_short"))
+            banner.setText(tr("window.tiles_banner", name=name))
+        else:
+            banner.setText(tr("window.terrain_banner",
+                              brush=tr(f"terrain.brush_{pinsel}")))
         banner.adjustSize()
         banner.show()
         banner.raise_()
@@ -298,6 +304,9 @@ class _TerrainMixin:
         self._strich_rechteck = None
         self._strich_rueck = []
         self._strich_offen = True
+        self._kachel_letzt = None
+        if self.terrain_panel.modus() == MODUS_KACHELN:
+            return
         ebenen = self._paint_layers()
         if ebenen is not None:
             ebenen.strich_beginnen()
@@ -309,6 +318,15 @@ class _TerrainMixin:
 
     def _terrain_strich_abschliessen(self):
         """Ende des Strichs: einmal rechnen und alles auf einmal setzen."""
+        if self.terrain_panel.modus() == MODUS_KACHELN:
+            self._strich_offen = False
+            self._kachel_letzt = None
+            gesammelt, self._strich_rueck = self._strich_rueck, []
+            if gesammelt:
+                s = self.terrain_panel.kachel_stempel()
+                was = s.name if s is not None and s.gruppe else tr("tiles.undo_single")
+                self._push_undo("terrain", TerrainEdit(gesammelt, was))
+            return
         rechteck = self._strich_rechteck
         gesammelt = self._strich_rueck
         self._strich_rechteck = None
@@ -465,6 +483,9 @@ class _TerrainMixin:
         derives the tiles from it, including the cliff band along the new
         height edge with its cell type and matching neighbours.
         """
+        if self.terrain_panel.modus() == MODUS_KACHELN:
+            self._kachel_setzen(tx, ty)
+            return
         ebenen = self._paint_layers()
         if ebenen is None:
             return
@@ -559,6 +580,12 @@ class _TerrainMixin:
         """Rechtsklick: Pinsel auf das umschalten, was dort schon liegt.
 
         Right-click: switch the brush to whatever is already there."""
+        if self.terrain_panel.modus() == MODUS_KACHELN:
+            if self.map is not None and 0 <= tx < self.map.width and 0 <= ty < self.map.height:
+                kachel = self.map.tile_mapping_index(tx, ty)
+                self.terrain_panel.palette.kachel_waehlen(kachel)
+                self.statusBar().showMessage(tr("tiles.status_picked", n=kachel))
+            return
         ebenen = self._paint_layers()
         if ebenen is None or not (0 <= tx < self.map.width and 0 <= ty < self.map.height):
             return
@@ -763,6 +790,9 @@ class _TerrainMixin:
 
     def _update_terrain_preview(self, tx: int, ty: int):
         self._clear_terrain_preview()
+        if self.terrain_panel.modus() == MODUS_KACHELN:
+            self._kachel_vorschau(tx, ty)
+            return
         if self.terrain_panel.selected_brush() == B_KLIPPE:
             self._klippen_zielring(tx, ty)
             return
@@ -788,6 +818,103 @@ class _TerrainMixin:
             except RuntimeError:
                 pass
             self._terrain_preview_item = None
+
+    # ------------------------------------------------------------------
+    # Kacheln und Gruppen einzeln setzen / place tiles and groups one by one
+
+    def _terrain_modus_gewechselt(self):
+        self._clear_terrain_preview()
+        self._klippen_live_weg()
+        self._gelaende_banner_aktualisieren()
+
+    def _kachel_anker(self, s, tx: int, ty: int) -> tuple[int, int]:
+        """Linke obere Ecke: der Stempel sitzt mittig unter dem Mauszeiger."""
+        return tx - (s.breite - 1) // 2, ty - (s.hoehe - 1) // 2
+
+    def _kachel_vorschau(self, tx: int, ty: int):
+        s = self.terrain_panel.kachel_stempel()
+        if s is None or self.map is None:
+            return
+        from PySide6.QtWidgets import QGraphicsItemGroup
+        x0, y0 = self._kachel_anker(s, tx, ty)
+        schl = (id(s), id(self.map))
+        if getattr(self, "_kachel_bild_schl", None) != schl:
+            self._kachel_bild = self.terrain_panel.palette.bild(s)
+            self._kachel_bild_schl = schl
+        gruppe = QGraphicsItemGroup()
+        bild = QGraphicsPixmapItem(self._kachel_bild)
+        bild.setOpacity(0.8)
+        bild.setPos(x0 * SCENE_TILE, y0 * SCENE_TILE)
+        gruppe.addToGroup(bild)
+        rahmen = QGraphicsRectItem(x0 * SCENE_TILE, y0 * SCENE_TILE,
+                                   s.breite * SCENE_TILE, s.hoehe * SCENE_TILE)
+        stift = QPen(QColor(249, 226, 175), 2, Qt.DashLine)
+        stift.setCosmetic(True)
+        rahmen.setPen(stift)
+        gruppe.addToGroup(rahmen)
+        gruppe.setZValue(1000)
+        self.scene.addItem(gruppe)
+        self._terrain_preview_item = gruppe
+
+    def _kachel_setzen(self, tx: int, ty: int):
+        """Gewaehlte Kachel/Gruppe an (tx, ty) setzen -- beim Ziehen fortlaufend,
+        Gruppen ohne sich selbst zu ueberlappen.
+
+        Place the chosen tile/group at (tx, ty); while dragging, keep placing,
+        groups without overlapping themselves."""
+        import celltypes as _ct
+        s = self.terrain_panel.kachel_stempel()
+        if s is None or self.map is None:
+            if s is None:
+                self.statusBar().showMessage(tr("tiles.status_choose_first"))
+            return
+        x0, y0 = self._kachel_anker(s, tx, ty)
+        neu = (x0, y0, x0 + s.breite, y0 + s.hoehe)
+        letzt = getattr(self, "_kachel_letzt", None) if self._strich_offen else None
+        if letzt is not None:
+            if letzt[:2] == neu[:2]:
+                return
+            # Ueberlappt der neue Abdruck den vorigen? Dann noch nicht setzen.
+            if s.breite * s.hoehe > 1 and not (neu[2] <= letzt[0] or letzt[2] <= neu[0]
+                                               or neu[3] <= letzt[1] or letzt[3] <= neu[1]):
+                return
+        self._kachel_letzt = neu
+        rueck = []
+        coords = []
+        ebenen = self._layers
+        for dy in range(s.hoehe):
+            for dx in range(s.breite):
+                x, y = x0 + dx, y0 + dy
+                if not (0 <= x < self.map.width and 0 <= y < self.map.height):
+                    continue
+                kachel = int(s.kachel(dx, dy))
+                zelltyp = _ct.default_cell_type(kachel)
+                i = self.map.tile_index(x, y)
+                alt = self.map.tiles[i]
+                self.map.set_tile(x, y, kachel, zelltyp)
+                if self.map.tiles[i] != alt:
+                    rueck.append((i, alt, self.map.tiles[i]))
+                    coords.append((x, y))
+                    # Malebene mitfuehren, damit ein spaeterer Pinselstrich
+                    # daneben den richtigen Untergrund sieht.
+                    if ebenen is not None:
+                        f = int(ebenen.tm.family_of[kachel]) if kachel < len(ebenen.tm.family_of) else -1
+                        if 0 <= f < len(ebenen.tm.families):
+                            ebenen.familie[y, x] = f
+        if not rueck:
+            return
+        self._repaint_tiles(coords)
+        self._patch_cells(coords)
+        self._mark_map_edited()
+        if self._strich_offen:
+            self._strich_rueck = self._strich_rueck + rueck
+        else:
+            was = s.name if s.gruppe else tr("tiles.undo_single")
+            self._push_undo("terrain", TerrainEdit(rueck, was))
+        self._refresh_terrain_overlay()
+        self.statusBar().showMessage(tr("tiles.status_placed",
+                                        name=s.name if s.gruppe else tr("tiles.single", n=s.kacheln[0]),
+                                        x=x0, y=y0))
 
     # ------------------------------------------------------------------
     # Rueckgaengig / undo
