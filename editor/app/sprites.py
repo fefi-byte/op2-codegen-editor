@@ -25,10 +25,18 @@ from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 
 HERE = Path(__file__).resolve().parent
 
-# Index 5 = Normalansicht bei Gebaeuden; Fahrzeuge: Richtung (0 = Osten,
-# im Uhrzeigersinn in 22,5-Grad-Schritten). 2 = Suedost wirkt am natuerlichsten.
+# Index 5 = Normalansicht bei Gebaeuden; Fahrzeuge: 16 Bilder (0 = Osten,
+# im Uhrzeigersinn in 22,5-Grad-Schritten). Das Spiel kennt beim Erzeugen nur
+# 8 Richtungen (UnitDirection East..NorthEast) -> Bild = Richtung * 2.
+# Vehicles: 16 images clockwise from east; the game spawns in 8 directions.
 GEBAEUDE_NORMAL = 5
-FAHRZEUG_RICHTUNG = 2
+FAHRZEUG_RICHTUNG = 2          # Bildindex fuer Richtung 1 (Suedost)
+
+
+def _bild_richtung(richtung) -> int:
+    if richtung is None:
+        return FAHRZEUG_RICHTUNG
+    return (int(richtung) % 8) * 2
 _SPIELERFARBEN_STANDARD = [          # Fallback, falls color.bmp fehlt
     (7, 7, 147), (147, 8, 7), (8, 147, 7), (147, 147, 7), (7, 145, 147), (145, 7, 147),
 ]
@@ -171,7 +179,7 @@ class SpriteSatz:
         # Kopie: QImage teilt sonst den Python-Puffer.
         return img.convertToFormat(QImage.Format_ARGB32_Premultiplied)
 
-    def _anim_index(self, map_id: str, plymouth: bool) -> int | None:
+    def _anim_index(self, map_id: str, plymouth: bool, richtung=None) -> int | None:
         if not self._tabelle:
             return None
         volk = "plymouth" if plymouth else "eden"
@@ -181,7 +189,8 @@ class SpriteSatz:
             if not liste:
                 continue
             if len(liste) == 16:                         # Fahrzeug
-                i = liste[FAHRZEUG_RICHTUNG] if liste[FAHRZEUG_RICHTUNG] is not None else liste[0]
+                r = _bild_richtung(richtung)
+                i = liste[r] if liste[r] is not None else liste[0]
             else:
                 i = liste[GEBAEUDE_NORMAL] if len(liste) > GEBAEUDE_NORMAL else None
                 if i is None and liste[1] is not None:
@@ -198,7 +207,7 @@ class SpriteSatz:
     # Standardwaffe, wenn keine gewaehlt ist (Eden / Plymouth)
     _TURM_STANDARD = ("mapLaser", "mapMicrowave")
 
-    def _turm_index(self, map_id, plymouth, waffe) -> int | None:
+    def _turm_index(self, map_id, plymouth, waffe, richtung=None) -> int | None:
         spalte = self._TURM_SPALTE.get(map_id)
         if spalte is None:
             return None
@@ -211,23 +220,27 @@ class SpriteSatz:
         tab = tuerme.get(waffe)
         if not tab or not tab[spalte]:
             return None
-        return tab[spalte][FAHRZEUG_RICHTUNG]
+        # Wachposten haben keine Richtung -> Standardbild.
+        r = FAHRZEUG_RICHTUNG if map_id == "mapGuardPost" else _bild_richtung(richtung)
+        return tab[spalte][r]
 
-    def bild(self, map_id: str, plymouth: bool, spieler: int = 0, waffe: str | None = None):
+    def bild(self, map_id: str, plymouth: bool, spieler: int = 0, waffe: str | None = None,
+             richtung: int | None = None):
         """(QPixmap, QPoint) -- Bild und Versatz zur Mitte der Bezugskachel,
         oder None, wenn es fuer diesen Typ keine Grafik gibt. Kampffahrzeuge
-        und Wachposten bekommen den Turm ihrer Waffe obenauf."""
-        schl = (map_id, plymouth, spieler, waffe)
+        und Wachposten bekommen den Turm ihrer Waffe obenauf. `richtung` 0..7 wie
+        UnitDirection (0 = Osten, im Uhrzeigersinn); None = Suedost."""
+        schl = (map_id, plymouth, spieler, waffe, richtung)
         if schl in self._cache:
             return self._cache[schl]
         self._laden()
         erg = None
         if self._ok:
-            a = self._anim_index(map_id, plymouth)
+            a = self._anim_index(map_id, plymouth, richtung)
             if a is not None and 0 <= a < len(self._anims):
                 (dx, dy), ebenen = self._anims[a]
                 ebenen = [(bi, ox - dx, oy - dy) for bi, ox, oy in ebenen]
-                t = self._turm_index(map_id, plymouth, waffe)
+                t = self._turm_index(map_id, plymouth, waffe, richtung)
                 if t is not None and 0 <= t < len(self._anims):
                     (tx, ty), turm = self._anims[t]
                     ebenen += [(bi, ox - tx, oy - ty) for bi, ox, oy in turm]

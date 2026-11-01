@@ -89,6 +89,28 @@ def place_one_object(win, app):
     return win.objects[0] if win.objects else None
 
 
+def check_vehicle_direction(win, app) -> None:
+    """Fahrzeug mit Blickrichtung platzieren -> Parameter und UnitSpec."""
+    win._sidebar_tabs.setCurrentIndex(0)
+    win.cat_combo.setCurrentIndex(win.cat_combo.findData("Fahrzeuge"))
+    win.list.setCurrentRow(0)
+    win._activate_placement()
+    pump(app)
+    check("Richtungsauswahl sichtbar", not win.richtung_row.isHidden())
+    win.richtung_combo.setCurrentIndex(4)
+    win._richtung_drehen(1)
+    check("R dreht weiter", win.richtung_combo.currentData() == 5)
+    win.on_place(70, 70)
+    pump(app)
+    fz = win.objects[-1]
+    check("Richtung gespeichert", fz.params.get("rotation") == 5, str(fz.params))
+    spec = next(u for u in win.build_mission().units if u.uid == fz.uid)
+    check("UnitSpec traegt Richtung", spec.rotation == 5, str(spec.rotation))
+    win._delete_object_silent(fz)
+    win.cat_combo.setCurrentIndex(0)
+    pump(app)
+
+
 def check_placement_persistence(win, app) -> None:
     """Platzieren darf nicht unsichtbar abschalten (Rechtsklick/Esc/Tabs)."""
     win._sidebar_tabs.setCurrentIndex(0)
@@ -231,6 +253,7 @@ def check_trigger_panel(win, app) -> None:
         t0 = win.triggers[0]
         check("Punkt-Pick setzt Trigger-Position", (t0.x, t0.y) == (11, 13), f"({t0.x},{t0.y})")
         check("Formular zeigt neue Position", tp.x.value() == 11, str(tp.x.value()))
+        check("Marker des offenen Triggers sichtbar", len(win._trigger_marker_items) > 0)
     # findUnit: Positions-Liste mit Pick / findUnit rows have a picker
     fu = next((label for label, spec in TRIGGER_CONDITIONS.items() if spec[0] == "findUnit"), None)
     if check("Bedingung 'findUnit' vorhanden", fu is not None) and win.map is not None:
@@ -256,12 +279,18 @@ def check_trigger_panel(win, app) -> None:
     pump(app)
     karten = [k for k in tp.act_scroll.widget().findChildren(ActionCard) if k.a.kind == "byDifficulty"]
     check("Schwierigkeits-Karte gebaut", len(karten) == 1)
+    from app.validation import validate_mission
+    befunde = [b for b in validate_mission(win) if "Schwierigkeitsgrad" in b[1]]
+    check("Pruefung: nur ein Zweig -> Hinweis", [b[0] for b in befunde] == ["info"], str(befunde))
     win.triggers[0].actions.clear()
     tp.refresh_actions()
 
     tp.cond_toggle.setChecked(False)
     pump(app)
     check("Bedingung klappt wieder zu", not tp._cond_section.isVisible())
+    tp._set_form_enabled(False)
+    check("Ohne Auswahl keine Trigger-Marker", not win._trigger_marker_items)
+    tp._set_form_enabled(True)
 
 
 def check_groups_panel(win, app) -> None:
@@ -1187,6 +1216,7 @@ def run_checks(win, app) -> None:
     check_catalog_search(win, app)
     obj = place_one_object(win, app)
     check_zoom_thresholds(win, app, obj)
+    check_vehicle_direction(win, app)
     check_placement_persistence(win, app)
     check_trigger_panel(win, app)
     check_groups_panel(win, app)

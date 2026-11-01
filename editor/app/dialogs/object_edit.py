@@ -24,6 +24,13 @@ class ObjectEditDialog(QDialog):
         form.addRow(tr("object_edit.unit_name"), self.unit_name_edit)
         form.addRow(tr("object_edit.player"), self.player_spin)
 
+        self.richtung_combo = None
+        if obj.kind == "vehicle":
+            self.richtung_combo = richtung_combo()
+            i = self.richtung_combo.findData(int(obj.params.get("rotation", 0) or 0))
+            self.richtung_combo.setCurrentIndex(max(0, i))
+            form.addRow(tr("window.lbl_direction"), self.richtung_combo)
+
         self.cargo_combo = None
         self.cargo_amount = None
         self._cargo_form = None
@@ -86,5 +93,7 @@ class ObjectEditDialog(QDialog):
                 obj.params["truck_amount"] = self.cargo_amount.value()
         if self.kit_combo is not None:
             obj.params["convec_kit"] = self.kit_combo.currentData()
+        if self.richtung_combo is not None:
+            obj.params["rotation"] = int(self.richtung_combo.currentData() or 0)
 
 

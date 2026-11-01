@@ -172,6 +172,23 @@ class _SidebarMixin:
         wr.addRow(tr("window.lbl_weapon"), self.weapon_combo)
         lay.addWidget(self.weapon_row)
 
+        # Blickrichtung (Fahrzeuge) -- 8 Richtungen wie UnitDirection im Spiel.
+        # Facing (vehicles) -- 8 directions like the game's UnitDirection.
+        self.richtung_row = QWidget()
+        rr = QFormLayout(self.richtung_row)
+        rr.setContentsMargins(0, 0, 0, 0)
+        self.richtung_combo = richtung_combo()
+        self.richtung_combo.setCurrentIndex(1)            # Suedost
+        self.richtung_combo.setToolTip(tr("window.tip_direction"))
+        self.richtung_combo.currentIndexChanged.connect(self._richtung_geaendert)
+        self.weapon_combo.currentIndexChanged.connect(self._richtung_geaendert)
+        rr.addRow(tr("window.lbl_direction"), self.richtung_combo)
+        lay.addWidget(self.richtung_row)
+        for taste, schritt in (("R", 1), ("Shift+R", -1)):
+            k = QShortcut(QKeySequence(taste), self.view)
+            k.setContext(Qt.WidgetWithChildrenShortcut)
+            k.activated.connect(lambda s=schritt: self._richtung_drehen(s))
+
         lay.addWidget(QLabel(tr("window.sidebar_hint")))
         return panel
 
@@ -245,6 +262,7 @@ class _SidebarMixin:
         self.kit_row.setVisible(mid == "mapConVec")
         self.beacon_row.setVisible(mid == "mapMiningBeacon")
         self.weapon_row.setVisible(mid in WEAPON_UNITS)
+        self.richtung_row.setVisible(kind == "vehicle")
 
     def _update_cargo_amount_visibility(self):
         """Menge-Feld nur bei quantifizierter Ladung zeigen (nicht bei Spaceport/Schrott-Teilen)."""

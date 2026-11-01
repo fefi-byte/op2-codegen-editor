@@ -42,13 +42,15 @@ class ValidationPanel(QWidget):
         findings = validate_mission(self._window)
         self.list.clear()
         errors = sum(1 for s, _, _ in findings if s == "error")
-        warnings = len(findings) - errors
+        warnings = sum(1 for s, _, _ in findings if s == "warning")
         for severity, text, target in findings:
-            icon = "🛑" if severity == "error" else "⚠️"
+            icon = {"error": "🛑", "info": "ℹ️"}.get(severity, "⚠️")
             item = QListWidgetItem(f"{icon} {text}")
             item.setData(Qt.UserRole, target)
             if severity == "error":
                 item.setForeground(QBrush(QColor(243, 139, 168)))
+            elif severity == "info":
+                item.setForeground(QBrush(QColor(137, 180, 250)))
             else:
                 item.setForeground(QBrush(QColor(249, 226, 175)))
             self.list.addItem(item)

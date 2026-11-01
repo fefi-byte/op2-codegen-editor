@@ -23,6 +23,7 @@ class _OverlaysMixin:
         self._overlay_groups_on = False
         self._overlay_items: list = []
         self._area_preview_items: list = []
+        self._trigger_marker_items: list = []
 
     def _toggle_trigger_overlay(self, on):
         self._overlay_triggers_on = on
@@ -85,7 +86,7 @@ class _OverlaysMixin:
 
     def _draw_trigger_overlays(self):
         for t in self.triggers:
-            if t.condition == "rect":
+            if t.condition in ("rect", "escape"):
                 self._overlay_rect(t.x, t.y, max(1, t.width), max(1, t.height),
                                    _TRIGGER_COLOR, t.name)
             elif t.condition == "point":
@@ -93,6 +94,40 @@ class _OverlaysMixin:
             elif t.condition == "findUnit":
                 for chk in (t.unit_checks or []):
                     self._overlay_point(chk.x, chk.y, _TRIGGER_COLOR, t.name)
+
+    # ------------------------------------------------------------------
+    # Punkt/Bereich des GEWAEHLTEN Triggers -- nur solange er im Editor offen
+    # ist, damit die Karte nicht mit allen Triggern zugepflastert wird.
+    # Point/area of the SELECTED trigger only, while it is open.
+    def trigger_marker_weg(self):
+        for item in self._trigger_marker_items:
+            try:
+                self.scene.removeItem(item)
+            except RuntimeError:
+                pass
+        self._trigger_marker_items = []
+
+    def trigger_marker_zeigen(self, t):
+        self.trigger_marker_weg()
+        if t is None or self.map is None:
+            return
+        from .style import TRIGGER_FARBEN
+        farbe = QColor(TRIGGER_FARBEN.get(getattr(t, "color", "") or "", "#f9e2af"))
+        sicherung = self._overlay_items
+        self._overlay_items = self._trigger_marker_items
+        try:
+            k = t.condition
+            if k in ("rect", "escape"):
+                self._overlay_rect(t.x, t.y, max(1, t.width), max(1, t.height), farbe, t.name)
+            elif k == "point":
+                self._overlay_point(t.x, t.y, farbe, t.name)
+            elif k == "findUnit":
+                for n, chk in enumerate(t.unit_checks or [], 1):
+                    self._overlay_point(chk.x, chk.y, farbe, f"{t.name} #{n}")
+        finally:
+            self._overlay_items = sicherung
+        for it in self._trigger_marker_items:
+            it.setZValue(it.zValue() + 20)        # ueber den Menue-Overlays
 
     # ------------------------------------------------------------------
     # Bereichs-Vorschau fuer die gerade aufgeklappte Aktionskarte.

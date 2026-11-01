@@ -13,7 +13,7 @@ Jede Prueffunktion liefert Befunde als (severity, text, target)-Tupel:
 Each check yields findings as (severity, text, target) tuples.
 """
 
-from .common import tr
+from .common import SUB_ACTION_LISTS, tr
 
 
 def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
@@ -37,7 +37,33 @@ def validate_mission(w) -> list[tuple[str, str, tuple | None]]:
     findings += _check_custom_actions(w)
     findings += _check_text_vars(w)
     findings += _check_trigger_ablauf(w)
+    findings += _check_schwierigkeit(w)
     return findings
+
+
+def _check_schwierigkeit(w):
+    """Bloecke 'Nach Schwierigkeitsgrad': ganz leer -> Warnung (tut nichts),
+    nur ein Zweig gefuellt -> Hinweis (die anderen Grade bekommen nichts).
+    By-difficulty blocks: empty -> warning, only one branch -> info."""
+    out = []
+    namen = (("easy_actions", "leicht"), ("normal_actions", "normal"), ("hard_actions", "schwer"))
+
+    def walk(actions, ti, tname):
+        for a in (actions or []):
+            if getattr(a, "kind", "") == "byDifficulty":
+                voll = [k for f, k in namen if getattr(a, f, None)]
+                if not voll:
+                    out.append(("warning", tr("validation.diff_empty", t=tname), ("trigger", ti)))
+                elif len(voll) == 1:
+                    out.append(("info", tr("validation.diff_one_branch", t=tname,
+                                           grad=tr(f"validation.diff_{voll[0]}")),
+                                ("trigger", ti)))
+            for f in SUB_ACTION_LISTS:
+                walk(getattr(a, f, None), ti, tname)
+
+    for ti, t in enumerate(getattr(w, "triggers", None) or []):
+        walk(t.actions, ti, t.name)
+    return out
 
 
 def _check_players(w):

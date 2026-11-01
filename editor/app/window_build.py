@@ -186,6 +186,7 @@ class _BuildMixin:
                     truck_cargo=o.params.get("truck_cargo"),
                     truck_amount=o.params.get("truck_amount", 1000),
                     convec_kit=o.params.get("convec_kit"),
+                    rotation=int(o.params.get("rotation", 0) or 0) if o.kind == "vehicle" else 0,
                     uid=o.uid,
                     unit_name=o.unit_name,
                 ))

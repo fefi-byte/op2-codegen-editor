@@ -213,7 +213,8 @@ class MissionOutline(QWidget):
             befunde_liste = []
         befunde: dict = defaultdict(list)
         for schwere, text, ziel in befunde_liste:
-            if ziel:
+            # Hinweise nur in der Pruefliste, nicht als Warnsymbol am Eintrag.
+            if ziel and schwere != "info":
                 befunde[tuple(ziel)].append((schwere, text))
 
         # Einstellungen

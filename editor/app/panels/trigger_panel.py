@@ -4,7 +4,7 @@ from collections import defaultdict
 from PySide6.QtWidgets import QSplitter
 
 from ..common import *
-from ..dialogs.triggers import UnitChecksWidget
+from ..dialogs.unit_checks import UnitChecksWidget
 from ..dialogs.action_editor import ActionListWidget
 from ..style import apply_role
 
@@ -514,6 +514,7 @@ class TriggerPanel(QWidget):
         def neu():
             if self.unit_checks_widget is not None:
                 self.unit_checks_widget._rebuild()
+            self._marker_auffrischen()
         self._punkt_pick(pruefung, "point", neu)
 
     def _ausloeser_pick(self):
@@ -572,6 +573,8 @@ class TriggerPanel(QWidget):
             # Aktionsliste leeren -- der Hinweis oben erklaert den Zustand.
             # Clear the action list -- the hint above explains the state.
             self.act_scroll.setWidget(QWidget())
+            if hasattr(self._window, "trigger_marker_weg"):
+                self._window.trigger_marker_weg()
         self._update_cond_header()
 
     def _toggle_condition(self, on):
@@ -833,7 +836,8 @@ class TriggerPanel(QWidget):
             self.unit_checks_layout.removeWidget(self.unit_checks_widget)
             self.unit_checks_widget.deleteLater()
             self.unit_checks_widget = None
-        self.unit_checks_widget = UnitChecksWidget(t.unit_checks, on_pick=self._pruefung_pick)
+        self.unit_checks_widget = UnitChecksWidget(t.unit_checks, on_pick=self._pruefung_pick,
+                                                  on_change=self._marker_auffrischen)
         self.unit_checks_layout.addWidget(self.unit_checks_widget)
         fi = self.farbe.findData(getattr(t, "color", "") or "")
         self.farbe.setCurrentIndex(max(0, fi))
@@ -844,6 +848,7 @@ class TriggerPanel(QWidget):
         self._window.clear_action_area_preview()
         self.act_scroll.setWidget(ActionListWidget(t.actions, self._action_ctx()))
         self.ablauf_auffrischen()
+        self._marker_auffrischen()
 
     def _store_current(self):
         triggers = self._window.triggers
@@ -880,6 +885,26 @@ class TriggerPanel(QWidget):
             item.setText(0, trigger_summary(t))
         self._update_cond_header()
         self._window._refresh_overview()
+        self._marker_auffrischen()
+
+    def _marker_auffrischen(self):
+        """Punkt/Bereich des offenen Triggers auf der Karte zeigen."""
+        w = self._window
+        if not hasattr(w, "trigger_marker_zeigen"):
+            return
+        if self.isVisible() and 0 <= self._idx < len(w.triggers):
+            w.trigger_marker_zeigen(w.triggers[self._idx])
+        else:
+            w.trigger_marker_weg()
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        self._marker_auffrischen()
+
+    def hideEvent(self, ev):
+        super().hideEvent(ev)
+        if hasattr(self._window, "trigger_marker_weg"):
+            self._window.trigger_marker_weg()
 
     def _update_cargo_options(self):
         """Ladung-Auswahl auf den gewaehlten Fahrzeugtyp zuschneiden (vehicleCargo/escape)."""

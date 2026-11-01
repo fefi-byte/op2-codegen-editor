@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QGraphicsItem, QGraphicsPathItem, QGraphicsEllipseItem, QMenu, QFrame, QScrollArea,
     QGraphicsPixmapItem,
 )
-from PySide6.QtGui import QFont, QPainterPath, QPolygonF, QCursor
+from PySide6.QtGui import QFont, QPainterPath, QPolygonF, QCursor, QKeySequence, QShortcut
 from PySide6.QtCore import QPointF
 
 from op2map import Op2Map
@@ -85,6 +85,19 @@ def fill_combo(combo, mapping, section):
     for label, val in mapping.items():
         internal = val[0] if isinstance(val, tuple) else val
         combo.addItem(tr(f"{section}.{internal}"), label)
+
+
+# Blickrichtungen wie UnitDirection im Spiel (0 = Osten, im Uhrzeigersinn).
+# Facings like the game's UnitDirection (0 = east, clockwise).
+RICHTUNGEN = ("east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast")
+
+
+def richtung_combo() -> QComboBox:
+    c = QComboBox()
+    pfeile = "→↘↓↙←↖↑↗"
+    for i, key in enumerate(RICHTUNGEN):
+        c.addItem(f"{pfeile[i]}  {tr('directions.' + key)}", i)
+    return c
 
 
 PLAYER_COLORS = [QColor(80, 160, 255), QColor(255, 90, 90), QColor(90, 220, 90),

@@ -90,6 +90,19 @@ class _PlacementMixin:
             self._draw(obj)
             self.objects.append(obj)
 
+    def _richtung_drehen(self, schritt: int = 1):
+        """R / Umschalt+R: Blickrichtung des naechsten Fahrzeugs drehen.
+        R / Shift+R: turn the facing of the next vehicle."""
+        if self.richtung_row.isHidden():
+            return
+        c = self.richtung_combo
+        c.setCurrentIndex((c.currentIndex() + schritt) % c.count())
+
+    def _richtung_geaendert(self, *_):
+        kachel = getattr(self, "_hover_kachel", None)
+        if self._placement_active and kachel is not None:
+            self._draw_placement_preview(*kachel)
+
     def _clear_placement_preview(self):
         for item in self._placement_preview_items:
             self.scene.removeItem(item)
@@ -121,8 +134,10 @@ class _PlacementMixin:
         self.scene.addItem(rect)
         if kind in ("structure", "vehicle"):
             waffe = self.weapon_combo.currentData() if self.weapon_row.isVisible() else None
+            richtung = self.richtung_combo.currentData() if kind == "vehicle" else None
             geist = self._sprite_item(_map_id, self.player_spin.value(), tx, ty, alpha=0.75,
-                                      waffe=waffe, fw=footprint_w, fh=footprint_h)
+                                      waffe=waffe, fw=footprint_w, fh=footprint_h,
+                                      richtung=richtung)
             if geist is not None:
                 geist.setZValue(1049)
                 rect.setBrush(Qt.NoBrush)
@@ -145,6 +160,7 @@ class _PlacementMixin:
         self._placement_preview_items = [rect, label]
 
     def _on_tile_hover(self, tx, ty):
+        self._hover_kachel = (tx, ty)
         self.coord_label.setText(f"Tile: {tx}, {ty}")
         if self._terrain_active:
             self._update_terrain_preview(tx, ty)
@@ -194,13 +210,14 @@ class _PlacementMixin:
             return self.players[spieler].colony == Colony.Plymouth
         return False
 
-    def _sprite_item(self, map_id, spieler, tx, ty, alpha=1.0, waffe=None, fw=1, fh=1):
+    def _sprite_item(self, map_id, spieler, tx, ty, alpha=1.0, waffe=None, fw=1, fh=1,
+                     richtung=None):
         """QGraphicsPixmapItem mit der echten Grafik -- Eden oder Plymouth je
         nach Kolonie des Spielers, in seiner Spielerfarbe. None ohne Grafik."""
         satz = self._sprites()
         if satz is None:
             return None
-        b = satz.bild(map_id, self._ist_plymouth(spieler), spieler, waffe)
+        b = satz.bild(map_id, self._ist_plymouth(spieler), spieler, waffe, richtung)
         if b is None:
             return None
         pm, off = b
@@ -481,6 +498,8 @@ class _PlacementMixin:
             params["yield_bars"] = YIELDS[self.yield_combo.currentData()]
         if mid in WEAPON_UNITS:
             params["weapon"] = self.weapon_combo.currentData()
+        if kind == "vehicle":
+            params["rotation"] = int(self.richtung_combo.currentData() or 0)
         player = self.player_spin.value() if kind in ("structure", "vehicle") else 0
         unit_name = self.unit_name_edit.text().strip() if kind in ("structure", "vehicle") else ""
         obj = PlacedObject(kind, tx, ty, mid, fp, disp, player, params, self._new_object_uid(), unit_name)
@@ -548,7 +567,9 @@ class _PlacementMixin:
         y0 = (obj.tile_y - fh // 2) * SCENE_TILE
         rect = QGraphicsRectItem(x0, y0, fw * SCENE_TILE, fh * SCENE_TILE)
         sprite = self._sprite_item(obj.map_id, obj.player, obj.tile_x, obj.tile_y,
-                                   waffe=(obj.params or {}).get("weapon"), fw=fw, fh=fh) \
+                                   waffe=(obj.params or {}).get("weapon"), fw=fw, fh=fh,
+                                   richtung=int((obj.params or {}).get("rotation", 0) or 0)
+                                   if obj.kind == "vehicle" else None) \
             if obj.kind in ("structure", "vehicle") else None
         if sprite is not None:
             # Echte Grafik: das Rechteck bleibt nur als feiner Rahmen der
