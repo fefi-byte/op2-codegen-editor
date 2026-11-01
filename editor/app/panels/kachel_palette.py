@@ -67,8 +67,18 @@ class Stempel:
     art: str = "boden"
     gruppe: bool = False
     haeufigkeit: float = 0.0
+    paket: object = None          # pakete.Paket, wenn es ein Detail-Paket ist
+
+    @property
+    def einzeln(self) -> bool:
+        return not self.gruppe and self.paket is None
+
+    @property
+    def anzeigename(self) -> str:
+        return self.name if not self.einzeln else tr("tiles.single", n=self.kacheln[0])
 
     def kachel(self, x: int, y: int) -> int:
+        """Kachelnummer; -1 = hier bleibt der Boden (Pakete)."""
         return self.kacheln[y * self.breite + x]
 
 
@@ -140,6 +150,21 @@ def katalog(karte, tm) -> list[Stempel]:
             fams.discard("sonst")
         stempel.append(Stempel(g.name, g.width, g.height, list(g.mapping_indices),
                                fams, art, gruppe=True))
+
+    # Detail-Pakete: fertige Bausaetze aus Originalen und eigene
+    try:
+        import pakete as _pk
+        art_map = {"wrack": "schutt", "stein": "felsen", "krater": "krater",
+                   "riss": "risse", "ruine": "schutt"}
+        for p in _pk.laden():
+            if any(not (0 <= k < n) for _, _, k in p.teile):
+                continue
+            stempel.append(Stempel(p.name, p.breite, p.hoehe,
+                                   p.raster().ravel().tolist(), {p.boden},
+                                   art_map.get(p.art, "felsen"), paket=p))
+    except Exception as e:                       # ohne Pakete geht es auch
+        import sys
+        print(f"Pakete nicht geladen: {e}", file=sys.stderr)
 
     for i in range(n):
         if i in leer:
@@ -217,6 +242,7 @@ class KachelPalette(QWidget):
         self.sorte.addItem(tr("tiles.sorte_alle"), "alle")
         self.sorte.addItem(tr("tiles.sorte_gruppen"), "gruppen")
         self.sorte.addItem(tr("tiles.sorte_einzeln"), "einzeln")
+        self.sorte.addItem(tr("tiles.sorte_pakete"), "pakete")
         self.sorte.currentIndexChanged.connect(self._fuellen)
         zeile.addWidget(self.sorte, 1)
         lay.addLayout(zeile)
@@ -242,6 +268,8 @@ class KachelPalette(QWidget):
             "QListWidget::item:selected { background: #45475a; border: 2px solid #f9e2af; }"
             "QListWidget::item:hover { background: #313244; }")
         self.raster.currentItemChanged.connect(self._gewaehlt)
+        self.raster.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.raster.customContextMenuRequested.connect(self._kontextmenue)
         lay.addWidget(self.raster, 1)
 
         self.anzahl = QLabel("")
@@ -265,6 +293,14 @@ class KachelPalette(QWidget):
         self.info_text.setTextFormat(Qt.RichText)
         il.addWidget(self.info_text, 1)
         lay.addWidget(self.info_box)
+
+        # Eigene Pakete: Bereich auf der Karte aufziehen und speichern.
+        # Own packages: drag an area on the map and save it.
+        self.paket_btn = QPushButton(tr("tiles.btn_save_package"))
+        self.paket_btn.setCheckable(True)
+        self.paket_btn.setToolTip(tr("tiles.tip_save_package"))
+        self.paket_btn.toggled.connect(self._paket_modus)
+        lay.addWidget(self.paket_btn)
 
         hint = QLabel(tr("tiles.hint"))
         hint.setWordWrap(True)
@@ -296,6 +332,39 @@ class KachelPalette(QWidget):
     def stempel(self) -> Stempel | None:
         return self._auswahl
 
+    def neu_laden(self, waehlen: str | None = None) -> None:
+        """Katalog neu aufbauen (nach Speichern/Loeschen eines Pakets)."""
+        self._karten_marke = None
+        self._katalog = []
+        self.laden()
+        if waehlen:
+            for i in range(self.raster.count()):
+                s = self.raster.item(i).data(Qt.UserRole)
+                if s.paket is not None and s.name == waehlen:
+                    self.raster.setCurrentRow(i)
+                    self.raster.scrollToItem(self.raster.item(i))
+                    break
+
+    def _paket_modus(self, an: bool):
+        w = self._window
+        if hasattr(w, "_paket_rahmen_umschalten"):
+            w._paket_rahmen_umschalten(an)
+
+    def _kontextmenue(self, pos):
+        it = self.raster.itemAt(pos)
+        s = it.data(Qt.UserRole) if it is not None else None
+        if s is None or s.paket is None or not s.paket.eigen:
+            return
+        m = QMenu(self)
+        weg = m.addAction(tr("tiles.menu_delete_package", name=s.name))
+        if m.exec(self.raster.viewport().mapToGlobal(pos)) is weg:
+            import pakete
+            if pakete.eigenes_loeschen(s.name):
+                if self._auswahl is s:
+                    self._auswahl = None
+                    self.auswahl_geaendert.emit(None)
+                self.neu_laden()
+
     def set_familie(self, fam: str) -> None:
         if fam not in self._chips:
             fam = "alle"
@@ -305,7 +374,7 @@ class KachelPalette(QWidget):
 
     def kachel_waehlen(self, kachel: int) -> None:
         """Pipette: genau diese Einzelkachel zeigen und auswaehlen."""
-        ziel = next((s for s in self._katalog if not s.gruppe and s.kacheln[0] == kachel), None)
+        ziel = next((s for s in self._katalog if s.einzeln and s.kacheln[0] == kachel), None)
         if ziel is None:
             return
         fam = next(iter(sorted(ziel.familien)), "alle")
@@ -335,7 +404,9 @@ class KachelPalette(QWidget):
         sorte = self.sorte.currentData()
         if sorte == "gruppen" and not s.gruppe:
             return False
-        if sorte == "einzeln" and s.gruppe:
+        if sorte == "einzeln" and (s.gruppe or s.paket is not None):
+            return False
+        if sorte == "pakete" and s.paket is None:
             return False
         text = self.suche.text().strip().lower()
         if text and text not in s.name.lower() and text != tr(f"tiles.art_{s.art}").lower():
@@ -350,7 +421,7 @@ class KachelPalette(QWidget):
         # Gruppen zuerst nach Art und Name, dann Einzelkacheln nach Haeufigkeit.
         # Groups first by kind and name, then single tiles by frequency.
         reihe = {a: i for i, a in enumerate(ARTEN)}
-        treffer.sort(key=lambda s: (not s.gruppe, reihe.get(s.art, 99),
+        treffer.sort(key=lambda s: (s.paket is None, not s.gruppe, reihe.get(s.art, 99),
                                     -s.haeufigkeit, s.name))
         neu_index = -1
         for s in treffer:
@@ -362,7 +433,9 @@ class KachelPalette(QWidget):
                 neu_index = self.raster.count() - 1
         self.raster.blockSignals(False)
         gruppen = sum(1 for s in treffer if s.gruppe)
-        self.anzahl.setText(tr("tiles.count", g=gruppen, k=len(treffer) - gruppen))
+        pakete_n = sum(1 for s in treffer if s.paket is not None)
+        self.anzahl.setText(tr("tiles.count3", p=pakete_n, g=gruppen,
+                               k=len(treffer) - gruppen - pakete_n))
         if neu_index >= 0:
             self.raster.setCurrentRow(neu_index)
         elif alt is not None:
@@ -371,7 +444,8 @@ class KachelPalette(QWidget):
 
     def _tooltip(self, s: Stempel) -> str:
         groesse = f"{s.breite}×{s.hoehe}"
-        return f"{s.name}  ·  {groesse}  ·  {tr('tiles.art_' + s.art)}"
+        vorne = "📦 " if s.paket is not None else ""
+        return f"{vorne}{s.anzeigename}  ·  {groesse}  ·  {tr('tiles.art_' + s.art)}"
 
     def _gewaehlt(self, it, _alt=None):
         s = it.data(Qt.UserRole) if it is not None else None
@@ -380,15 +454,23 @@ class KachelPalette(QWidget):
         self.auswahl_geaendert.emit(s)
 
     # ------------------------------------------------------------------
-    def bild(self, s: Stempel) -> QPixmap | None:
-        """Volles Bild des Stempels (32 px je Kachel). / Full stamp image."""
+    def bild(self, s: Stempel, mit_boden: bool = False) -> QPixmap | None:
+        """Volles Bild des Stempels (32 px je Kachel). Bei Paketen bleiben die
+        Bodenzellen leer -- oder zeigen mit `mit_boden` den passenden Boden.
+        Full stamp image; package ground cells stay empty unless `mit_boden`."""
         w = self._window
         pm = QPixmap(s.breite * TILE, s.hoehe * TILE)
         pm.fill(QColor(0, 0, 0, 0))
         p = QPainter(pm)
+        boden = self.repraesentant(next(iter(s.familien))) if (mit_boden and s.paket is not None) else None
         for y in range(s.hoehe):
             for x in range(s.breite):
-                k = w._tile_pixmap(s.kachel(x, y)) if hasattr(w, "_tile_pixmap") else None
+                kachel = s.kachel(x, y)
+                k = None
+                if kachel >= 0 and hasattr(w, "_tile_pixmap"):
+                    k = w._tile_pixmap(kachel)
+                elif boden is not None:
+                    k = boden
                 if k is not None:
                     p.drawPixmap(x * TILE, y * TILE, k)
         p.end()
@@ -398,7 +480,7 @@ class KachelPalette(QWidget):
         icon = self._symbole.get(id(s))
         if icon is not None:
             return icon
-        voll = self.bild(s)
+        voll = self.bild(s, mit_boden=True)
         kasten = QPixmap(SYMBOL, SYMBOL)
         kasten.fill(QColor(0, 0, 0, 0))
         klein = voll.scaled(SYMBOL, SYMBOL, Qt.KeepAspectRatio,
@@ -406,10 +488,11 @@ class KachelPalette(QWidget):
                             else Qt.SmoothTransformation)
         p = QPainter(kasten)
         p.drawPixmap((SYMBOL - klein.width()) // 2, (SYMBOL - klein.height()) // 2, klein)
-        if s.gruppe:
-            # Kleine Ecke: Gruppe statt Einzelkachel / corner mark for groups
+        if s.gruppe or s.paket is not None:
+            # Kleine Ecke: gelb = Gruppe, blau = Paket / corner mark
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor(249, 226, 175, 220))
+            p.setBrush(QColor(137, 180, 250, 230) if s.paket is not None
+                       else QColor(249, 226, 175, 220))
             p.drawPolygon(QPolygonF([QPointF(SYMBOL - 12, 0), QPointF(SYMBOL, 0),
                                      QPointF(SYMBOL, 12)]))
         p.end()
@@ -421,7 +504,7 @@ class KachelPalette(QWidget):
         """Jeder Boden-Chip zeigt seine haeufigste Kachel."""
         for fam, b in self._chips.items():
             kandidaten = [s for s in self._katalog
-                          if not s.gruppe and s.art == "boden" and fam in s.familien]
+                          if s.einzeln and s.art == "boden" and fam in s.familien]
             if fam == "alle" or not kandidaten:
                 b.setIcon(QIcon())
                 continue
@@ -432,7 +515,7 @@ class KachelPalette(QWidget):
     def repraesentant(self, fam: str) -> QPixmap | None:
         """Haeufigste reine Kachel eines Bodens (fuer Pinselknoepfe)."""
         kandidaten = [s for s in self._katalog
-                      if not s.gruppe and s.art == "boden" and fam in s.familien]
+                      if s.einzeln and s.art == "boden" and fam in s.familien]
         if not kandidaten:
             return None
         beste = max(kandidaten, key=lambda s: s.haeufigkeit)
@@ -444,22 +527,27 @@ class KachelPalette(QWidget):
             self.info_text.setText(tr("tiles.none"))
             return
         import celltypes as ct
-        voll = self.bild(s)
+        voll = self.bild(s, mit_boden=True)
         self.info_bild.setPixmap(voll.scaled(96, 96, Qt.KeepAspectRatio,
                                              Qt.FastTransformation if voll.width() <= 96
                                              else Qt.SmoothTransformation))
         klassen = []
         for k in dict.fromkeys(s.kacheln):
+            if int(k) < 0:
+                continue
             zt = ct.default_cell_type(int(k), fallback=-1)
             if zt is not None and zt >= 0:
                 name = tr("terrain.speed_" + ct.speed_class(zt))
                 if name not in klassen:
                     klassen.append(name)
         boeden = ", ".join(tr(f"tiles.fam_{f}") for f in FAMILIEN if f in s.familien)
-        titel = s.name if s.gruppe else tr("tiles.single", n=s.kacheln[0])
+        titel = s.name if (s.gruppe or s.paket is not None) else tr("tiles.single", n=s.kacheln[0])
         zeilen = [f"<b>{titel}</b>",
                   tr("tiles.info_size", w=s.breite, h=s.hoehe, art=tr(f"tiles.art_{s.art}")),
                   tr("tiles.info_ground", boeden=boeden or "–")]
         if klassen:
             zeilen.append(tr("tiles.info_pass", klassen=", ".join(klassen)))
+        if s.paket is not None:
+            zeilen.append(tr("tiles.info_paket_eigen") if s.paket.eigen
+                          else tr("tiles.info_paket_quelle", quelle=s.paket.quelle))
         self.info_text.setText("<br>".join(zeilen))

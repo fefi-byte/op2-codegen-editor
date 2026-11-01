@@ -197,8 +197,9 @@ class _TerrainMixin:
         pinsel = self.terrain_panel.selected_brush()
         if self.terrain_panel.modus() == MODUS_KACHELN:
             s = self.terrain_panel.kachel_stempel()
-            name = (s.name if s is not None and s.gruppe else
-                    tr("tiles.single", n=s.kacheln[0]) if s is not None else tr("tiles.none_short"))
+            name = s.anzeigename if s is not None else tr("tiles.none_short")
+            if getattr(self, "_paket_rahmen_an", False):
+                name = tr("tiles.banner_frame")
             banner.setText(tr("window.tiles_banner", name=name))
         else:
             banner.setText(tr("window.terrain_banner",
@@ -306,6 +307,8 @@ class _TerrainMixin:
         self._strich_offen = True
         self._kachel_letzt = None
         if self.terrain_panel.modus() == MODUS_KACHELN:
+            if getattr(self, "_paket_rahmen_an", False):
+                self._paket_rahmen_start = None
             return
         ebenen = self._paint_layers()
         if ebenen is not None:
@@ -319,12 +322,17 @@ class _TerrainMixin:
     def _terrain_strich_abschliessen(self):
         """Ende des Strichs: einmal rechnen und alles auf einmal setzen."""
         if self.terrain_panel.modus() == MODUS_KACHELN:
+            if getattr(self, "_paket_rahmen_an", False):
+                self._strich_offen = False
+                if getattr(self, "_paket_rahmen_start", None) is not None:
+                    self._paket_rahmen_fertig(*self._paket_rahmen_ende)
+                return
             self._strich_offen = False
             self._kachel_letzt = None
             gesammelt, self._strich_rueck = self._strich_rueck, []
             if gesammelt:
                 s = self.terrain_panel.kachel_stempel()
-                was = s.name if s is not None and s.gruppe else tr("tiles.undo_single")
+                was = s.name if s is not None and not s.einzeln else tr("tiles.undo_single")
                 self._push_undo("terrain", TerrainEdit(gesammelt, was))
             return
         rechteck = self._strich_rechteck
@@ -484,6 +492,12 @@ class _TerrainMixin:
         height edge with its cell type and matching neighbours.
         """
         if self.terrain_panel.modus() == MODUS_KACHELN:
+            if getattr(self, "_paket_rahmen_an", False):
+                if self._paket_rahmen_start is None:
+                    self._paket_rahmen_start = (tx, ty)
+                self._paket_rahmen_ende = (tx, ty)
+                self._paket_rahmen_zeichnen(tx, ty)
+                return
             self._kachel_setzen(tx, ty)
             return
         ebenen = self._paint_layers()
@@ -791,7 +805,8 @@ class _TerrainMixin:
     def _update_terrain_preview(self, tx: int, ty: int):
         self._clear_terrain_preview()
         if self.terrain_panel.modus() == MODUS_KACHELN:
-            self._kachel_vorschau(tx, ty)
+            if not getattr(self, "_paket_rahmen_an", False):
+                self._kachel_vorschau(tx, ty)
             return
         if self.terrain_panel.selected_brush() == B_KLIPPE:
             self._klippen_zielring(tx, ty)
@@ -848,13 +863,104 @@ class _TerrainMixin:
         gruppe.addToGroup(bild)
         rahmen = QGraphicsRectItem(x0 * SCENE_TILE, y0 * SCENE_TILE,
                                    s.breite * SCENE_TILE, s.hoehe * SCENE_TILE)
-        stift = QPen(QColor(249, 226, 175), 2, Qt.DashLine)
+        farbe = QColor(243, 139, 168) if self._paket_fremdboden(s, x0, y0) else QColor(249, 226, 175)
+        stift = QPen(farbe, 2, Qt.DashLine)
         stift.setCosmetic(True)
         rahmen.setPen(stift)
         gruppe.addToGroup(rahmen)
         gruppe.setZValue(1000)
         self.scene.addItem(gruppe)
         self._terrain_preview_item = gruppe
+
+    def _paket_fremdboden(self, s, x0: int, y0: int) -> bool:
+        """Liegt ein Paket ueberwiegend auf einem anderen Boden als seinem?"""
+        if getattr(s, "paket", None) is None or self.map is None:
+            return False
+        import mapgen
+        tm = mapgen.model()
+        soll = next(iter(s.familien))
+        anders = gesamt = 0
+        for dy in range(s.hoehe):
+            for dx in range(s.breite):
+                x, y = x0 + dx, y0 + dy
+                if not (0 <= x < self.map.width and 0 <= y < self.map.height):
+                    continue
+                f = int(tm.family_of[self.map.tile_mapping_index(x, y)])
+                if 0 <= f < len(tm.families):
+                    gesamt += 1
+                    anders += tm.families[f] != soll and not (soll == "roc" and tm.families[f] == "lav")
+        return gesamt > 0 and anders > 0.3 * gesamt
+
+    # --- Bereich als Paket speichern / save an area as a package ---------
+
+    def _paket_rahmen_umschalten(self, an: bool):
+        self._paket_rahmen_an = bool(an)
+        self._paket_rahmen_start = None
+        self._paket_rahmen_weg()
+        self._clear_terrain_preview()
+        self._gelaende_banner_aktualisieren()
+        if an:
+            self.statusBar().showMessage(tr("tiles.status_frame_hint"))
+
+    def _paket_rahmen_weg(self):
+        item = getattr(self, "_paket_rahmen_item", None)
+        if item is not None:
+            try:
+                self.scene.removeItem(item)
+            except RuntimeError:
+                pass
+        self._paket_rahmen_item = None
+
+    def _paket_rahmen_zeichnen(self, tx: int, ty: int):
+        self._paket_rahmen_weg()
+        sx, sy = self._paket_rahmen_start
+        x0, y0 = min(sx, tx), min(sy, ty)
+        x1, y1 = max(sx, tx), max(sy, ty)
+        r = QGraphicsRectItem(x0 * SCENE_TILE, y0 * SCENE_TILE,
+                              (x1 - x0 + 1) * SCENE_TILE, (y1 - y0 + 1) * SCENE_TILE)
+        stift = QPen(QColor(137, 180, 250), 2, Qt.DashLine)
+        stift.setCosmetic(True)
+        r.setPen(stift)
+        r.setBrush(QBrush(QColor(137, 180, 250, 40)))
+        r.setZValue(1001)
+        self.scene.addItem(r)
+        self._paket_rahmen_item = r
+
+    def _paket_rahmen_fertig(self, tx: int, ty: int):
+        """Details im Rahmen einsammeln, nach dem Namen fragen, speichern."""
+        import mapgen
+        import pakete
+        from PySide6.QtWidgets import QInputDialog
+        sx, sy = self._paket_rahmen_start
+        self._paket_rahmen_start = None
+        self._paket_rahmen_weg()
+        x0, y0 = max(0, min(sx, tx)), max(0, min(sy, ty))
+        x1 = min(self.map.width - 1, max(sx, tx))
+        y1 = min(self.map.height - 1, max(sy, ty))
+        kacheln = np.array([[self.map.tile_mapping_index(x, y) for x in range(x0, x1 + 1)]
+                            for y in range(y0, y1 + 1)], dtype=np.int32)
+        tm = mapgen.model()
+
+        def familie_von(k):
+            f = int(tm.family_of[k]) if 0 <= k < len(tm.family_of) else -1
+            name = tm.families[f] if 0 <= f < len(tm.families) else ""
+            return "roc" if name == "lav" else name
+        paket = pakete.aus_bereich(kacheln, familie_von, quelle=f"{self.map_name} ({x0},{y0})")
+        if paket is None:
+            QMessageBox.information(self, tr("tiles.dlg_package_title"), tr("tiles.no_details"))
+            return
+        vorschlag = f"{tr('tiles.fam_' + paket.boden)} – {tr('tiles.paket_art_' + paket.art)}"
+        name, ok = QInputDialog.getText(
+            self, tr("tiles.dlg_package_title"),
+            tr("tiles.dlg_package_text", n=len(paket.teile), w=paket.breite, h=paket.hoehe),
+            text=vorschlag)
+        if not ok or not name.strip():
+            return
+        paket.name = name.strip()
+        pfad = pakete.eigene_speichern(paket)
+        self.terrain_panel.palette.paket_btn.setChecked(False)
+        self.terrain_panel.palette.neu_laden(waehlen=paket.name)
+        self.statusBar().showMessage(tr("tiles.status_package_saved", name=paket.name, pfad=pfad.name))
 
     def _kachel_setzen(self, tx: int, ty: int):
         """Gewaehlte Kachel/Gruppe an (tx, ty) setzen -- beim Ziehen fortlaufend,
@@ -879,6 +985,7 @@ class _TerrainMixin:
                                                or neu[3] <= letzt[1] or letzt[3] <= neu[1]):
                 return
         self._kachel_letzt = neu
+        fremd = self._paket_fremdboden(s, x0, y0)
         rueck = []
         coords = []
         ebenen = self._layers
@@ -888,6 +995,8 @@ class _TerrainMixin:
                 if not (0 <= x < self.map.width and 0 <= y < self.map.height):
                     continue
                 kachel = int(s.kachel(dx, dy))
+                if kachel < 0:
+                    continue                # Paket: hier bleibt der Boden
                 zelltyp = _ct.default_cell_type(kachel)
                 i = self.map.tile_index(x, y)
                 alt = self.map.tiles[i]
@@ -909,12 +1018,15 @@ class _TerrainMixin:
         if self._strich_offen:
             self._strich_rueck = self._strich_rueck + rueck
         else:
-            was = s.name if s.gruppe else tr("tiles.undo_single")
+            was = s.name if not s.einzeln else tr("tiles.undo_single")
             self._push_undo("terrain", TerrainEdit(rueck, was))
         self._refresh_terrain_overlay()
-        self.statusBar().showMessage(tr("tiles.status_placed",
-                                        name=s.name if s.gruppe else tr("tiles.single", n=s.kacheln[0]),
-                                        x=x0, y=y0))
+        if fremd:
+            self.statusBar().showMessage(tr("tiles.status_wrong_ground", name=s.name,
+                                            boden=tr("tiles.fam_" + next(iter(s.familien)))))
+        else:
+            self.statusBar().showMessage(tr("tiles.status_placed", name=s.anzeigename,
+                                            x=x0, y=y0))
 
     # ------------------------------------------------------------------
     # Rueckgaengig / undo

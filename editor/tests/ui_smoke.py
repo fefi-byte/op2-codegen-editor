@@ -1052,9 +1052,77 @@ def check_tile_palette(win, app) -> None:
         check("Rueckgaengig stellt die Karte wieder her", list(win.map.tiles) == vorher)
     pal.suche.clear()
     pal.sorte.setCurrentIndex(0)
+    check_pakete(win, app, tp, pal)
     tp.set_modus("malen")
     pump(app)
     check("Zurueck im Malmodus", not tp.mal_box.isHidden())
+
+
+def check_pakete(win, app, tp, pal) -> None:
+    """Detail-Pakete: vorhanden, setzen nur Details, eigenes Paket speichern."""
+    import pakete
+    from PySide6.QtWidgets import QInputDialog
+    pal.set_familie("alle")
+    pal.sorte.setCurrentIndex(pal.sorte.findData("pakete"))
+    pump(app)
+    alle = [pal.raster.item(i).data(Qt.UserRole) for i in range(pal.raster.count())]
+    if not check("Pakete aus den Originalen in der Palette", len(alle) >= 20, pal.anzahl.text()):
+        return
+    paket = next(s for s in alle if s.paket is not None and s.paket.art == "wrack")
+    pal.raster.setCurrentRow(alle.index(paket))
+    pump(app)
+    x, y = 90, 90
+    vorher = list(win.map.tiles)
+    win._terrain_strich_beginnen()
+    win._terrain_stamp(x, y)
+    win._terrain_strich_abschliessen()
+    pump(app)
+    x0, y0 = x - (paket.breite - 1) // 2, y - (paket.hoehe - 1) // 2
+    r = paket.paket.raster()
+    details_ok = all(win.map.tile_mapping_index(x0 + dx, y0 + dy) == k
+                     for dx, dy, k in paket.paket.teile)
+    boden_ok = all(win.map.tiles[win.map.tile_index(x0 + dx, y0 + dy)]
+                   == vorher[win.map.tile_index(x0 + dx, y0 + dy)]
+                   for dy in range(paket.hoehe) for dx in range(paket.breite) if r[dy, dx] < 0)
+    check("Paket setzt seine Details", details_ok)
+    check("Paket laesst den Boden dazwischen stehen", boden_ok)
+    # Eigenes Paket aus dem Bereich speichern
+    pfad = pakete._eigene_pfad()
+    gab_es = pfad.exists()
+    alt_inhalt = pfad.read_text("utf-8") if gab_es else None
+    orig = QInputDialog.getText
+    QInputDialog.getText = staticmethod(lambda *a, **k: ("Smoke-Paket", True))
+    try:
+        pal.paket_btn.setChecked(True)
+        win._terrain_strich_beginnen()
+        win._terrain_stamp(x0 - 1, y0 - 1)
+        win._terrain_stamp(x0 + paket.breite, y0 + paket.hoehe)
+        win._terrain_strich_abschliessen()
+        pump(app)
+    finally:
+        QInputDialog.getText = orig
+    eigene = [p for p in pakete.laden() if p.eigen and p.name == "Smoke-Paket"]
+    check("Bereich als Paket gespeichert", len(eigene) == 1)
+    if eigene:
+        # Im Rahmen koennen auch schon vorhandene Details der Karte liegen --
+        # die gesetzten muessen aber alle drin sein.
+        from collections import Counter
+        gespeichert = Counter(k for _, _, k in eigene[0].teile)
+        gesetzt = Counter(k for _, _, k in paket.paket.teile)
+        check("Gespeichertes Paket enthaelt die gesetzten Details",
+              not (gesetzt - gespeichert), f"{len(eigene[0].teile)} / {len(paket.paket.teile)}")
+        sel = pal.stempel()
+        check("Neues Paket ist in der Palette gewaehlt", sel is not None and sel.name == "Smoke-Paket")
+    check("Rahmenmodus danach aus", not pal.paket_btn.isChecked())
+    pakete.eigenes_loeschen("Smoke-Paket")
+    if not gab_es:
+        pfad.unlink(missing_ok=True)
+    elif alt_inhalt is not None:
+        pfad.write_text(alt_inhalt, "utf-8")
+    pal.neu_laden()
+    win.undo()
+    pump(app)
+    pal.sorte.setCurrentIndex(0)
 
 
 def check_terrain_strokes(win, app) -> None:

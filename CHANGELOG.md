@@ -40,6 +40,13 @@ graphics for vehicles and buildings on the map.
 - Validation hints (ℹ️) in addition to errors and warnings.
 
 ### Added — terrain and maps
+- **Detail packages**: ready-made assemblies of detail tiles (wreckage,
+  boulders, craters, cracks) placed in one piece from the tile palette
+  ("Packages only"). 61 packages are cut from the stock maps (crash sites,
+  boulder fields, crater rings), plus two Conestoga crash sites with a scorch
+  trail. "Save area as package" turns details placed on the map into an own
+  package (`pakete_eigene.json` next to config.ini). Packages keep the ground
+  between their details and warn when placed on a different ground.
 - **Ramps and clean cliff removal**: painting "Lowland" across a wall now
   closes both new ends instead of leaving the wall cut open. The cells next
   to the cut are re-solved from the wall's recovered terrain, with the rest

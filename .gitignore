@@ -58,3 +58,4 @@ dist/
 # Installation (maps.vol); der Build legt sie bei Bedarf in den Missionsordner.
 # Don't redistribute the game's maps; the editor reads them from the install.
 missions/**/*.map
+pakete_eigene.json

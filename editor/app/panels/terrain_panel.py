@@ -279,6 +279,8 @@ class TerrainPanel(QWidget):
         self._modus = modus
         self._modus_knoepfe[modus].setChecked(True)
         kacheln = modus == MODUS_KACHELN
+        if not kacheln and self.palette.paket_btn.isChecked():
+            self.palette.paket_btn.setChecked(False)
         self.mal_box.setVisible(not kacheln)
         self.palette.setVisible(kacheln)
         self._dehnung.setVisible(not kacheln)
