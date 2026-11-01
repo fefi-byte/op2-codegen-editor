@@ -231,9 +231,16 @@ def _scatter_details(grid, fam_field, tm, rng, ziel_zellen, gesperrt):
 # How often each kind of package is chosen; wrecks stay rare.
 PAKET_GEWICHT = {"stein": 0.40, "riss": 0.28, "krater": 0.22, "wrack": 0.10, "ruine": 0.0}
 PAKET_ZONE_MAX = 140          # Detailkacheln je Fundgebiet hoechstens
+# Anteil der Gebiete, die sich an Klippen anlehnen (falls es welche gibt).
+# Share of areas that lean on cliffs (if there are any).
+PAKET_AN_KLIPPE = {"fuss": 0.35, "kante": 0.15}
+PAKET_AN_KLIPPE_MAX = 12       # groesste Paketkante an der Wand
+PAKET_THEMA_KLIPPE = {"fuss": {"riss": 0.6, "stein": 0.4},
+                      "kante": {"riss": 0.65, "stein": 0.35}}
 
 
-def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste=None):
+def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste=None,
+                   klippen=None, H=None):
     """Streugut als Fundgebiete aus ganzen Detail-Paketen.
 
     Statt ueberall einzelne Steine gibt es wenige Gebiete mit einem Thema --
@@ -243,8 +250,14 @@ def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste
     nur seine Details, nur auf seinen eigenen Boden, nie auf Uebergaenge.
     Der Rest der Karte bleibt ruhig.
 
+    Mit Klippen (`klippen` = Klippenkacheln, `H` = 0 Tiefland / 1 Hochland)
+    lehnen sich Gebiete an sie an: Geroell am Fuss, entlang der Wand
+    aufgereiht, und Risse an der Abbruchkante oben. Ein Paket liegt immer
+    ganz auf einer Ebene.
+
     Scatter as a few themed areas made of whole detail packages; the rest of
-    the map stays calm.
+    the map stays calm. With cliffs, areas lean on them: rubble along the
+    foot, cracks along the edge above. A package always sits on one level.
     """
     if ziel_zellen <= 0:
         return 0
@@ -256,6 +269,7 @@ def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste
             pakete_liste = []
     if not pakete_liste:
         return _scatter_details(grid, fam_field, tm, rng, ziel_zellen, gesperrt)
+    from scipy import ndimage as ndi
     h, w = grid.shape
     namen = tm.families
     lav = namen.index("lav") if "lav" in namen else -1
@@ -266,6 +280,31 @@ def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste
     if not nach:
         return 0
 
+    # Hart gesperrt (Klippen, Vulkane, Merkmale): kein Detail darauf und
+    # keins direkt daneben. Ein Paketrahmen darf darueber ragen -- sonst
+    # passt am Klippenfuss nie etwas hin. Gesetzte Pakete belegen dagegen
+    # ihren ganzen Rahmen.
+    # Hard-blocked: no detail on it or right next to it; a package frame may
+    # reach over it. Placed packages occupy their whole frame.
+    hart = gesperrt.copy()
+    hart_nah = ndi.binary_dilation(hart, structure=np.ones((3, 3), bool))
+    belegt = np.zeros(grid.shape, dtype=bool)
+    ebene = (np.asarray(H) > 0) if H is not None and np.shape(H) == grid.shape \
+        else np.zeros(grid.shape, dtype=bool)
+
+    # Baender an den Klippen: Fuss (unten) und Kante (oben), 2-6 Kacheln weit.
+    # Bands along the cliffs: foot (below) and edge (above).
+    fuss = kante = None
+    if klippen is not None and np.shape(klippen) == grid.shape and np.any(klippen):
+        abst = ndi.distance_transform_edt(~np.asarray(klippen, bool))
+        band = (abst >= 2) & (abst <= 6) & ~hart_nah
+        band[:6, :] = band[-6:, :] = False
+        band[:, :6] = band[:, -6:] = False
+        fuss = np.argwhere(band & ~ebene)
+        kante = np.argwhere(band & ebene)
+        fuss = fuss if len(fuss) else None
+        kante = kante if len(kante) else None
+
     def boden_bei(x, y) -> str:
         f = int(fam_field[y, x])
         n = namen[f] if 0 <= f < len(namen) else ""
@@ -275,21 +314,37 @@ def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste
         x0, y0 = x - p.breite // 2, y - p.hoehe // 2
         if x0 < 2 or y0 < 2 or x0 + p.breite > w - 2 or y0 + p.hoehe > h - 2:
             return False
-        if gesperrt[y0:y0 + p.hoehe, x0:x0 + p.breite].any():
+        rahmen = (slice(y0, y0 + p.hoehe), slice(x0, x0 + p.breite))
+        if belegt[rahmen].any():
+            return False
+        frei = ~hart[rahmen]
+        if not frei.any():
             return False
         soll = namen.index(p.boden)
-        unter = fam_field[y0:y0 + p.hoehe, x0:x0 + p.breite]
+        # Boden und Ebene zaehlen nur auf der Seite, auf der das Paket liegt:
+        # am Klippenfuss darf der Rahmen ueber die Wand ragen, die Details
+        # selbst bleiben unten.
+        # Ground counts only on the package's own level: at the cliff foot the
+        # frame may reach over the wall, the details themselves stay below.
+        stufe = bool(ebene[y0 + p.teile[0][1], x0 + p.teile[0][0]])
+        seite = frei & (ebene[rahmen] == stufe)
+        unter = fam_field[rahmen]
         passt = (unter == soll) | ((unter == lav) if p.boden == "roc" else False)
-        if float(passt.mean()) < 0.9:
+        if not seite.any() or float(passt[seite].mean()) < 0.9:
             return False
         for dx, dy, _k in p.teile:
-            g = int(grid[y0 + dy, x0 + dx])
+            yy, xx = y0 + dy, x0 + dx
+            if hart_nah[yy, xx] or bool(ebene[yy, xx]) != stufe:
+                return False
+            g = int(grid[yy, xx])
             fg = int(tm.family_of[g]) if 0 <= g < len(tm.family_of) else -1
             if tm.ist_uebergang[g] or not (fg == soll or (p.boden == "roc" and fg == lav)):
                 return False
         for dx, dy, k in p.teile:
             grid[y0 + dy, x0 + dx] = k
-        gesperrt[max(0, y0 - 1):y0 + p.hoehe + 1, max(0, x0 - 1):x0 + p.breite + 1] = True
+        rand = (slice(max(0, y0 - 1), y0 + p.hoehe + 1), slice(max(0, x0 - 1), x0 + p.breite + 1))
+        belegt[rand] = True
+        gesperrt[rand] = True
         return True
 
     gesetzt = 0
@@ -301,26 +356,46 @@ def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste
     budget = min(ziel_zellen / zonen, PAKET_ZONE_MAX)
     wrack_zone = rng.random() < 0.7
     themen = [a for a in PAKET_GEWICHT if a not in ("wrack", "ruine")]
-    gew = np.array([PAKET_GEWICHT[a] for a in themen])
+    streuung = 4.0 + 0.03 * max(h, w)
     for _z in range(zonen * 3 + int(ziel_zellen // 30)):   # Fehlversuche einplanen
         if gesetzt >= ziel_zellen:
             break
-        # Mitte: freie Stelle, deren Boden Pakete hat
-        for _ in range(60):
-            mx, my = int(rng.integers(8, w - 8)), int(rng.integers(8, h - 8))
-            if not gesperrt[my, mx] and any(k[0] == boden_bei(mx, my) for k in nach):
-                break
+        # Wo liegt das Gebiet? Am Klippenfuss (Geroell), an der Kante oben
+        # (Risse) oder frei in der Flaeche.
+        # Where is the area: at the cliff foot, at the edge above, or free.
+        art = "frei"
+        if not wrack_zone:
+            r = rng.random()
+            if fuss is not None and r < PAKET_AN_KLIPPE["fuss"]:
+                art = "fuss"
+            elif kante is not None and r < PAKET_AN_KLIPPE["fuss"] + PAKET_AN_KLIPPE["kante"]:
+                art = "kante"
+        band = fuss if art == "fuss" else kante if art == "kante" else None
+        if band is not None:
+            my, mx = (int(v) for v in band[int(rng.integers(len(band)))])
+            nahe = band[np.abs(band[:, 0] - my) + np.abs(band[:, 1] - mx) <= 2 * streuung]
         else:
-            continue
+            for _ in range(60):
+                mx, my = int(rng.integers(8, w - 8)), int(rng.integers(8, h - 8))
+                if not hart_nah[my, mx] and not belegt[my, mx] \
+                        and any(k[0] == boden_bei(mx, my) for k in nach):
+                    break
+            else:
+                continue
         boden = boden_bei(mx, my)
-        if wrack_zone and (boden, "wrack") in nach:
+        # In den Originalen liegen an Klippen vor allem Risse, dann Steine;
+        # weiter weg ist es umgekehrt (gemessen ueber alle Karten).
+        # In the originals cliffs carry mostly cracks, then stones; further
+        # away it is the other way round (measured over all maps).
+        gewichte = PAKET_THEMA_KLIPPE.get(art, PAKET_GEWICHT)
+        if wrack_zone and art == "frei" and (boden, "wrack") in nach:
             thema = "wrack"
             wrack_zone = False
         else:
-            moeglich = [a for a in themen if (boden, a) in nach]
+            moeglich = [a for a in themen if (boden, a) in nach and gewichte.get(a, 0) > 0]
             if not moeglich:
                 continue
-            g = np.array([PAKET_GEWICHT[a] for a in moeglich])
+            g = np.array([gewichte[a] for a in moeglich])
             thema = moeglich[int(rng.choice(len(moeglich), p=g / g.sum()))]
         liste = nach[(boden, thema)]
         # Eine Absturzstelle bekommt Krater und Steine als Beiwerk.
@@ -328,9 +403,9 @@ def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste
             if thema == "wrack" else []
         zone_gesetzt = 0
         in_zone: set = set()
+        zone_kacheln: set = set()
         # Nebenthema: ein Steinfeld hat auch mal einen Riss, ein Kraterfeld Steine.
         neben = [p for a in themen if a != thema for p in nach.get((boden, a), [])]
-        streuung = 4.0 + 0.03 * max(h, w)
         for versuch in range(80):
             if zone_gesetzt >= min(budget, ziel_zellen - gesetzt):
                 break
@@ -341,18 +416,34 @@ def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste
             # Nie dasselbe Paket zweimal in einer Zone, und auf der Karte erst
             # die noch ungenutzten -- sonst sieht man das Kopieren sofort.
             # Never the same package twice in a zone; prefer unused ones.
-            frei_q = [p for p in quelle if p.name not in in_zone]
+            # Auch keine zwei Pakete aus fast denselben Kacheln (die kleinen
+            # Kiesel-Haeufchen gibt es in mehreren Varianten).
+            # Nor two packages made of almost the same tiles.
+            frei_q = [p for p in quelle if p.name not in in_zone
+                      and sum(k in zone_kacheln for _, _, k in p.teile) < 0.6 * len(p.teile)]
+            if band is not None:
+                # An der Wand ist wenig Platz: nur kleine Pakete.
+                # Little room at the wall: small packages only.
+                frei_q = [p for p in frei_q if max(p.breite, p.hoehe) <= PAKET_AN_KLIPPE_MAX]
             if not frei_q:
                 continue
-            wenigst = min(benutzt.get(p.name, 0) for p in frei_q)
-            frei_q = [p for p in frei_q if benutzt.get(p.name, 0) == wenigst]
-            p = frei_q[int(rng.integers(len(frei_q)))]
-            s = streuung * (0.3 if versuch == 0 else 1.0)
-            x = int(round(mx + rng.normal(0, s)))
-            y = int(round(my + rng.normal(0, s)))
+            # Ungenutzte bevorzugen, aber nicht ausschliesslich -- ein grosses
+            # Paket, das nirgends hinpasst, darf die kleinen nicht aussperren.
+            # Prefer unused packages, but not exclusively.
+            gew = np.array([1.0 / (1 + 3 * benutzt.get(p.name, 0)) for p in frei_q])
+            p = frei_q[int(rng.choice(len(frei_q), p=gew / gew.sum()))]
+            if band is not None:
+                # Entlang der Wand aufreihen statt rund um einen Punkt.
+                # Line up along the wall instead of around a point.
+                y, x = (int(v) for v in nahe[int(rng.integers(len(nahe)))])
+            else:
+                s = streuung * (0.3 if versuch == 0 else 1.0)
+                x = int(round(mx + rng.normal(0, s)))
+                y = int(round(my + rng.normal(0, s)))
             if setzen(p, x, y):
                 zone_gesetzt += len(p.teile)
                 in_zone.add(p.name)
+                zone_kacheln.update(k for _, _, k in p.teile)
                 benutzt[p.name] = benutzt.get(p.name, 0) + 1
         gesetzt += zone_gesetzt
     return gesetzt

@@ -14,6 +14,10 @@ and the project follows [Semantic Versioning](https://semver.org/).
   craters and stones around it. The rest of the map stays calm. Density still
   follows the *Details* slider (about 3 % at the default); without
   `pakete.json` the old single stamps are used.
+- **Areas lean on cliffs**: with cliffs on the map, some areas line up along
+  them — cracks and stones along the foot, cracks along the edge above (as
+  in the original maps, where cracks dominate near cliffs). Nothing is placed
+  on a wall or right next to it, and a package always sits on one level.
 - Packages whose details belong to a foreign ground (a rock wreck tile on
   dirt showed as a dark square) are no longer extracted.
 

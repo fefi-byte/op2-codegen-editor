@@ -307,7 +307,8 @@ def generate(params: MapGenParams) -> GeneratedMap:
     # Since detail packages: a few themed areas of whole original groups.
     detail_zellen = _streue_pakete(
         grid, fam_field, tm, rng,
-        int(round(params.details * 0.06 * flaeche)), gesperrt)
+        int(round(params.details * 0.06 * flaeche)), gesperrt,
+        klippen=klippen, H=H)
     if params.symmetry != SYM_NONE:
         _mirror_region(grid, params.symmetry)
     cells = _cell_types(grid)

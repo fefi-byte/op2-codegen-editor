@@ -393,6 +393,21 @@ def check_details():
     bloecke = float(m.reshape(8, 16, 8, 16).any(axis=(1, 3)).mean())
     check("Streugut bildet Fundgebiete, der Rest bleibt ruhig",
           0.05 <= bloecke <= 0.6, f"{100*bloecke:.0f} % der 16er-Bloecke")
+    # Mit Klippen: nichts auf der Wand oder direkt daneben, aber Gebiete
+    # lehnen sich an (Geroell am Fuss, Risse an der Kante).
+    # With cliffs: nothing on or right next to a wall, but areas lean on them.
+    kw = dict(width=128, height=128, seed=3, cliffs=0.35)
+    mit = mapgen.generate(mapgen.MapGenParams(details=1.0, **kw))
+    leer = mapgen.generate(mapgen.MapGenParams(details=0.0, **kw))
+    neu_k = np.isin(mit.tiles, list(alle_details)) & ~np.isin(leer.tiles, list(alle_details))
+    wand = np.isin(mit.cells, (celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
+                               celltypes.CLIFFS_LOW_SIDE))
+    an_wand = int((neu_k & ndi.binary_dilation(wand, structure=np.ones((3, 3), bool))).sum())
+    check("Streugut haelt eine Kachel Abstand zu Klippen", an_wand == 0, f"{an_wand} Kacheln")
+    nah = ndi.distance_transform_edt(~wand) <= 7
+    anteil = float((neu_k & nah).sum()) / max(1, int(neu_k.sum()))
+    check("Streugut lehnt sich an Klippen an", anteil >= 0.1,
+          f"{100*anteil:.0f} % der Details bis 7 Kacheln vor der Wand")
     check("keine 1x1-Stempel im Streugut",
           all(t.size > 1 for t, _ in tm.details), f"{len(tm.details)} Stempel")
 
