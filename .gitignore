@@ -53,3 +53,8 @@ missions/*/build/
 build/
 dist/
 # *.spec absichtlich nicht ignoriert — op2editor.spec und op2editor_entry.py gehoeren ins Repo
+
+# Karten aus dem Spiel nicht mitverteilen -- der Editor liest sie aus der
+# Installation (maps.vol); der Build legt sie bei Bedarf in den Missionsordner.
+# Don't redistribute the game's maps; the editor reads them from the install.
+missions/**/*.map

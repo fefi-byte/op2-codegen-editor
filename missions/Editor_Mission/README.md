@@ -10,7 +10,7 @@ An Outpost 2 mission built on the classic **[OP2MissionSDK](https://github.com/O
 - `version.rc.in` — Windows version info resource (filled by CMake)
 - `CMakeLists.txt` — CMake project definition
 - `build.bat` — one-click build script
-- `cm02.map` — the map this mission runs on
+- `cm02.map` — the map this mission runs on (from the game, not in the repo)
 - `MULTITEK.TXT` *(optional)* — custom tech tree, if this mission uses one
 
 ## Build requirements
