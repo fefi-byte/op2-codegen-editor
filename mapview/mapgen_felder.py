@@ -226,6 +226,138 @@ def _scatter_details(grid, fam_field, tm, rng, ziel_zellen, gesperrt):
     return gesetzt
 
 
+# Wie oft welche Art von Paket gewaehlt wird. Wrackteile bleiben selten --
+# eine Absturzstelle je Karte erzaehlt etwas, zehn sind Schrottplatz.
+# How often each kind of package is chosen; wrecks stay rare.
+PAKET_GEWICHT = {"stein": 0.40, "riss": 0.28, "krater": 0.22, "wrack": 0.10, "ruine": 0.0}
+PAKET_ZONE_MAX = 140          # Detailkacheln je Fundgebiet hoechstens
+
+
+def _streue_pakete(grid, fam_field, tm, rng, ziel_zellen, gesperrt, pakete_liste=None):
+    """Streugut als Fundgebiete aus ganzen Detail-Paketen.
+
+    Statt ueberall einzelne Steine gibt es wenige Gebiete mit einem Thema --
+    ein Kraterfeld, ein Steinfeld, eine Bruchzone, hoechstens eine
+    Absturzstelle -- und dort liegen mehrere Pakete beieinander. Ein Paket
+    ist eine zusammengehoerige Gruppe aus den Originalkarten; gesetzt werden
+    nur seine Details, nur auf seinen eigenen Boden, nie auf Uebergaenge.
+    Der Rest der Karte bleibt ruhig.
+
+    Scatter as a few themed areas made of whole detail packages; the rest of
+    the map stays calm.
+    """
+    if ziel_zellen <= 0:
+        return 0
+    if pakete_liste is None:
+        try:
+            import pakete as _pk
+            pakete_liste = _pk.laden()
+        except Exception:
+            pakete_liste = []
+    if not pakete_liste:
+        return _scatter_details(grid, fam_field, tm, rng, ziel_zellen, gesperrt)
+    h, w = grid.shape
+    namen = tm.families
+    lav = namen.index("lav") if "lav" in namen else -1
+    nach: dict = {}
+    for p in pakete_liste:
+        if p.boden in namen and all(0 <= k < len(tm.family_of) for _, _, k in p.teile):
+            nach.setdefault((p.boden, p.art), []).append(p)
+    if not nach:
+        return 0
+
+    def boden_bei(x, y) -> str:
+        f = int(fam_field[y, x])
+        n = namen[f] if 0 <= f < len(namen) else ""
+        return "roc" if n == "lav" else n
+
+    def setzen(p, x, y) -> bool:
+        x0, y0 = x - p.breite // 2, y - p.hoehe // 2
+        if x0 < 2 or y0 < 2 or x0 + p.breite > w - 2 or y0 + p.hoehe > h - 2:
+            return False
+        if gesperrt[y0:y0 + p.hoehe, x0:x0 + p.breite].any():
+            return False
+        soll = namen.index(p.boden)
+        unter = fam_field[y0:y0 + p.hoehe, x0:x0 + p.breite]
+        passt = (unter == soll) | ((unter == lav) if p.boden == "roc" else False)
+        if float(passt.mean()) < 0.9:
+            return False
+        for dx, dy, _k in p.teile:
+            g = int(grid[y0 + dy, x0 + dx])
+            fg = int(tm.family_of[g]) if 0 <= g < len(tm.family_of) else -1
+            if tm.ist_uebergang[g] or not (fg == soll or (p.boden == "roc" and fg == lav)):
+                return False
+        for dx, dy, k in p.teile:
+            grid[y0 + dy, x0 + dx] = k
+        gesperrt[max(0, y0 - 1):y0 + p.hoehe + 1, max(0, x0 - 1):x0 + p.breite + 1] = True
+        return True
+
+    gesetzt = 0
+    benutzt: dict = {}                    # Name -> wie oft auf der Karte
+    # Grundzahl der Gebiete nach Kartengroesse; reicht die Dichte nicht (ein
+    # Gebiet fasst nur so viel), kommen weitere hinzu.
+    # Base number of areas by map size; more follow if the density needs it.
+    zonen = max(2, int(round(h * w / 5500)))
+    budget = min(ziel_zellen / zonen, PAKET_ZONE_MAX)
+    wrack_zone = rng.random() < 0.7
+    themen = [a for a in PAKET_GEWICHT if a not in ("wrack", "ruine")]
+    gew = np.array([PAKET_GEWICHT[a] for a in themen])
+    for _z in range(zonen * 3 + int(ziel_zellen // 30)):   # Fehlversuche einplanen
+        if gesetzt >= ziel_zellen:
+            break
+        # Mitte: freie Stelle, deren Boden Pakete hat
+        for _ in range(60):
+            mx, my = int(rng.integers(8, w - 8)), int(rng.integers(8, h - 8))
+            if not gesperrt[my, mx] and any(k[0] == boden_bei(mx, my) for k in nach):
+                break
+        else:
+            continue
+        boden = boden_bei(mx, my)
+        if wrack_zone and (boden, "wrack") in nach:
+            thema = "wrack"
+            wrack_zone = False
+        else:
+            moeglich = [a for a in themen if (boden, a) in nach]
+            if not moeglich:
+                continue
+            g = np.array([PAKET_GEWICHT[a] for a in moeglich])
+            thema = moeglich[int(rng.choice(len(moeglich), p=g / g.sum()))]
+        liste = nach[(boden, thema)]
+        # Eine Absturzstelle bekommt Krater und Steine als Beiwerk.
+        beiwerk = [p for a in ("krater", "stein") for p in nach.get((boden, a), [])] \
+            if thema == "wrack" else []
+        zone_gesetzt = 0
+        in_zone: set = set()
+        # Nebenthema: ein Steinfeld hat auch mal einen Riss, ein Kraterfeld Steine.
+        neben = [p for a in themen if a != thema for p in nach.get((boden, a), [])]
+        streuung = 4.0 + 0.03 * max(h, w)
+        for versuch in range(80):
+            if zone_gesetzt >= min(budget, ziel_zellen - gesetzt):
+                break
+            if thema == "wrack":
+                quelle = liste if (versuch == 0 or not beiwerk) else beiwerk
+            else:
+                quelle = neben if (neben and versuch > 0 and rng.random() < 0.3) else liste
+            # Nie dasselbe Paket zweimal in einer Zone, und auf der Karte erst
+            # die noch ungenutzten -- sonst sieht man das Kopieren sofort.
+            # Never the same package twice in a zone; prefer unused ones.
+            frei_q = [p for p in quelle if p.name not in in_zone]
+            if not frei_q:
+                continue
+            wenigst = min(benutzt.get(p.name, 0) for p in frei_q)
+            frei_q = [p for p in frei_q if benutzt.get(p.name, 0) == wenigst]
+            p = frei_q[int(rng.integers(len(frei_q)))]
+            s = streuung * (0.3 if versuch == 0 else 1.0)
+            x = int(round(mx + rng.normal(0, s)))
+            y = int(round(my + rng.normal(0, s)))
+            if setzen(p, x, y):
+                zone_gesetzt += len(p.teile)
+                in_zone.add(p.name)
+                benutzt[p.name] = benutzt.get(p.name, 0) + 1
+        gesetzt += zone_gesetzt
+    return gesetzt
+
+
 def _volcano_sites(fam_field: np.ndarray, params: "MapGenParams",
                    rng: np.random.Generator, rock_family: int) -> list[tuple[int, int]]:
     """Standorte fuer Vulkane suchen und die Umgebung auf Fels stellen.

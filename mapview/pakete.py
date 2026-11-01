@@ -238,6 +238,11 @@ def auslesen(spielordner, tm, max_je_art: int = 10) -> list[Paket]:
             if boden_name not in BOEDEN or boden_n < 0.8 * max(1, (~maske).sum()):
                 continue                       # gemischter Boden: kein sauberes Paket
             teile = [(int(x - x0), int(y - y0), int(g[y, x])) for y, x in zip(ys, xs)]
+            # Detailkacheln eines fremden Bodens (z.B. ein Fels-Wrackteil auf
+            # Erde) stehen im Original als dunkles Rechteck -- raus damit.
+            # Detail tiles of a foreign ground show as a dark square -- drop.
+            if any(familie_von(k) != boden_name for _, _, k in teile):
+                continue
             schl = frozenset(teile)
             if schl in gesehen:
                 continue                       # Eden/Plymouth teilen Karten

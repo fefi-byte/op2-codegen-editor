@@ -7,6 +7,16 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — map generator
+- **Scatter as themed areas**: instead of single stones everywhere, the
+  generator now places a few areas built from whole detail packages — a
+  crater field, a rock field, a crack zone, at most one crash site with
+  craters and stones around it. The rest of the map stays calm. Density still
+  follows the *Details* slider (about 3 % at the default); without
+  `pakete.json` the old single stamps are used.
+- Packages whose details belong to a foreign ground (a rock wreck tile on
+  dirt showed as a dark square) are no longer extracted.
+
 ## [0.6.0-alpha] - 2026-11-01
 
 The mission side caught up with the map side: a new layout with the mission

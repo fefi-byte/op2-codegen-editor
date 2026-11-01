@@ -81,6 +81,7 @@ from mapgen_felder import (  # noqa: E402,F401
     _mirror_region,
     _naht_passt,
     _scatter_details,
+    _streue_pakete,
     _volcano_sites,
     _lava_zone,
     _stamp_volcanoes,
@@ -300,7 +301,11 @@ def generate(params: MapGenParams) -> GeneratedMap:
     # Streugut zum Schluss -- es soll sich um die Klippen herum verteilen,
     # nicht unter ihnen liegen.
     # Scatter last -- it should spread around the cliffs, not underneath.
-    detail_zellen = _scatter_details(
+    # Seit den Detail-Paketen: wenige Fundgebiete aus ganzen Gruppen der
+    # Originale statt einzelner Steine ueberall (faellt ohne pakete.json auf
+    # die Einzelstempel zurueck).
+    # Since detail packages: a few themed areas of whole original groups.
+    detail_zellen = _streue_pakete(
         grid, fam_field, tm, rng,
         int(round(params.details * 0.06 * flaeche)), gesperrt)
     if params.symmetry != SYM_NONE:

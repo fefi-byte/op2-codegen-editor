@@ -339,7 +339,7 @@ def check_min_biome():
 
 
 def check_details():
-    """Streugut: Dichte folgt dem Regler, Familie passt, nichts vereinzelt."""
+    """Streugut: Dichte folgt dem Regler, Familie passt, liegt in Fundgebieten."""
     tm = mapgen.model()
     detail_kacheln = set()
     for tiles, _ in tm.details:
@@ -370,27 +370,29 @@ def check_details():
     check("Streugut in der Sandkarte ist Sand-Streugut",
            fremd == 0, f"{fremd} fremde Kacheln")
 
-    # Streugut liegt als Gruppe, nicht als Einzelkachel im Nichts. Gemessen
-    # wird gegen den Regler-0-Lauf: einzelne Detailkacheln kann auch der
-    # Nachbarschafts-Sampler erzeugen, die Streuung darf keine hinzufuegen.
-    # Scatter sits as a group, not as a single tile. Measured against the
-    # slider-0 run: the adjacency sampler can produce single detail tiles by
-    # itself; the scatter must not add any.
-    def einzelkacheln(tiles):
-        maske = np.isin(tiles, list(detail_kacheln))
-        h, w = maske.shape
-        n = 0
-        for y in range(1, h - 1):
-            for x in range(1, w - 1):
-                if maske[y, x] and maske[y - 1:y + 2, x - 1:x + 2].sum() == 1:
-                    n += 1
-        return n
-
+    # Streugut liegt in Fundgebieten aus ganzen Paketen, nicht als Einzel-
+    # kachel im Nichts. Gemessen nur an den Kacheln, die die Streuung
+    # hinzugefuegt hat (Vergleich mit dem Regler-0-Lauf): fast jede hat
+    # weitere Details in der Naehe (9x9), und die Gebiete bedecken nur einen
+    # Teil der Karte -- der Rest bleibt ruhig.
+    # Scatter sits in themed areas of whole packages: nearly every added tile
+    # has other details nearby, and the areas cover only part of the map.
+    from scipy import ndimage as ndi
+    import pakete
+    alle_details = detail_kacheln | set(pakete.themen())
     ohne = mapgen.generate(mapgen.MapGenParams(
         width=128, height=128, seed=5, details=0.0, mix={"san": 1.0}))
-    davor, danach = einzelkacheln(ohne.tiles), einzelkacheln(gen.tiles)
+    neu = np.isin(gen.tiles, list(alle_details)) & ~np.isin(ohne.tiles, list(alle_details))
+    nachbarn = ndi.uniform_filter(neu.astype(float), 9, mode="constant") * 81 - 1
+    in_gruppe = float((nachbarn[neu] >= 1.5).mean()) if neu.any() else 1.0
     check("Streuung erzeugt keine vereinzelten Kacheln",
-          danach <= davor, f"{davor} -> {danach}")
+          in_gruppe >= 0.9, f"{100*in_gruppe:.0f} % in Gruppen")
+    mittel = mapgen.generate(mapgen.MapGenParams(
+        width=128, height=128, seed=5, details=0.5, mix={"san": 1.0}))
+    m = np.isin(mittel.tiles, list(alle_details)) & ~np.isin(ohne.tiles, list(alle_details))
+    bloecke = float(m.reshape(8, 16, 8, 16).any(axis=(1, 3)).mean())
+    check("Streugut bildet Fundgebiete, der Rest bleibt ruhig",
+          0.05 <= bloecke <= 0.6, f"{100*bloecke:.0f} % der 16er-Bloecke")
     check("keine 1x1-Stempel im Streugut",
           all(t.size > 1 for t, _ in tm.details), f"{len(tm.details)} Stempel")
 
