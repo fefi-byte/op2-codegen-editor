@@ -48,6 +48,75 @@ def _value_noise(rng: np.random.Generator, h: int, w: int, freq: int) -> np.ndar
     return top * (1 - fy) + bottom * fy
 
 
+class _Rauschen:
+    """Wertrauschen, an beliebigen (auch verzogenen) Stellen abfragbar.
+
+    Value noise that can be sampled anywhere, including warped coordinates."""
+
+    def __init__(self, rng: np.random.Generator, freq: float):
+        self.freq = max(2.0, float(freq))
+        n = int(np.ceil(self.freq)) * 3 + 4      # Rand fuer verzogene Abfragen
+        self.basis = rng.random((n, n))
+        self.mitte = n / 2.0
+
+    def __call__(self, u: np.ndarray, v: np.ndarray) -> np.ndarray:
+        """u, v: Kartenkoordinaten in Einheiten der Kartenbreite, Mitte 0."""
+        n = self.basis.shape[0]
+        x = np.clip(u * self.freq + self.mitte, 0, n - 1.001)
+        y = np.clip(v * self.freq + self.mitte, 0, n - 1.001)
+        x0, y0 = x.astype(int), y.astype(int)
+        fx, fy = x - x0, y - y0
+        fx = fx * fx * (3 - 2 * fx)
+        fy = fy * fy * (3 - 2 * fy)
+        b = self.basis
+        oben = b[y0, x0] * (1 - fx) + b[y0, x0 + 1] * fx
+        unten = b[y0 + 1, x0] * (1 - fx) + b[y0 + 1, x0 + 1] * fx
+        return oben * (1 - fy) + unten * fy
+
+
+def _geologie(params: MapGenParams, rng: np.random.Generator):
+    """Gemeinsame Verzerrung fuer alle Boeden einer Karte.
+
+    Auf einem echten Planeten gehoert das Gelaende zusammen: Duenen liegen
+    quer zum Wind, Gesteinsbaender folgen derselben Schichtung. Frueher hatte
+    jeder Boden sein eigenes, rundes Rauschen -- es entstanden Kreisflecken
+    ohne Bezug zueinander. Jetzt teilen sich alle Boeden eine Hauptrichtung
+    und ein gemeinsames Verwirbelungsfeld (domain warping); die Formen werden
+    laenglich, fliessend und greifen ineinander.
+
+    Shared distortion for all grounds of a map: one main direction and one
+    warp field, so shapes become elongated and flowing and relate to each
+    other instead of being unrelated round blobs.
+    """
+    h, w = params.height, params.width
+    winkel = float(rng.uniform(0, np.pi))
+    wirbel_a = _Rauschen(rng, 2.5)
+    wirbel_b = _Rauschen(rng, 2.5)
+    fein_a = _Rauschen(rng, 7.0)
+    fein_b = _Rauschen(rng, 7.0)
+    seite = float(max(h, w))
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
+    u = (xx - w / 2.0) / seite
+    v = (yy - h / 2.0) / seite
+    # Verwirbeln: grob fuer den Fluss, fein fuer ausgefranste Raender.
+    # Warp: coarse for the flow, fine for frayed edges.
+    staerke = 0.22 + 0.10 * params.roughness
+    du = staerke * (wirbel_a(u, v) - 0.5) + 0.05 * (fein_a(u, v) - 0.5)
+    dv = staerke * (wirbel_b(u, v) - 0.5) + 0.05 * (fein_b(u, v) - 0.5)
+    u, v = u + du, v + dv
+    # In die Hauptrichtung drehen. / rotate into the main direction
+    c, s = np.cos(winkel), np.sin(winkel)
+    laengs = c * u + s * v
+    quer = -s * u + c * v
+    return laengs, quer
+
+
+# Wie stark ein Boden in der Hauptrichtung gestreckt wird: Sand bildet lange
+# Duenenfelder, Fels Gesteinsbaender, Erde bleibt am rundesten.
+# How much a ground is stretched along the main direction.
+_STRECKUNG = {"san": 2.6, "roc": 1.9, "sno": 1.7, "veg": 1.3, "mud": 1.3}
+
+
 def _family_field(params: MapGenParams, rng: np.random.Generator,
                   fam_names: list[str]) -> np.ndarray:
     """Welche Familie bekommt welche Zelle? -> (h, w) Familienindex."""
@@ -55,6 +124,7 @@ def _family_field(params: MapGenParams, rng: np.random.Generator,
     # Zerkluefung steuert die Frequenz: wenige grosse Flaechen vs. viele kleine.
     # Roughness controls the frequency: few large areas vs. many small ones.
     base_freq = 3 + params.roughness * 14
+    laengs, quer = _geologie(params, rng)
     scores = []
     order = []
     targets = []
@@ -62,8 +132,11 @@ def _family_field(params: MapGenParams, rng: np.random.Generator,
     for name, weight in params.mix.items():
         if weight <= 0 or name not in fam_names:
             continue
-        noise = (_value_noise(rng, h, w, base_freq)
-                 + 0.5 * _value_noise(rng, h, w, base_freq * 2)) / 1.5
+        streck = _STRECKUNG.get(name, 1.4)
+        grob = _Rauschen(rng, base_freq)
+        fein = _Rauschen(rng, base_freq * 2)
+        noise = (grob(laengs / streck, quer)
+                 + 0.5 * fein(laengs / streck, quer)) / 1.5
         scores.append(noise)
         order.append(fam_names.index(name))
         targets.append(weight / total)
@@ -182,52 +255,196 @@ def _naht_passt(grid: np.ndarray, tm: "TileModel", tiles: np.ndarray,
     return True
 
 
-def _scatter_details(grid, fam_field, tm, rng, ziel_zellen, gesperrt):
-    """Steine, Risse und Krater ins passende Biom streuen.
+def _scatter_details(grid, fam_field, tm, rng, ziel_zellen, gesperrt,
+                     klippen=None, vulkane=None):
+    """Streugut als zusammengehoerige Felder statt gleichmaessig verteilt.
 
-    Immer als ganzer Stempel und nur dort, wo der Untergrund zur Familie
-    passt -- eine Sandduene mitten im Fels sieht falsch aus. Die Dichte
-    orientiert sich an den Originalkarten (rund 3 % der Flaeche).
+    Frueher fiel jeder Stempel an eine beliebige Stelle der Karte -- die Karte
+    war dann gleichmaessig mit Einzelsteinen, Rissen und sogar Wrackteilen
+    gesprenkelt, nichts gehoerte zusammen. Jetzt entstehen wenige Felder mit
+    einem Thema, und das Thema haengt am Gelaende:
 
-    Scatter stones, cracks and craters into the matching biome: always as a
-    whole stamp and only where the ground matches the family -- a sand dune in
-    the middle of rock looks wrong. Density follows the original maps.
+    - Geroellhalden am Fuss der Klippen und rund um Vulkane (Felsen),
+    - Kraterfelder: ein grosser Einschlag, kleinere drumherum,
+    - Bruchlinien: Risse entlang einer gewundenen Linie,
+    - hoechstens eine Absturzstelle: Wrackteile auf einer Schleifspur.
+
+    Immer als ganzer Stempel und nur dort, wo der Untergrund zur Familie passt.
+    Die Gesamtdichte bleibt wie bisher (Regler 0.5 = rund 3 % der Flaeche).
+
+    Scatter as coherent fields instead of evenly spread: few fields with a
+    theme tied to the terrain -- scree at cliff feet and around volcanoes,
+    crater fields, fault lines of cracks, at most one crash site. Always whole
+    stamps on matching ground; the overall density stays as before.
     """
     if ziel_zellen <= 0 or not tm.details:
         return 0
+    import detail_themen as dt
     h, w = grid.shape
+    # Stempel je (Familie, Thema), groessere zuerst fuer die Feldmitte.
+    # Stamps per (ground, theme).
+    vorrat: dict = {}
+    for kacheln, fam in tm.details:
+        vorrat.setdefault((fam, dt.thema(kacheln)), []).append(kacheln)
+
+    def stempel_fuer(fam: str, thema: str):
+        liste = vorrat.get((fam, thema))
+        if not liste and thema == dt.KRATER:
+            liste = vorrat.get((fam, dt.RISSE))     # Erde: Mulden statt Krater
+        return liste or []
+
+    namen = tm.families
+    offen = ~gesperrt
     gesetzt = 0
-    versuche = 0
-    while gesetzt < ziel_zellen and versuche < ziel_zellen * 6 + 200:
-        versuche += 1
-        tiles, fam = tm.details[int(rng.integers(len(tm.details)))]
-        dh, dw = tiles.shape
-        if dw + 2 >= w or dh + 2 >= h:
-            continue
-        x = int(rng.integers(1, w - dw - 1))
-        y = int(rng.integers(1, h - dh - 1))
+
+    def setze(kacheln, x, y) -> bool:
+        nonlocal gesetzt
+        dh, dw = kacheln.shape
+        if x < 1 or y < 1 or x + dw >= w - 1 or y + dh >= h - 1:
+            return False
         if gesperrt[y:y + dh, x:x + dw].any():
-            continue
-        # Naht pruefen: der Stempel wird als Ganzes ueber fertigen Boden
-        # gelegt. Ohne Pruefung entstehen an seinem Rand Kachelpaare, die es
-        # im Original nie gab -- gemessen 1.047 Stueck je drei Karten.
-        # Check the seam: the stamp is laid over finished ground as a whole.
-        # Without checking, its border creates tile pairs that never existed in
-        # the originals -- measured 1,047 across three maps.
-        if not _naht_passt(grid, tm, tiles, x, y):
-            continue
-        if fam and fam in tm.families:
-            unter = fam_field[y:y + dh, x:x + dw]
-            if float((unter == tm.families.index(fam)).mean()) < 0.75:
-                continue
-        grid[y:y + dh, x:x + dw] = tiles
-        gesperrt[y:y + dh, x:x + dw] = True
+            return False
+        if not _naht_passt(grid, tm, kacheln, x, y):
+            return False
+        grid[y:y + dh, x:x + dw] = kacheln
+        # Ein Rand von einer Kachel bleibt frei -- zwei Stempel direkt
+        # aneinander ergeben Naehte, die es im Original nicht gibt.
+        gesperrt[max(0, y - 1):y + dh + 1, max(0, x - 1):x + dw + 1] = True
         gesetzt += dw * dh
+        return True
+
+    def boden_bei(x, y) -> str:
+        f = int(fam_field[y, x])
+        return namen[f] if 0 <= f < len(namen) else ""
+
+    def passt_boden(kacheln, fam, x, y) -> bool:
+        dh, dw = kacheln.shape
+        if not fam or fam not in namen:
+            return True
+        unter = fam_field[max(0, y):y + dh, max(0, x):x + dw]
+        return unter.size > 0 and float((unter == namen.index(fam)).mean()) >= 0.75
+
+    def feld(mx, my, thema, budget, streuung, richtung=None):
+        """Stempel um (mx, my) setzen -- dicht in der Mitte, duenn am Rand.
+        Mit `richtung` laufen sie als Linie (Bruchlinie, Schleifspur)."""
+        fam = boden_bei(mx, my)
+        liste = stempel_fuer(fam, thema)
+        if not liste:
+            return 0
+        vorher = gesetzt
+        groesste = sorted(liste, key=lambda t: -t.size)
+        versuche = 0
+        erstes = True
+        px, py = float(mx), float(my)
+        while gesetzt - vorher < budget and versuche < budget * 4 + 30:
+            versuche += 1
+            if erstes and thema == dt.KRATER:
+                kacheln = groesste[0]          # der grosse Einschlag in der Mitte
+            else:
+                kacheln = liste[int(rng.integers(len(liste)))]
+            dh, dw = kacheln.shape
+            if richtung is not None:
+                # Ein Stueck weiter entlang der (leicht pendelnden) Linie.
+                richtung = richtung + float(rng.normal(0.0, 0.35))
+                px += np.cos(richtung) * (max(dw, dh) + 1.5)
+                py += np.sin(richtung) * (max(dw, dh) + 1.5)
+                x = int(round(px + rng.normal(0.0, 0.8))) - dw // 2
+                y = int(round(py + rng.normal(0.0, 0.8))) - dh // 2
+                if not (0 <= px < w and 0 <= py < h):
+                    break
+            else:
+                s = streuung * (0.35 if erstes else 1.0)
+                x = int(round(mx + rng.normal(0.0, s))) - dw // 2
+                y = int(round(my + rng.normal(0.0, s))) - dh // 2
+            if not passt_boden(kacheln, fam, x, y):
+                continue
+            if setze(kacheln, x, y):
+                erstes = False
+        return gesetzt - vorher
+
+    # --- Ankerpunkte aus dem Gelaende / anchors from the terrain ---------
+    def zufallspunkt(maske):
+        ys, xs = np.nonzero(maske)
+        if len(xs) == 0:
+            return None
+        k = int(rng.integers(len(xs)))
+        return int(xs[k]), int(ys[k])
+
+    rand = np.zeros_like(offen)
+    rand[3:h - 3, 3:w - 3] = True
+    frei = offen & rand
+    # Wandfuss: freie Zellen 1-3 Kacheln neben einer Klippe.
+    fuss = np.zeros_like(offen)
+    if klippen is not None and klippen.any():
+        nah = klippen.copy()
+        for _ in range(3):
+            n2 = nah.copy()
+            n2[1:, :] |= nah[:-1, :]
+            n2[:-1, :] |= nah[1:, :]
+            n2[:, 1:] |= nah[:, :-1]
+            n2[:, :-1] |= nah[:, 1:]
+            nah = n2
+        fuss = nah & ~klippen & frei
+    vulkan_rand = np.zeros_like(offen)
+    for vx, vy in (vulkane or []):
+        yy, xx = np.ogrid[:h, :w]
+        d2 = (xx - vx) ** 2 + (yy - vy) ** 2
+        vulkan_rand |= (d2 >= 9 ** 2) & (d2 <= 15 ** 2)
+    vulkan_rand &= frei
+
+    # Budget verteilen: Geroell 40 %, Krater 25 %, Bruchlinien 25 %, Wrack 10 %.
+    flaeche = h * w
+    feld_groesse = max(24, int(round(ziel_zellen / max(2, flaeche / 2600))))
+    plan = []
+    rest = ziel_zellen
+    if rng.random() < 0.6 and ziel_zellen >= 60:
+        plan.append(dt.WRACK)
+    while rest > 0 and len(plan) < 200:
+        r = rng.random()
+        plan.append(dt.FELSEN if r < 0.45 else dt.KRATER if r < 0.72 else dt.RISSE)
+        rest -= feld_groesse
+    fehlversuche = 0
+    for thema in plan:
+        if gesetzt >= ziel_zellen or fehlversuche > 40:
+            break
+        budget = min(feld_groesse, ziel_zellen - gesetzt)
+        if thema == dt.FELSEN:
+            quelle = vulkan_rand if (vulkan_rand.any() and rng.random() < 0.35) else \
+                fuss if (fuss.any() and rng.random() < 0.75) else frei
+            punkt = zufallspunkt(quelle)
+            n = feld(*punkt, thema, budget, streuung=3.5) if punkt else 0
+        elif thema == dt.KRATER:
+            punkt = zufallspunkt(frei & ~fuss)
+            n = feld(*punkt, thema, budget, streuung=4.5) if punkt else 0
+        elif thema == dt.RISSE:
+            punkt = zufallspunkt(frei)
+            n = feld(*punkt, thema, budget, streuung=0.0,
+                     richtung=float(rng.uniform(0, 2 * np.pi))) if punkt else 0
+        else:
+            punkt = zufallspunkt(frei & ~fuss)
+            n = 0
+            if punkt:
+                # Einschlag der Absturzstelle, dann die Schleifspur dahinter.
+                n = feld(*punkt, dt.KRATER, max(6, budget // 3), streuung=1.5)
+                n += feld(*punkt, dt.WRACK, budget, streuung=0.0,
+                          richtung=float(rng.uniform(0, 2 * np.pi)))
+        fehlversuche = fehlversuche + 1 if n == 0 else 0
+    # Was die Felder nicht unterbrachten (zu wenig passender Boden), kommt in
+    # weitere Felder -- nie als Einzelstein ins Nichts.
+    runde = 0
+    while gesetzt < ziel_zellen * 0.8 and runde < 60:
+        runde += 1
+        punkt = zufallspunkt(frei)
+        if punkt is None:
+            break
+        feld(*punkt, dt.FELSEN if runde % 2 else dt.KRATER,
+             min(feld_groesse, ziel_zellen - gesetzt), streuung=3.5)
     return gesetzt
 
 
 def _volcano_sites(fam_field: np.ndarray, params: "MapGenParams",
-                   rng: np.random.Generator, rock_family: int) -> list[tuple[int, int]]:
+                   rng: np.random.Generator, rock_family: int,
+                   formen: list | None = None) -> list[tuple[int, int]]:
     """Standorte fuer Vulkane suchen und die Umgebung auf Fels stellen.
 
     Der Vulkan selbst ist ein Kachel-Stempel, die Lava kommt spaeter im Spiel
@@ -269,19 +486,63 @@ def _volcano_sites(fam_field: np.ndarray, params: "MapGenParams",
         for gx, gy in [(cx, cy)] + mirrored(cx, cy):
             if len(centres) >= wanted:
                 break
-            # Vulkane stehen im Fels -- die Umgebung entsprechend setzen,
-            # mit unregelmaessigem Rand statt Kreis.
-            # Volcanoes sit in rock -- set the surroundings accordingly, with
-            # an irregular rim instead of a circle.
-            wobble = 0.75 + 0.5 * _value_noise(rng, h, w, 8)
-            dist = np.sqrt((xs - gx) ** 2 + (ys - gy) ** 2)
-            fam_field[dist < radius * wobble] = rock_family
+            # Vulkane stehen im Fels. Statt einer runden Scheibe laufen
+            # Lavafels-Zungen den Hang hinunter -- erstarrte Stroeme, die zum
+            # Vulkan gehoeren. Spaeter fliesst auch die Lava dort entlang.
+            # Volcanoes sit in rock. Instead of a round disc, tongues of lava
+            # rock run downhill -- frozen flows belonging to the volcano. Lava
+            # will later flow along them too.
+            form = _lavazungen(gx, gy, radius, (h, w), rng)
+            fam_field[form] = rock_family
+            if formen is not None:
+                formen.append(((gx, gy), form))
             centres.append((gx, gy))
     return centres
 
 
+def _lavazungen(cx: int, cy: int, radius: int, shape: tuple[int, int],
+                rng: np.random.Generator) -> np.ndarray:
+    """Kegel plus 3-5 erstarrte Lavastroeme, die vom Vulkan weglaufen.
+
+    Cone plus 3-5 frozen lava flows running away from the volcano."""
+    h, w = shape
+    ys, xs = np.mgrid[0:h, 0:w]
+    dx, dy = xs - cx, ys - cy
+    dist = np.sqrt(dx * dx + dy * dy)
+    winkel = np.arctan2(dy, dx)
+    reich = np.full((h, w), 0.8 * radius, dtype=np.float64)
+    for _ in range(int(rng.integers(3, 6))):
+        richtung = float(rng.uniform(-np.pi, np.pi))
+        laenge = radius * float(rng.uniform(1.6, 2.8))
+        breite = float(rng.uniform(0.18, 0.32))
+        diff = np.angle(np.exp(1j * (winkel - richtung)))
+        reich = np.maximum(reich, laenge * np.exp(-(diff / breite) ** 2))
+    rand = 0.8 + 0.4 * _value_noise(rng, h, w, 12)
+    form = dist < reich * rand
+    # Duenne Spitzen weg (Oeffnen mit 1 Zelle): eine Zunge, schmaler als die
+    # Uebergangszone, ergaebe nur Mischkacheln ohne Boden dazwischen.
+    # Remove thin tips (opening by 1 cell).
+    def schrumpf(m):
+        o = m.copy()
+        o[1:, :] &= m[:-1, :]
+        o[:-1, :] &= m[1:, :]
+        o[:, 1:] &= m[:, :-1]
+        o[:, :-1] &= m[:, 1:]
+        return o
+
+    def wachs(m):
+        o = m.copy()
+        o[1:, :] |= m[:-1, :]
+        o[:-1, :] |= m[1:, :]
+        o[:, 1:] |= m[:, :-1]
+        o[:, :-1] |= m[:, 1:]
+        return o
+    return wachs(wachs(schrumpf(schrumpf(form))))
+
+
 def _lava_zone(centre: tuple[int, int], shape: tuple[int, int],
-               tiles: int, rng: np.random.Generator) -> list[tuple[int, int]]:
+               tiles: int, rng: np.random.Generator,
+               form: np.ndarray | None = None) -> list[tuple[int, int]]:
     """Flaeche, in der beim Ausbruch Lava fliessen darf (lavaPossible).
 
     Kein Gelaende, sondern eine Angabe fuer die Mission: der Codegen setzt
@@ -297,6 +558,15 @@ def _lava_zone(centre: tuple[int, int], shape: tuple[int, int],
     ys, xs = np.mgrid[0:h, 0:w]
     dist = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
     mask = dist < radius * wobble
+    if form is not None and form[min(max(cy, 0), h - 1), min(max(cx, 0), w - 1)]:
+        # Die Lava folgt den erstarrten Stroemen: die naechsten `tiles` Zellen
+        # der Zungen, vom Krater aus gezaehlt.
+        # Lava follows the frozen flows: the nearest `tiles` cells of them.
+        kandidaten = np.nonzero(form.ravel())[0]
+        reihe = kandidaten[np.argsort(dist.ravel()[kandidaten], kind="stable")]
+        mask = np.zeros(h * w, dtype=bool)
+        mask[reihe[:max(1, int(tiles * 1.4))]] = True
+        mask = mask.reshape(h, w)
     ys_i, xs_i = np.nonzero(mask)
     return [(int(x), int(y)) for x, y in zip(xs_i, ys_i)]
 

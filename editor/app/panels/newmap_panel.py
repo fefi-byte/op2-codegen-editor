@@ -28,7 +28,7 @@ import mapgen
 # header, hence no free values.
 SIZES = [(64, 64), (128, 64), (128, 128), (256, 128), (256, 256), (512, 256)]
 
-TEMPLATE_KEYS = ["plains", "canyon", "desert", "islands", "ice", "newterra"]
+TEMPLATE_KEYS = ["fremd", "plains", "canyon", "desert", "islands", "ice", "newterra"]
 # "veg" = bewachsener Fels -- OP2 kennt kein Grasland, aber diese Kacheln
 # bilden im Original zusammenhaengende bewachsene Flaechen.
 # "veg" = overgrown rock -- OP2 has no grassland, but these tiles form

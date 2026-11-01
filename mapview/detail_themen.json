@@ -1,0 +1,636 @@
+[
+ {
+  "name": "mudcrk1",
+  "familie": "mud",
+  "thema": "risse",
+  "kacheln": [
+   33,
+   34,
+   35,
+   36,
+   37,
+   38
+  ]
+ },
+ {
+  "name": "mudcrk2",
+  "familie": "mud",
+  "thema": "risse",
+  "kacheln": [
+   40,
+   41,
+   42,
+   43,
+   44,
+   45
+  ]
+ },
+ {
+  "name": "mudcrk3",
+  "familie": "mud",
+  "thema": "risse",
+  "kacheln": [
+   46,
+   47,
+   48,
+   49,
+   50,
+   51
+  ]
+ },
+ {
+  "name": "mudcrk4",
+  "familie": "mud",
+  "thema": "risse",
+  "kacheln": [
+   52,
+   53,
+   54,
+   55,
+   56,
+   57
+  ]
+ },
+ {
+  "name": "mudcrk5",
+  "familie": "mud",
+  "thema": "risse",
+  "kacheln": [
+   58,
+   59,
+   60,
+   61
+  ]
+ },
+ {
+  "name": "mudcrk6",
+  "familie": "mud",
+  "thema": "risse",
+  "kacheln": [
+   62,
+   63,
+   64,
+   65
+  ]
+ },
+ {
+  "name": "mudcrk8",
+  "familie": "mud",
+  "thema": "risse",
+  "kacheln": [
+   67,
+   68
+  ]
+ },
+ {
+  "name": "mudrock1",
+  "familie": "mud",
+  "thema": "felsen",
+  "kacheln": [
+   243,
+   244,
+   245,
+   246
+  ]
+ },
+ {
+  "name": "mudrock2",
+  "familie": "mud",
+  "thema": "felsen",
+  "kacheln": [
+   247,
+   248,
+   249,
+   250,
+   251,
+   252,
+   253,
+   254,
+   255
+  ]
+ },
+ {
+  "name": "mudrock5",
+  "familie": "mud",
+  "thema": "felsen",
+  "kacheln": [
+   433,
+   434,
+   435,
+   436,
+   437,
+   438
+  ]
+ },
+ {
+  "name": "mudrock6",
+  "familie": "mud",
+  "thema": "felsen",
+  "kacheln": [
+   258,
+   259,
+   260,
+   261,
+   262,
+   263
+  ]
+ },
+ {
+  "name": "mudwrk02",
+  "familie": "mud",
+  "thema": "wrack",
+  "kacheln": [
+   380,
+   381
+  ]
+ },
+ {
+  "name": "mudwrk03",
+  "familie": "mud",
+  "thema": "wrack",
+  "kacheln": [
+   382,
+   383,
+   384,
+   385
+  ]
+ },
+ {
+  "name": "mudwrk04",
+  "familie": "mud",
+  "thema": "wrack",
+  "kacheln": [
+   386,
+   387,
+   388,
+   389
+  ]
+ },
+ {
+  "name": "mudwrk06",
+  "familie": "mud",
+  "thema": "wrack",
+  "kacheln": [
+   391,
+   392,
+   393,
+   394
+  ]
+ },
+ {
+  "name": "mudwrk13",
+  "familie": "mud",
+  "thema": "wrack",
+  "kacheln": [
+   401,
+   402,
+   403,
+   404,
+   405,
+   406
+  ]
+ },
+ {
+  "name": "roccrac1",
+  "familie": "roc",
+  "thema": "risse",
+  "kacheln": [
+   505,
+   506,
+   507,
+   508,
+   509,
+   510,
+   511,
+   512,
+   513,
+   514
+  ]
+ },
+ {
+  "name": "roccrac2",
+  "familie": "roc",
+  "thema": "risse",
+  "kacheln": [
+   515,
+   516
+  ]
+ },
+ {
+  "name": "roccrac3",
+  "familie": "roc",
+  "thema": "risse",
+  "kacheln": [
+   517,
+   518
+  ]
+ },
+ {
+  "name": "roccrac4",
+  "familie": "roc",
+  "thema": "risse",
+  "kacheln": [
+   519,
+   520
+  ]
+ },
+ {
+  "name": "roccrac5",
+  "familie": "roc",
+  "thema": "risse",
+  "kacheln": [
+   521,
+   522,
+   523,
+   524,
+   525,
+   526,
+   527,
+   528,
+   529,
+   530,
+   531,
+   532,
+   533,
+   534,
+   535,
+   536
+  ]
+ },
+ {
+  "name": "rocroc1",
+  "familie": "roc",
+  "thema": "felsen",
+  "kacheln": [
+   537,
+   538,
+   539,
+   540,
+   541,
+   542,
+   543,
+   544,
+   545
+  ]
+ },
+ {
+  "name": "rocroc2",
+  "familie": "roc",
+  "thema": "felsen",
+  "kacheln": [
+   546,
+   547,
+   548,
+   549
+  ]
+ },
+ {
+  "name": "rocroc3",
+  "familie": "roc",
+  "thema": "felsen",
+  "kacheln": [
+   550,
+   551,
+   552,
+   553,
+   554,
+   555,
+   556,
+   557,
+   558
+  ]
+ },
+ {
+  "name": "rocroc4",
+  "familie": "roc",
+  "thema": "felsen",
+  "kacheln": [
+   945,
+   946,
+   947,
+   948,
+   949,
+   950
+  ]
+ },
+ {
+  "name": "rocwrk16",
+  "familie": "roc",
+  "thema": "wrack",
+  "kacheln": [
+   901,
+   902
+  ]
+ },
+ {
+  "name": "rocwrk18",
+  "familie": "roc",
+  "thema": "wrack",
+  "kacheln": [
+   904,
+   905,
+   906,
+   907
+  ]
+ },
+ {
+  "name": "rocwrk19",
+  "familie": "roc",
+  "thema": "wrack",
+  "kacheln": [
+   908,
+   909,
+   910,
+   911
+  ]
+ },
+ {
+  "name": "rocwrk20",
+  "familie": "roc",
+  "thema": "wrack",
+  "kacheln": [
+   912,
+   913,
+   914,
+   915,
+   916,
+   917,
+   918,
+   919,
+   920
+  ]
+ },
+ {
+  "name": "sancrat1",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1286,
+   1287,
+   1288,
+   1289,
+   1290,
+   1291,
+   1292,
+   1293,
+   1294,
+   1295
+  ]
+ },
+ {
+  "name": "sancrat2",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1296,
+   1297,
+   1298,
+   1299
+  ]
+ },
+ {
+  "name": "sancrat3",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1300,
+   1301,
+   1302,
+   1303,
+   1304,
+   1305,
+   1306,
+   1307,
+   1308,
+   1309,
+   1310,
+   1311,
+   1312,
+   1313,
+   1314,
+   1315
+  ]
+ },
+ {
+  "name": "sancratx1",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1316,
+   1317,
+   1318
+  ]
+ },
+ {
+  "name": "sancratx2",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1319,
+   1320,
+   1321,
+   1322
+  ]
+ },
+ {
+  "name": "sancratx3",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1323,
+   1324,
+   1325,
+   1326,
+   1327,
+   1328,
+   1329,
+   1330
+  ]
+ },
+ {
+  "name": "sancratx4",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1331,
+   1332,
+   1333,
+   1334
+  ]
+ },
+ {
+  "name": "sancratx5",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1335,
+   1336,
+   1337
+  ]
+ },
+ {
+  "name": "sancratx6",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1338,
+   1339,
+   1340,
+   1341
+  ]
+ },
+ {
+  "name": "sancratx7",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1342,
+   1343,
+   1344,
+   1345,
+   1346,
+   1347,
+   1348,
+   1349
+  ]
+ },
+ {
+  "name": "sancratx8",
+  "familie": "san",
+  "thema": "krater",
+  "kacheln": [
+   1350,
+   1351,
+   1352,
+   1353
+  ]
+ },
+ {
+  "name": "sanrok01",
+  "familie": "san",
+  "thema": "felsen",
+  "kacheln": [
+   1501,
+   1502,
+   1503,
+   1504,
+   1505,
+   1506,
+   1507,
+   1508,
+   1509
+  ]
+ },
+ {
+  "name": "sanrok02",
+  "familie": "san",
+  "thema": "felsen",
+  "kacheln": [
+   1510,
+   1511,
+   1512,
+   1513,
+   1514,
+   1515,
+   1516,
+   1517,
+   1518
+  ]
+ },
+ {
+  "name": "sanrok03",
+  "familie": "san",
+  "thema": "felsen",
+  "kacheln": [
+   1519,
+   1520,
+   1521,
+   1522,
+   1523,
+   1524
+  ]
+ },
+ {
+  "name": "sanrok04",
+  "familie": "san",
+  "thema": "felsen",
+  "kacheln": [
+   1525,
+   1526,
+   1527,
+   1528,
+   1529,
+   1530
+  ]
+ },
+ {
+  "name": "sanrok05",
+  "familie": "san",
+  "thema": "felsen",
+  "kacheln": [
+   1531,
+   1532,
+   1533,
+   1534
+  ]
+ },
+ {
+  "name": "sanrok06",
+  "familie": "san",
+  "thema": "felsen",
+  "kacheln": [
+   1535,
+   1536,
+   1537,
+   1538
+  ]
+ },
+ {
+  "name": "sanrok07",
+  "familie": "san",
+  "thema": "felsen",
+  "kacheln": [
+   1539,
+   1540,
+   1541,
+   1542
+  ]
+ },
+ {
+  "name": "sanrok08",
+  "familie": "san",
+  "thema": "felsen",
+  "kacheln": [
+   1543,
+   1544,
+   1545,
+   1546
+  ]
+ },
+ {
+  "name": "sanwrk17",
+  "familie": "san",
+  "thema": "wrack",
+  "kacheln": [
+   1657,
+   1658,
+   1659,
+   1660,
+   1661,
+   1662,
+   1663,
+   1664
+  ]
+ },
+ {
+  "name": "sanwrk19",
+  "familie": "san",
+  "thema": "wrack",
+  "kacheln": [
+   1666,
+   1667,
+   1668,
+   1669
+  ]
+ }
+]

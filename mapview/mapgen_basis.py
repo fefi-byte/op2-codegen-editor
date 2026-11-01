@@ -68,6 +68,12 @@ TEMPLATES: dict[str, dict] = {
     # on 128 maps and swallowed the riverbeds.
     "newterra": {"mix": {"mud": 0.68, "san": 0.20, "roc": 0.12},
                  "roughness": 0.0, "landschaft": True, "volcanoes": 1},
+    # Fremder Planet: lange Duenenbaender, Gesteinsbaender in derselben
+    # Richtung, zwei Vulkane mit erstarrten Lavazungen, wenig Erde.
+    # Alien world: long dune bands, rock bands along the same direction, two
+    # volcanoes with frozen lava tongues, little dirt.
+    "fremd": {"mix": {"san": 0.42, "roc": 0.33, "mud": 0.25},
+              "roughness": 0.2, "volcanoes": 2},
 }
 
 

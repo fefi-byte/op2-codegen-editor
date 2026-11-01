@@ -201,7 +201,8 @@ def generate(params: MapGenParams) -> GeneratedMap:
     # Locate features first: the volcano search must know about clearings and
     # the ground under a feature needs matching formations.
     layout = _feature_layout(params, rng)
-    sites = _volcano_sites(fam_field, params, rng, rock_family)
+    vulkan_formen: list = []
+    sites = _volcano_sites(fam_field, params, rng, rock_family, vulkan_formen)
     frei = np.zeros(fam_field.shape, dtype=bool)
     for eintrag in layout:
         if eintrag["feat"].kind == FEAT_FREI:
@@ -265,7 +266,13 @@ def generate(params: MapGenParams) -> GeneratedMap:
     _repariere_kontakte(grid, fam_field, tm, rng, _ist,
                         (0, params.height, 0, params.width))
     volcanoes = _stamp_volcanoes(grid, sites, tm, rng)
-    lava_zones = [_lava_zone(v, grid.shape, params.lava_zone_tiles, rng)
+    def _form_zu(v):
+        if not vulkan_formen:
+            return None
+        (sx, sy), form = min(vulkan_formen, key=lambda e: (e[0][0] - v[0]) ** 2
+                             + (e[0][1] - v[1]) ** 2)
+        return form if (sx - v[0]) ** 2 + (sy - v[1]) ** 2 <= 64 else None
+    lava_zones = [_lava_zone(v, grid.shape, params.lava_zone_tiles, rng, _form_zu(v))
                   for v in volcanoes]
 
     # Klippen ganz zum Schluss: sie brauchen echte Bodennachbarn, und die
@@ -302,7 +309,8 @@ def generate(params: MapGenParams) -> GeneratedMap:
     # Scatter last -- it should spread around the cliffs, not underneath.
     detail_zellen = _scatter_details(
         grid, fam_field, tm, rng,
-        int(round(params.details * 0.06 * flaeche)), gesperrt)
+        int(round(params.details * 0.06 * flaeche)), gesperrt,
+        klippen=klippen, vulkane=[(v[0], v[1]) for v in volcanoes])
     if params.symmetry != SYM_NONE:
         _mirror_region(grid, params.symmetry)
     cells = _cell_types(grid)

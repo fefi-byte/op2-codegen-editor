@@ -40,6 +40,23 @@ graphics for vehicles and buildings on the map.
 - Validation hints (ℹ️) in addition to errors and warnings.
 
 ### Added — terrain and maps
+- **Tiles & groups mode** in the map editor: a palette of every single tile
+  and the map's named tile groups (boulders, craters, cracks, edges ...),
+  filtered by ground ("Mud" shows everything containing mud, transitions
+  included), by kind and by name. Click places, dragging keeps placing,
+  right-click picks the tile under the cursor; undoable.
+- Ground brushes show a real tile instead of a colour swatch; the
+  passability overlay is off by default.
+- **Map generator feels like one planet**: all grounds share a main
+  direction and a warp field, so dune bands, rock bands and dirt flats are
+  elongated and flow into each other instead of being unrelated round blobs.
+- **Scatter in coherent fields** instead of evenly sprinkled: scree at cliff
+  feet and around volcanoes, crater fields around a large impact, fault lines
+  of cracks, at most one crash site with a debris trail
+  (`mapview/detail_themen.json` assigns each scatter stamp its theme).
+- **Volcanoes with frozen lava tongues** instead of a round rock disc; the
+  lava zone follows the tongues.
+- New generator template **"Alien world"**.
 - **Ramps and clean cliff removal**: painting "Lowland" across a wall now
   closes both new ends instead of leaving the wall cut open. The cells next
   to the cut are re-solved from the wall's recovered terrain, with the rest
