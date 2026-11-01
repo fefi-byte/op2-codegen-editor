@@ -354,6 +354,7 @@ DAMAGE_TYPES = {
 ACTION_KINDS = {
     "Leere Aktion (Platzhalter)":        "noop",
     "Wenn / Dann / Sonst (Bedingungsblock)": "if",
+    "Nach Schwierigkeitsgrad": "byDifficulty",
     "Nachricht anzeigen":                "message",
     "Dialog anzeigen":                   "showDialog",
     "Einheit erzeugen":                  "createUnit",
@@ -392,7 +393,7 @@ ACTION_KINDS = {
 # resp. superseded by FightGroups + group command); existing projects using
 # them still load and build.
 ACTION_MENU_GROUPS = {
-    "general":  ["if", "message", "showDialog", "modVar", "createTrigger", "stopTrigger",
+    "general":  ["if", "byDifficulty", "message", "showDialog", "modVar", "createTrigger", "stopTrigger",
                  "addVictory", "addDefeat", "customCode"],
     "units":    ["createUnit", "unitCmd", "fightGroupCmd",
                  "assignToGroup", "setTargCount"],

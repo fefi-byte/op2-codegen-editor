@@ -12,10 +12,11 @@ class UnitChecksWidget(QFrame):
     `+ Position` haengt einen neuen Eintrag an. Aenderungen aktualisieren
     direkt das uebergebene `checks`-List-Objekt (referenziell).
     """
-    def __init__(self, checks, parent=None):
+    def __init__(self, checks, parent=None, on_pick=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self.checks = checks
+        self._on_pick = on_pick
         self._rows: list[QWidget] = []
         outer = QVBoxLayout(self)
         outer.addWidget(QLabel("Positionen (alle müssen einsatzbereit sein, AND-verknüpft):"))
@@ -56,6 +57,11 @@ class UnitChecksWidget(QFrame):
         h.addWidget(QLabel("Typ:")); h.addWidget(unit, 2)
         h.addWidget(QLabel("X:")); h.addWidget(sx)
         h.addWidget(QLabel("Y:")); h.addWidget(sy)
+        if callable(self._on_pick):
+            pick = QPushButton("📍"); pick.setMaximumWidth(30)
+            pick.setToolTip(tr("triggers.tip_pick_map"))
+            pick.clicked.connect(lambda _, cc=c: self._on_pick(cc))
+            h.addWidget(pick)
         h.addWidget(rm)
         return row
 

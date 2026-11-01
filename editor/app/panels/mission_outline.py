@@ -49,6 +49,9 @@ def _suchtext(t) -> str:
                 teile.append(str(getattr(a, feld, "") or ""))
             lauf(getattr(a, "then_actions", None))
             lauf(getattr(a, "else_actions", None))
+            lauf(getattr(a, "easy_actions", None))
+            lauf(getattr(a, "normal_actions", None))
+            lauf(getattr(a, "hard_actions", None))
     lauf(t.actions)
     return " ".join(teile).lower()
 

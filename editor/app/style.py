@@ -40,6 +40,7 @@ ACTION_CATEGORY_COLOR: dict[str, str] = {
     "fightGroupCmd":   MAUVE,
     "unitCmd":         BLUE,
     "if":              LAVENDER,
+    "byDifficulty":    PEACH,
     "noop":            SURFACE1,
 }
 

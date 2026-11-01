@@ -411,6 +411,24 @@ def _emit_action(action: TriggerAction, indent: str, ctx: dict, depth: int = 0) 
     _comment_lines = [f"{indent}// {cl.strip().rstrip(chr(92)).strip()}"
                       for cl in ((getattr(action, "comment", "") or "").strip()).splitlines()]
 
+    if action.kind == "byDifficulty":
+        # Verzweigung nach Schwierigkeitsgrad des Spielers 0 (wie `diff`).
+        # Branch on player 0's difficulty (same source as `diff`).
+        out = list(_comment_lines)
+        zweige = [("2", action.hard_actions), ("1", action.normal_actions), ("0", action.easy_actions)]
+        zweige = [(k, liste) for k, liste in zweige if liste]
+        if not zweige:
+            return out
+        out.append(f"{indent}switch (Player[0].Difficulty()) {{")
+        for k, liste in zweige:
+            out.append(f"{indent}    case {k}: {{")
+            for child in liste:
+                out.extend(_emit_action(child, indent + "        ", ctx, depth))
+            out.append(f"{indent}        break;")
+            out.append(f"{indent}    }}")
+        out.append(f"{indent}}}")
+        return out
+
     if action.kind == "if":
         out: list[str] = list(_comment_lines)
         loop_mode = getattr(action, "loop_mode", "none") or "none"

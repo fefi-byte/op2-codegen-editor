@@ -49,10 +49,16 @@ def ablage_anzahl() -> int:
     return len(_ABLAGE["aktionen"])
 
 
+# Aktionen mit Unterlisten (einklappbare Bloecke) und ohne Formular.
+# Actions with sub-lists (collapsible blocks) and without an inline form.
+_BLOECKE = ("if", "byDifficulty")
+_OHNE_FORMULAR = ("if", "noop", "byDifficulty")
+
+
 def _enthaelt_liste(aktion, liste) -> bool:
     """Liegt `liste` (als Objekt) irgendwo in `aktion`? Verhindert, dass ein
     Wenn-Block in sich selbst gezogen wird."""
-    for unter in (getattr(aktion, "then_actions", None), getattr(aktion, "else_actions", None)):
+    for unter in [getattr(aktion, k, None) for k in SUB_ACTION_LISTS]:
         if unter is None:
             continue
         if unter is liste:
@@ -179,23 +185,47 @@ class ConditionListWidget(QWidget):
         if karte is not None:
             karte._if_zusammenfassung_auffrischen()
 
+    def _pick_cb(self):
+        cb = self.ctx.get("on_punkt_pick") if isinstance(self.ctx, dict) else None
+        return cb if callable(cb) else None
+
+    def _nach_dialog(self, dlg, neu):
+        self.rebuild()
+        cb = self._pick_cb()
+        if dlg.pick_gewuenscht and cb is not None:
+            def danach():
+                try:
+                    self.rebuild()
+                    karte = self.parent()
+                    while karte is not None and not isinstance(karte, ActionCard):
+                        karte = karte.parent()
+                    if karte is not None:
+                        karte._if_zusammenfassung_auffrischen()
+                except RuntimeError:          # Widget inzwischen geloescht
+                    pass
+            cb(neu, "point", danach)
+
     def _add(self):
         dlg = ConditionEditDialog(self,
                                   variables=self.ctx.get("variables"),
                                   diff_values=self.ctx.get("diff_values"),
-                                  loop_tiefe=self.ctx.get("foreach_tiefe"))
+                                  loop_tiefe=self.ctx.get("foreach_tiefe"),
+                                  kann_picken=self._pick_cb() is not None)
         if dlg.exec() == QDialog.Accepted:
-            self.a.conditions.append(dlg.result())
-            self.rebuild()
+            neu = dlg.result()
+            self.a.conditions.append(neu)
+            self._nach_dialog(dlg, neu)
 
     def _edit(self, c):
         dlg = ConditionEditDialog(self, c,
                                   variables=self.ctx.get("variables"),
                                   diff_values=self.ctx.get("diff_values"),
-                                  loop_tiefe=self.ctx.get("foreach_tiefe"))
+                                  loop_tiefe=self.ctx.get("foreach_tiefe"),
+                                  kann_picken=self._pick_cb() is not None)
         if dlg.exec() == QDialog.Accepted:
-            self.a.conditions[self.a.conditions.index(c)] = dlg.result()
-            self.rebuild()
+            neu = dlg.result()
+            self.a.conditions[self.a.conditions.index(c)] = neu
+            self._nach_dialog(dlg, neu)
 
     def _remove(self, c):
         self.a.conditions.remove(c)
@@ -386,7 +416,7 @@ class ActionListWidget(QWidget):
         if k == "if":
             neu.unit_type = "mapAny"     # Schleifen-Filter: alle Typen
         self.actions.append(neu)
-        self.rebuild(expand_last=(k not in ("noop", "if")))
+        self.rebuild(expand_last=(k not in ("noop", "if", "byDifficulty")))
         self._gemeldet()
 
     def _pos(self, a) -> int:
@@ -466,8 +496,8 @@ def _zaehle(aktionen) -> int:
     n = 0
     for a in aktionen:
         n += 1
-        if a.kind == "if":
-            n += _zaehle(a.then_actions) + _zaehle(a.else_actions)
+        for k in SUB_ACTION_LISTS:
+            n += _zaehle(getattr(a, k, None) or [])
     return n
 
 
@@ -494,7 +524,7 @@ class ActionCard(QFrame):
         header = QHBoxLayout()
         header.setSpacing(3)
         self._block_btn = None
-        if action.kind == "if":
+        if action.kind in _BLOECKE:
             # Wenn-Block einklappbar: zugeklappt bleibt eine Zeile mit der
             # Zusammenfassung. Der Zustand haengt an der Aktion, damit er einen
             # Neuaufbau der Liste (z.B. nach einem Karten-Pick) uebersteht.
@@ -513,7 +543,7 @@ class ActionCard(QFrame):
         mehr.setToolTip(tr("action_editor.tip_more"))
         mehr.clicked.connect(lambda: parent_list._menue(action, mehr))
         header.addWidget(mehr)
-        if action.kind not in ("if", "noop"):
+        if action.kind not in _OHNE_FORMULAR:
             self._toggle_btn = QPushButton("▼"); self._toggle_btn.setFixedWidth(24)
             self._toggle_btn.clicked.connect(self._toggle_form)
             header.addWidget(self._toggle_btn)
@@ -533,7 +563,7 @@ class ActionCard(QFrame):
         lay.addWidget(self._comment_lbl)
         self._refresh_comment()
 
-        if action.kind not in ("if", "noop"):
+        if action.kind not in _OHNE_FORMULAR:
             params = self._mit_schleifennamen(action_params_summary(action))
             self._det = QLabel(params if params else "")
             self._det.setWordWrap(True)
@@ -621,6 +651,39 @@ class ActionCard(QFrame):
             lay.addWidget(self._if_body)
             self._block_anzeigen()
 
+        if action.kind == "byDifficulty":
+            # Nach Schwierigkeitsgrad: drei Zweige, leere nur als Knopf.
+            # By difficulty: three branches, empty ones are just a button.
+            self._if_kurz = QLabel("")
+            self._if_kurz.setWordWrap(True)
+            self._if_kurz.setStyleSheet("color: #a6adc8; font-size: 10pt; padding: 0 2px 2px 6px;")
+            lay.addWidget(self._if_kurz)
+            self._if_body = QWidget()
+            body = QVBoxLayout(self._if_body)
+            body.setContentsMargins(0, 2, 0, 0)
+            body.setSpacing(4)
+            hinweis = QLabel(tr("action_editor.diff_hint"))
+            hinweis.setWordWrap(True)
+            hinweis.setStyleSheet("color: #a6adc8; font-size: 10pt; padding-left: 2px;")
+            body.addWidget(hinweis)
+            for feld, key in (("hard_actions", "lbl_diff_hard"), ("normal_actions", "lbl_diff_normal"),
+                              ("easy_actions", "lbl_diff_easy")):
+                liste = getattr(action, feld)
+                rahmen = self._section(tr(f"action_editor.{key}"),
+                                       ActionListWidget(liste, ctx, button_color=ACTION_SECTION_COLOR),
+                                       ACTION_SECTION_COLOR)
+                knopf = _klein_knopf("+ " + tr(f"action_editor.{key}").rstrip(":"), ACTION_SECTION_COLOR)
+                def zeigen(_=False, r=rahmen, k=knopf):
+                    r.setVisible(True)
+                    k.setVisible(False)
+                knopf.clicked.connect(zeigen)
+                body.addWidget(rahmen)
+                body.addWidget(knopf)
+                rahmen.setVisible(bool(liste))
+                knopf.setVisible(not liste)
+            lay.addWidget(self._if_body)
+            self._block_anzeigen()
+
     def _mit_schleifennamen(self, text: str) -> str:
         """"<loop>"/"<loop:outer>" in Zusammenfassungen durch den Namen
         ersetzen, der an dieser Stelle gilt (unit, unit2, ...)."""
@@ -671,7 +734,7 @@ class ActionCard(QFrame):
         self._block_anzeigen()
 
     def setze_block(self, zu: bool):
-        if self.a.kind == "if":
+        if self.a.kind in _BLOECKE:
             self.a._ui_zu = zu
             self._block_anzeigen()
 
@@ -682,13 +745,17 @@ class ActionCard(QFrame):
         self._if_zusammenfassung_auffrischen()
 
     def _if_zusammenfassung_auffrischen(self):
-        if self.a.kind != "if":
+        if self.a.kind not in _BLOECKE:
             return
         zu = self._block_zu()
         self._if_kurz.setVisible(zu)
         if not zu:
             return
         a = self.a
+        if a.kind == "byDifficulty":
+            self._if_kurz.setText(tr("action_editor.kurz_diff", s=_zaehle(a.hard_actions),
+                                     n=_zaehle(a.normal_actions), l=_zaehle(a.easy_actions)))
+            return
         verb = " " + (tr("action_editor.kurz_oder") if a.condition_logic == "or"
                       else tr("action_editor.kurz_und")) + " "
         teile = [((tr("action_editor.not_prefix") + " ") if c.negate else "")
@@ -883,7 +950,10 @@ class ActionCard(QFrame):
 
     def _apply_card_style(self, action):
         kind = getattr(action, "kind", "noop")
-        if kind == "if":
+        if kind == "byDifficulty":
+            self.setStyleSheet(tint_stylesheet(ACTION_CATEGORY_COLOR.get(kind, SURFACE1),
+                                               border_px=2, objekt="aktionskarte"))
+        elif kind == "if":
             # If-/For-Bloecke: der GANZE Block bekommt eine Umrandung (kein
             # Flaechenhintergrund, keine Einfaerbung der Beschriftungen) --
             # macht Wenn/Zaehlschleife/Enumerator-Schleife auf einen Blick

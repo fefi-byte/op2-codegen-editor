@@ -508,6 +508,9 @@ def _walk_actions(actions):
         yield a
         yield from _walk_actions(getattr(a, "then_actions", None))
         yield from _walk_actions(getattr(a, "else_actions", None))
+        yield from _walk_actions(getattr(a, "easy_actions", None))
+        yield from _walk_actions(getattr(a, "normal_actions", None))
+        yield from _walk_actions(getattr(a, "hard_actions", None))
 
 
 

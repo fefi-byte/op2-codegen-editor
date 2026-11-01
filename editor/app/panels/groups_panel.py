@@ -196,6 +196,9 @@ class GroupsPanel(QWidget):
                 a = stack.pop()
                 stack.extend(getattr(a, "then_actions", None) or [])
                 stack.extend(getattr(a, "else_actions", None) or [])
+                stack.extend(getattr(a, "easy_actions", None) or [])
+                stack.extend(getattr(a, "normal_actions", None) or [])
+                stack.extend(getattr(a, "hard_actions", None) or [])
                 if getattr(a, "kind", "") != "recordBuilding":
                     continue
                 for e in (getattr(a, "building_list", None) or []):

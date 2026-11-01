@@ -31,7 +31,7 @@ class _NoWheelFilter(QObject):
 # Aktionstypen, die per Dialog (mit Parametern) angelegt werden:
 # Action kinds that are created via a dialog (with parameters):
 _DIALOG_KINDS = {label: k for label, k in ACTION_KINDS.items()
-                 if k not in ("if", "noop", "custom", "defendArea")}
+                 if k not in ("if", "noop", "custom", "defendArea", "byDifficulty")}
 
 
 # Gruppen-Befehle je Gruppentyp (MiningGroups sind jetzt vordefinierte

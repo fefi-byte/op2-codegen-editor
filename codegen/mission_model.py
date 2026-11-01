@@ -131,11 +131,16 @@ def action_from_dict(d: dict) -> "TriggerAction":
     import dataclasses
     d = dict(d)
     conds = [ActionCondition(**c) for c in d.pop("conditions", [])]
-    then = [action_from_dict(a) for a in d.pop("then_actions", [])]
-    els = [action_from_dict(a) for a in d.pop("else_actions", [])]
-    valid = {f.name for f in dataclasses.fields(TriggerAction)} - {"conditions", "then_actions", "else_actions"}
+    zweige = {k: [action_from_dict(a) for a in d.pop(k, [])] for k in SUB_ACTION_LISTS}
+    valid = {f.name for f in dataclasses.fields(TriggerAction)} - {"conditions"} - set(SUB_ACTION_LISTS)
     d = {k: v for k, v in d.items() if k in valid}
-    return TriggerAction(conditions=conds, then_actions=then, else_actions=els, **d)
+    return TriggerAction(conditions=conds, **zweige, **d)
+
+
+# Alle Listen, in denen Aktionen verschachtelt sein koennen (Wenn/Sonst und
+# die drei Zweige von "Nach Schwierigkeitsgrad").
+# All lists that can hold nested actions.
+SUB_ACTION_LISTS = ("then_actions", "else_actions", "easy_actions", "normal_actions", "hard_actions")
 
 
 @dataclass
@@ -349,6 +354,11 @@ class TriggerAction:
     condition_logic: str = "and"
     then_actions: list["TriggerAction"] = field(default_factory=list)
     else_actions: list["TriggerAction"] = field(default_factory=list)
+    # byDifficulty: je ein Zweig fuer Leicht / Normal / Schwer
+    # (Player[0].Difficulty(): 0 = leicht, 1 = normal, 2 = schwer)
+    easy_actions: list["TriggerAction"] = field(default_factory=list)
+    normal_actions: list["TriggerAction"] = field(default_factory=list)
+    hard_actions: list["TriggerAction"] = field(default_factory=list)
     # modVar: Variable modifizieren
     var_name: str = ""        # Name der Variablen
     mod_mode: str = "inc"     # "inc" (+1) | "dec" (-1) | "expr" (Ausdruck)

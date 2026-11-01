@@ -34,7 +34,7 @@ except Exception:
 
 from PySide6.QtCore import QTimer                      # noqa: E402
 from PySide6.QtWidgets import (QApplication,           # noqa: E402
-                               QGraphicsLineItem)
+                               QGraphicsLineItem, QPushButton)
 
 _failures: list[str] = []
 
@@ -216,6 +216,48 @@ def check_trigger_panel(win, app) -> None:
         pump(app)
         check("Forschungs-Trigger: Tech-ID sichtbar", tp.form.isRowVisible(tp.tech_id))
         check("Forschungs-Trigger: Marks verborgen", not tp.form.isRowVisible(tp.marks))
+
+    # Punkt-Ausloeser: Karten-Pick setzt x/y / point trigger: map pick
+    punkt = next((label for label, spec in TRIGGER_CONDITIONS.items() if spec[0] == "point"), None)
+    if check("Bedingung 'point' vorhanden", punkt is not None) and win.map is not None:
+        tp.cond.setCurrentIndex(tp.cond.findData(punkt))
+        pump(app)
+        check("Punkt-Trigger: Pick-Knopf sichtbar", tp.form.isRowVisible(tp.pick_btn))
+        tp.pick_btn.click()
+        pump(app)
+        check("Punkt-Pick laeuft", (win._action_pick or {}).get("kind") == "cond_field")
+        win.on_place(11, 13)
+        pump(app)
+        t0 = win.triggers[0]
+        check("Punkt-Pick setzt Trigger-Position", (t0.x, t0.y) == (11, 13), f"({t0.x},{t0.y})")
+        check("Formular zeigt neue Position", tp.x.value() == 11, str(tp.x.value()))
+    # findUnit: Positions-Liste mit Pick / findUnit rows have a picker
+    fu = next((label for label, spec in TRIGGER_CONDITIONS.items() if spec[0] == "findUnit"), None)
+    if check("Bedingung 'findUnit' vorhanden", fu is not None) and win.map is not None:
+        from mission_model import FindUnitCheck
+        win.triggers[0].unit_checks.append(FindUnitCheck())
+        tp.cond.setCurrentIndex(tp.cond.findData(fu))
+        tp._load(tp._idx)
+        pump(app)
+        knoepfe = [b for b in tp.unit_checks_widget.findChildren(QPushButton) if b.text() == "📍"]
+        if check("findUnit-Zeile hat Pick-Knopf", len(knoepfe) == 1):
+            knoepfe[0].click()
+            pump(app)
+            win.on_place(20, 22)
+            pump(app)
+            c = win.triggers[0].unit_checks[0]
+            check("findUnit-Pick setzt Position", (c.x, c.y) == (20, 22), f"({c.x},{c.y})")
+    # Aktion "Nach Schwierigkeitsgrad" / by-difficulty action
+    from mission_model import TriggerAction
+    from app.dialogs.action_cards import ActionCard
+    win.triggers[0].actions.append(TriggerAction(
+        kind="byDifficulty", hard_actions=[TriggerAction(kind="message", text="x")]))
+    tp.refresh_actions()
+    pump(app)
+    karten = [k for k in tp.act_scroll.widget().findChildren(ActionCard) if k.a.kind == "byDifficulty"]
+    check("Schwierigkeits-Karte gebaut", len(karten) == 1)
+    win.triggers[0].actions.clear()
+    tp.refresh_actions()
 
     tp.cond_toggle.setChecked(False)
     pump(app)

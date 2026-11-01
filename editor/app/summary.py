@@ -106,6 +106,8 @@ def _action_summary_core(a) -> str:
             detail = spec.get("kind", "time")
         key = "sum.act_addvictory" if a.kind == "addVictory" else "sum.act_adddefeat"
         return tr(key, cond=detail)
+    if a.kind == "byDifficulty":
+        return tr("sum.act_diff", s=len(a.hard_actions), n=len(a.normal_actions), l=len(a.easy_actions))
     if a.kind == "if":
         logic = tr("sum.or") if getattr(a, "condition_logic", "and") == "or" else tr("sum.and")
         base = tr("sum.act_if", n=len(getattr(a, "conditions", [])), logic=logic,
@@ -301,6 +303,7 @@ def _cmd_label(keys: dict, cmd: str) -> str:
 _KIND_TITLE = {
     "noop": "Platzhalter",
     "if": "Logik (Wenn / Schleife)",
+    "byDifficulty": "Nach Schwierigkeitsgrad",
     "message": "Nachricht",
     "createUnit": "Einheit erzeugen",
     "createDisaster": "Katastrophe",
@@ -343,7 +346,7 @@ def action_kind_label(kind: str) -> str:
 
 def action_params_summary(a) -> str:
     """Kompakte einzeilige Parameterübersicht für eine Aktionskarte (leer für noop/if)."""
-    if a.kind in ("noop", "if"):
+    if a.kind in ("noop", "if", "byDifficulty"):
         return ""
     if a.kind == "message":
         return f'"{getattr(a, "text", "")}"'

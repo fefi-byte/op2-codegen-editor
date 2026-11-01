@@ -479,6 +479,10 @@ class _MapPickMixin:
 
     def _end_action_pick(self, reopen=True):
         was_cond = self._action_pick is not None and self._action_pick.get("kind") == "cond_field"
+        # Andere Herkunft (Trigger-Ausloeser, Positions-Liste, Wenn-Bedingung):
+        # die eigene Auffrisch-Funktion statt des Sieg/Niederlage-Panels.
+        # Other origins bring their own refresh callback.
+        danach = self._action_pick.get("danach") if self._action_pick else None
         action_index = self._action_pick.get("action_index", -1) if self._action_pick else -1
         self.view.rect_select_enabled = False
         self.view.setCursor(Qt.ArrowCursor)
@@ -491,7 +495,9 @@ class _MapPickMixin:
             self.scene.removeItem(self._rect_pick_item)
             self._rect_pick_item = None
         if reopen:
-            if was_cond:
+            if was_cond and callable(danach):
+                danach()
+            elif was_cond:
                 self.conditions_panel.reload_current()
             else:
                 self.trigger_panel.refresh_actions(expand_index=action_index)
@@ -618,6 +624,9 @@ class _MapPickMixin:
                 yield a
                 yield from walk(getattr(a, "then_actions", None))
                 yield from walk(getattr(a, "else_actions", None))
+                yield from walk(getattr(a, "easy_actions", None))
+                yield from walk(getattr(a, "normal_actions", None))
+                yield from walk(getattr(a, "hard_actions", None))
 
         for trigger in self.triggers:
             tip = tr("map_overlay.planned_by_trigger", name=trigger.name)

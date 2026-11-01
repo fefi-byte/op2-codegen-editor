@@ -61,6 +61,9 @@ class _ProjectMixin:
                         )
                 walk(getattr(a, "then_actions", None))
                 walk(getattr(a, "else_actions", None))
+                walk(getattr(a, "easy_actions", None))
+                walk(getattr(a, "normal_actions", None))
+                walk(getattr(a, "hard_actions", None))
 
         for t in self.triggers:
             walk(t.actions)
@@ -108,6 +111,9 @@ class _ProjectMixin:
                     a.group_name = name
                 walk(getattr(a, "then_actions", None))
                 walk(getattr(a, "else_actions", None))
+                walk(getattr(a, "easy_actions", None))
+                walk(getattr(a, "normal_actions", None))
+                walk(getattr(a, "hard_actions", None))
 
         for t in self.triggers:
             walk(t.actions)

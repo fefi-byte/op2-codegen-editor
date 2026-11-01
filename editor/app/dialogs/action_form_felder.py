@@ -661,8 +661,13 @@ class _FelderMixin:
         # victory&defeat panel; map-pick buttons off because the action lives
         # in a card that would rebuild during the pick) ---
         from ..condition_form import ConditionFormWidget
+        # Picken ueber den allgemeinen Punkt-Pick: der schreibt direkt in
+        # condition_spec, ein Neuaufbau der Karte schadet dann nicht.
+        # Picks go through the generic point pick writing into condition_spec.
+        kann = isinstance(ctx, dict) and callable(ctx.get("on_punkt_pick"))
         self.cond_editor = ConditionFormWidget(
-            diff_values=diff_values, show_pick_buttons=False)
+            diff_values=diff_values, show_pick_buttons=kann)
+        self.cond_editor.pick_requested.connect(self._bedingung_pick)
         cond_groups = [name for name, _t in
                        (ctx.get("all_command_groups") or [] if isinstance(ctx, dict) else [])]
         cond_units = list(ctx.get("named_units") or [] if isinstance(ctx, dict) else [])

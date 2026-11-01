@@ -129,6 +129,9 @@ def _walk_actions(actions):
         yield a
         yield from _walk_actions(getattr(a, "then_actions", None) or [])
         yield from _walk_actions(getattr(a, "else_actions", None) or [])
+        yield from _walk_actions(getattr(a, "easy_actions", None) or [])
+        yield from _walk_actions(getattr(a, "normal_actions", None) or [])
+        yield from _walk_actions(getattr(a, "hard_actions", None) or [])
 
 
 def _check_building_group_builders(w):
@@ -564,6 +567,9 @@ def _check_loop_refs(w):
                         break
             walk(getattr(a, "then_actions", None), d, ti, tname)
             walk(getattr(a, "else_actions", None), d, ti, tname)
+            walk(getattr(a, "easy_actions", None), d, ti, tname)
+            walk(getattr(a, "normal_actions", None), d, ti, tname)
+            walk(getattr(a, "hard_actions", None), d, ti, tname)
 
     for ti, t in enumerate(getattr(w, "triggers", None) or []):
         walk(t.actions, 0, ti, t.name)
@@ -588,6 +594,9 @@ def _check_dialogs(w):
                 has_dialog = True
             walk(getattr(a, "then_actions", None))
             walk(getattr(a, "else_actions", None))
+            walk(getattr(a, "easy_actions", None))
+            walk(getattr(a, "normal_actions", None))
+            walk(getattr(a, "hard_actions", None))
     for t in (getattr(w, "triggers", None) or []):
         walk(t.actions)
     if has_dialog:
@@ -663,6 +672,9 @@ def _check_custom_actions(w):
                                 ("trigger", ti)))
             walk(getattr(a, "then_actions", None), ti, tname)
             walk(getattr(a, "else_actions", None), ti, tname)
+            walk(getattr(a, "easy_actions", None), ti, tname)
+            walk(getattr(a, "normal_actions", None), ti, tname)
+            walk(getattr(a, "hard_actions", None), ti, tname)
 
     for ti, t in enumerate(getattr(w, "triggers", None) or []):
         walk(t.actions, ti, t.name)
@@ -688,6 +700,9 @@ def _check_text_vars(w):
                                                   t=tname, v=tok), ("trigger", ti)))
             walk(getattr(a, "then_actions", None), ti, tname)
             walk(getattr(a, "else_actions", None), ti, tname)
+            walk(getattr(a, "easy_actions", None), ti, tname)
+            walk(getattr(a, "normal_actions", None), ti, tname)
+            walk(getattr(a, "hard_actions", None), ti, tname)
 
     for ti, t in enumerate(getattr(w, "triggers", None) or []):
         walk(t.actions, ti, t.name)

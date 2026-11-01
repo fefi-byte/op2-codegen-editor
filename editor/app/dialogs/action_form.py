@@ -27,6 +27,27 @@ from .action_form_felder import _FelderMixin
 from .action_form_listen import _ListenMixin
 
 
+class DictZiel:
+    """Laesst einen Karten-Pick (der x/y/width/height als Attribute setzt) in
+    ein dict schreiben -- fuer condition_spec und Designer-Parameter.
+    Lets a map pick that sets attributes write into a dict."""
+    _FELDER = ("x", "y", "width", "height")
+
+    def __init__(self, daten: dict):
+        object.__setattr__(self, "_d", daten)
+
+    def __getattr__(self, name):
+        if name in DictZiel._FELDER:
+            return self._d.get(name, 0)
+        raise AttributeError(name)
+
+    def __setattr__(self, name, wert):
+        if name in DictZiel._FELDER:
+            self._d[name] = int(wert)
+        else:
+            object.__setattr__(self, name, wert)
+
+
 class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
     """Inline-Formular zum Bearbeiten einer Aktion direkt in der ActionCard.
 
@@ -389,6 +410,11 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
                 sx.setValue(int(pos.get("x", 0))); sy.setValue(int(pos.get("y", 0)))
                 sx.valueChanged.connect(self._save); sy.valueChanged.connect(self._save)
                 h.addWidget(sx, 1); h.addWidget(sy, 1)
+                if self._punkt_cb() is not None:
+                    pk = QPushButton("📍"); pk.setFixedWidth(28)
+                    pk.setToolTip(tr("triggers.tip_pick_map"))
+                    pk.clicked.connect(lambda _=False, n=pname: self._custom_pick(n))
+                    h.addWidget(pk)
                 self.custom_form.addRow(f"{pname}:", box)
                 self._custom_widgets[pname] = ("position", (sx, sy))
             elif ptype == "unit_type":
@@ -417,6 +443,34 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
                 sp.valueChanged.connect(self._save)
                 self.custom_form.addRow(f"{pname}:", sp)
                 self._custom_widgets[pname] = (ptype, sp)
+
+    def _punkt_cb(self):
+        cb = self.ctx.get("on_punkt_pick") if isinstance(self.ctx, dict) else None
+        return cb if callable(cb) else None
+
+    def _custom_pick(self, pname):
+        """Positions-Parameter einer Designer-Aktion auf der Karte setzen."""
+        self._save()
+        a = self._action
+        args = dict(getattr(a, "custom_args", None) or {})
+        pos = dict(args.get(pname) or {}) if isinstance(args.get(pname), dict) else {}
+        args[pname] = pos
+        a.custom_args = args
+        cb = self._punkt_cb()
+        if cb is not None:
+            cb(DictZiel(pos), "point", None, a)
+
+    def _bedingung_pick(self, modus):
+        """Punkt/Bereich der eingebetteten Sieg-/Niederlage-Bedingung picken."""
+        self._save()
+        a = self._action
+        spec = getattr(a, "condition_spec", None)
+        if not isinstance(spec, dict):
+            spec = {}
+            a.condition_spec = spec
+        cb = self._punkt_cb()
+        if cb is not None:
+            cb(DictZiel(spec), modus, None, a)
 
     def _collect_custom_args(self) -> dict:
         out = {}

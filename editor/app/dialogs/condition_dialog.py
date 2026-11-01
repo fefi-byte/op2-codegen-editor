@@ -22,8 +22,11 @@ class ConditionEditDialog(QDialog):
     Dialog for editing a single When-condition of an "if" action.
     """
     def __init__(self, parent, condition=None, variables=None, diff_values=None,
-                 loop_tiefe=None):
+                 loop_tiefe=None, kann_picken=False):
         super().__init__(parent)
+        # "Auf Karte waehlen": Dialog schliesst mit OK, der Aufrufer startet
+        # danach den Karten-Pick fuer x/y. / Closes with OK, caller then picks.
+        self.pick_gewuenscht = False
         self.setWindowTitle(tr("action_editor.dlg_condition_title"))
         self.kind = QComboBox(); fill_combo(self.kind, ACTION_CONDITION_KINDS, "action_conditions")
         self.kind.currentTextChanged.connect(self._update)
@@ -85,6 +88,11 @@ class ConditionEditDialog(QDialog):
                   "loop_level": "Schleifenebene:"}
         for k, w in self._rows.items():
             self.form.addRow(labels[k], w)
+        self.pick_btn = QPushButton(tr("triggers.btn_pick_map"))
+        self.pick_btn.setToolTip(tr("triggers.tip_pick_map"))
+        self.pick_btn.clicked.connect(self._picken)
+        self._kann_picken = kann_picken
+        self.form.addRow("", self.pick_btn)
         self.form.addRow("", self.negate)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
@@ -97,6 +105,11 @@ class ConditionEditDialog(QDialog):
         fields = ACTION_CONDITION_KINDS[self.kind.currentData()][1]
         for k, w in self._rows.items():
             self.form.setRowVisible(w, k in fields)
+        self.form.setRowVisible(self.pick_btn, self._kann_picken and "x" in fields)
+
+    def _picken(self):
+        self.pick_gewuenscht = True
+        self.accept()
 
     def _load(self, c):
         for label, (kind, _) in ACTION_CONDITION_KINDS.items():

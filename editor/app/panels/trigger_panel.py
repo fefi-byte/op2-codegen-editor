@@ -144,6 +144,12 @@ class TriggerPanel(QWidget):
         }
         for key, w in self._cond_rows.items():
             self.form.addRow(clabels[key], w)
+        # Position/Bereich des Ausloesers auf der Karte waehlen.
+        # Pick the trigger condition's position/area on the map.
+        self.pick_btn = QPushButton(tr("triggers.btn_pick_map"))
+        self.pick_btn.setToolTip(tr("triggers.tip_pick_map"))
+        self.pick_btn.clicked.connect(self._ausloeser_pick)
+        self.form.addRow("", self.pick_btn)
 
         self.name.textChanged.connect(self._store_current)
         self.name.editingFinished.connect(self.umbenennen_nachziehen)
@@ -343,6 +349,9 @@ class TriggerPanel(QWidget):
                 yield a
                 yield from alle(getattr(a, "then_actions", None))
                 yield from alle(getattr(a, "else_actions", None))
+                yield from alle(getattr(a, "easy_actions", None))
+                yield from alle(getattr(a, "normal_actions", None))
+                yield from alle(getattr(a, "hard_actions", None))
 
         index = {}
         for i, x in enumerate(triggers):
@@ -459,6 +468,7 @@ class TriggerPanel(QWidget):
             "target_group_types": target_group_types,
             "all_groups": all_groups,
             "on_map_pick": self._on_action_map_pick,
+            "on_punkt_pick": self._punkt_pick,
             "on_area_preview": self._on_area_preview,
             "on_struktur": self._struktur_geaendert,
             "neu_aufbauen": self._aktionen_neu_aufbauen,
@@ -475,6 +485,52 @@ class TriggerPanel(QWidget):
             w.clear_action_area_preview()
         else:
             w.show_action_area_preview(action)
+
+    def _punkt_pick(self, ziel, feld: str = "point", danach=None, aktion=None):
+        """Position (x, y) bzw. Bereich (x, y, width, height) eines beliebigen
+        Objekts auf der Karte setzen -- Trigger-Ausloeser, Eintrag der
+        Positions-Liste oder Wenn-Bedingung. `danach` frischt die Anzeige auf.
+
+        Pick x/y (or a rect) for any object on the map; `danach` refreshes."""
+        idx = self._idx
+        oben = -1
+        if aktion is not None and 0 <= idx < len(self._window.triggers):
+            oben = next((i for i, x in enumerate(self._window.triggers[idx].actions)
+                         if x is aktion), -1)
+
+        def auffrischen():
+            if callable(danach):
+                danach()
+            elif 0 <= idx < len(self._window.triggers):
+                self.refresh_actions(expand_index=oben)
+            self._window._refresh_overview()
+
+        self.map_pick_requested.emit({
+            "kind": "cond_field", "field": feld, "cond": ziel, "danach": auffrischen,
+        })
+
+    def _pruefung_pick(self, pruefung):
+        """Eintrag der Liste 'Einheiten an Positionen bereit' per Klick setzen."""
+        def neu():
+            if self.unit_checks_widget is not None:
+                self.unit_checks_widget._rebuild()
+        self._punkt_pick(pruefung, "point", neu)
+
+    def _ausloeser_pick(self):
+        """Ausloeser 'Punkt erreicht'/'Rechteck'/'Flucht-Zone' auf der Karte setzen."""
+        triggers = self._window.triggers
+        if not (0 <= self._idx < len(triggers)):
+            return
+        self._store_current()
+        t = triggers[self._idx]
+        felder = TRIGGER_CONDITIONS[self.cond.currentData()][1]
+        feld = "rect" if "width" in felder else "point"
+        i = self._idx
+
+        def neu_laden():
+            if i == self._idx and 0 <= i < len(self._window.triggers):
+                self._load(i)
+        self._punkt_pick(t, feld, neu_laden)
 
     def _on_action_map_pick(self, action, field: str):
         triggers = self._window.triggers
@@ -496,7 +552,7 @@ class TriggerPanel(QWidget):
     def _set_form_enabled(self, on):
         for w in list(self._cond_rows.values()) + [
             self.name, self.folder, self.comment, self.at_start, self.one_shot,
-            self.cond
+            self.cond, self.pick_btn
         ]:
             w.setEnabled(on)
         # Ohne Auswahl gar nicht erst anzeigen: 18 leere Felder sagen nichts,
@@ -777,7 +833,7 @@ class TriggerPanel(QWidget):
             self.unit_checks_layout.removeWidget(self.unit_checks_widget)
             self.unit_checks_widget.deleteLater()
             self.unit_checks_widget = None
-        self.unit_checks_widget = UnitChecksWidget(t.unit_checks)
+        self.unit_checks_widget = UnitChecksWidget(t.unit_checks, on_pick=self._pruefung_pick)
         self.unit_checks_layout.addWidget(self.unit_checks_widget)
         fi = self.farbe.findData(getattr(t, "color", "") or "")
         self.farbe.setCurrentIndex(max(0, fi))
@@ -837,3 +893,4 @@ class TriggerPanel(QWidget):
         for key, w in self._cond_rows.items():
             self.form.setRowVisible(w, key in fields)
         self.unit_checks_container.setVisible("unit_checks" in fields)
+        self.form.setRowVisible(self.pick_btn, "x" in fields)

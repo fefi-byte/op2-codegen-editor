@@ -51,6 +51,7 @@ from mission_model import (
     FightGroupSpec, FindUnitCheck, MiningGroupSpec, Mission, MissionType, PlayerSpec,
     ReinforceGroupSpec, ReinforceTargetSpec, StartMessage, TriggerAction, TriggerDef,
     UnitSpec, VariableDef, WallTubeSpec, action_from_dict, trigger_from_dict,
+    SUB_ACTION_LISTS,
 )
 from techs import load_techs
 
