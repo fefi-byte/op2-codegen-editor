@@ -7,7 +7,39 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
+## [0.6.0-alpha] - 2026-11-01
+
+The mission side caught up with the map side: a new layout with the mission
+outline on the left, a much more capable trigger editor, and the real game
+graphics for vehicles and buildings on the map.
+
+### Added — missions
+- **New layout**: mission outline on the left (players, objects, groups,
+  triggers, victory/defeat), double-click opens the editor there with
+  Confirm/Cancel; mode switch *Mission | Map editor*; group areas can be
+  selected and dragged on the map.
+- **Real game graphics** for vehicles and buildings, Eden and Plymouth by the
+  player's colony, in the player colour, with weapon turrets on combat
+  vehicles and guard posts; bulldozed ground under buildings is drawn (display
+  only, the map stays unchanged).
+- **Vehicle facing**: 8 directions when placing (key *R* / *Shift+R* turns,
+  the preview turns with it) or in the object dialog; written to `CreateUnit`.
+- **Action "By difficulty"**: three branches (Hard/Normal/Easy), emitted as a
+  `switch` on the difficulty; empty branches produce no code. Validation warns
+  about an empty block and notes a block with only one branch.
+- **Trigger editor**: stop-trigger action, extra conditions (AND/OR) on top of
+  the trigger condition, copy/cut/paste/drag of actions, context menu in the
+  outline, trigger colours, flow strip and a timeline of time triggers;
+  collapsible if-blocks; inner and outer loops named `unit`/`unit2`,
+  `i`/`i2`.
+- **Map pickers everywhere**: point/rect/escape trigger conditions, each row of
+  "unit(s) ready at position(s)", if-conditions with a position, the embedded
+  victory/defeat condition and position parameters of designer actions.
+- **Marker of the open trigger**: its point, area or positions are shown on the
+  map while it is open, and follow every change.
+- Validation hints (ℹ️) in addition to errors and warnings.
+
+### Added — terrain and maps
 - **Ramps and clean cliff removal**: painting "Lowland" across a wall now
   closes both new ends instead of leaving the wall cut open. The cells next
   to the cut are re-solved from the wall's recovered terrain, with the rest
@@ -36,6 +68,8 @@ and the project follows [Semantic Versioning](https://semver.org/).
   follows it.
 
 ### Changed
+- The old modal trigger dialog is removed; the trigger editor lives in the
+  outline layout only.
 - **UI**: sidebar grouped into "Mission" and "Map"; a badge on the map shows
   terrain mode and brush; "Clear all" moved from the toolbar into the Edit
   menu with a confirmation; the error/warning counter toggles the validation
@@ -49,6 +83,12 @@ and the project follows [Semantic Versioning](https://semver.org/).
   hard-coded GOG path.
 
 ### Fixed
+- Renaming a unit or group updates its references; the open editor is applied
+  before saving or building.
+- Mining groups' "set area" wrote the build rect instead of the idle rect.
+- Spin boxes without arrows rendered empty under the stylesheet.
+- Sprite shadows are read as 1-bit images (no more stripes); building graphics
+  are anchored at the centre of their footprint.
 - Two latent `NameError`s in the code generator ("last command" loop-unit
   condition, startMining with a loop reference).
 - Rim and cliff-end changes after a stroke are undoable.
