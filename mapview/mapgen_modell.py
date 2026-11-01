@@ -25,7 +25,7 @@ from mapgen_basis import (  # noqa: E402
 class TileModel:
     """Gelernte Nachbarschaft + Familienzuordnung der Kacheln."""
 
-    def __init__(self, path: Path | None = None):
+    def __init__(self, path: Path | None = None, lavafels: bool = True):
         data = np.load(path or MODEL_PATH, allow_pickle=False)
         self.families = [str(f) for f in data["families"]]
         # Formtabellen: Klippen entstehen daraus, statt kopiert zu werden.
@@ -288,6 +288,11 @@ class TileModel:
         # Last: the edge rule needs families, transitions and usage
         # counts, which only come into existence further up.
         self._lade_kanten(data)
+        # Dunkler Lavafels als eigene Familie mit den Original-Randkacheln
+        # (siehe lavafels.py). / Dark lava rock as its own family.
+        if lavafels:
+            import lavafels as _lavafels
+            _lavafels.einrichten(self)
 
 
     # Ab welchem ANTEIL der Nachbarschaften eines Blocks eine seiner Seiten als
