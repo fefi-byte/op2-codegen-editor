@@ -254,6 +254,41 @@ def _build_codegen_context(mission: Mission) -> dict:
 
 
 
+
+def _ki_spieler(mission) -> list:
+    """(Index, PlayerSpec) aller Spieler, deren Kolonie die Aufbau-KI fuehrt.
+
+    (index, PlayerSpec) of all players whose colony the building AI runs."""
+    return [(i, p) for i, p in enumerate(mission.players or [])
+            if getattr(p, "ki_aufbau", False) and not p.is_human]
+
+
+def _emit_ki_start(mission) -> list[str]:
+    """InitProc-Zeilen: Aufbau-KI je KI-Spieler starten (op2_ki.hpp).
+
+    InitProc lines: start the building AI per AI player."""
+    zeilen = []
+    spieler = _ki_spieler(mission)
+    if not spieler:
+        return zeilen
+    w = int(getattr(mission, "map_width", 0) or 0)
+    h = int(getattr(mission, "map_height", 0) or 0)
+    w_expr = str(w) if w > 0 else "GameMapEx::GetMapWidth()"
+    h_expr = str(h) if h > 0 else "GameMapEx::GetMapHeight()"
+    zeilen.append("")
+    zeilen.append("    // --- Aufbau-KI: baut die Kolonie selbst auf, Spur in <Mission>-KI.jsonl ---")
+    zeilen.append("    // --- Building AI: builds the colony itself, trace in <Mission>-KI.jsonl ---")
+    for idx, p in spieler:
+        x = int(p.ki_x) if int(getattr(p, "ki_x", -1)) >= 0 else (w // 2 if w > 0 else -1)
+        y = int(p.ki_y) if int(getattr(p, "ki_y", -1)) >= 0 else (h // 2 if h > 0 else -1)
+        x_expr = str(x) if x >= 0 else f"({w_expr}) / 2"
+        y_expr = str(y) if y >= 0 else f"({h_expr}) / 2"
+        ausr = "true" if getattr(p, "ki_ausruestung", True) else "false"
+        zeilen.append(f"    ki::start(g_save.ki_{idx}, {idx}, MkXY(1, 1), {w_expr}, {h_expr}, "
+                      f"{x_expr}, {y_expr}, {ausr});")
+        zeilen.append(f'    op2::log::linef("InitProc: Aufbau-KI Spieler {idx} -> %s", op2::log::kiPath());')
+    return zeilen
+
 def generate_levelmain(mission: Mission) -> str:
     """Emit the full `mission.cpp` for `mission`.
 
@@ -276,6 +311,9 @@ def generate_levelmain(mission: Mission) -> str:
     add("#include <HFL/Source/HFL.h>")
     add('#include "op2_log.hpp"')
     add('#include "op2_crash.hpp"')
+    ki_spieler = _ki_spieler(mission)
+    if ki_spieler:
+        add('#include "op2_ki.hpp"')
     add("")
 
     if getattr(mission, "world_map", False):
@@ -416,6 +454,10 @@ def generate_levelmain(mission: Mission) -> str:
         if h in ctx["trigger_handles"]:
             add(f"    Trigger {h}_self;")
             add(f"    bool {h}_an;")
+    # Aufbau-KI: ihr ganzer Zustand muss mit dem Spielstand gespeichert werden.
+    # Building AI: its whole state must be saved with the game.
+    for idx, _p in _ki_spieler(mission):
+        add(f"    ki::Zustand ki_{idx};")
     add("};")
     add("static MissionSave g_save;")
     add("")
@@ -588,6 +630,9 @@ def generate_levelmain(mission: Mission) -> str:
         for i, t in enabled:
             add(f"    {ctx['trigger_helpers_list'][i]}();")
 
+    for line in _emit_ki_start(mission):
+        add(line)
+
     add("")
     add("    TethysGame::ForceMoraleGood(PlayerNum::PlayerAll);")
     add('    op2::log::line("InitProc: done");')
@@ -632,6 +677,8 @@ def generate_levelmain(mission: Mission) -> str:
     add("    // UnitEx queries like GetCurAction only return sentinel values.")
     add("    HFLInit();")
     add("    diff = kDiff[Player[0].Difficulty()];")
+    for idx, _p in _ki_spieler(mission):
+        add(f"    ki::schritt(g_save.ki_{idx});")
     add("}")
     add("")
 

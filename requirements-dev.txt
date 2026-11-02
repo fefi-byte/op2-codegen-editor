@@ -1,2 +1,4 @@
 pytest
 pytest-xdist
+# optional: uebersetzt die generierte Mission mit Aufbau-KI zur Probe (tests/test_ki.py)
+ziglang

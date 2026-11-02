@@ -208,6 +208,8 @@ class _BuildMixin:
             # World/wraparound maps are 512 tiles wide; there the engine
             # offset is -1/-1 instead of +31/-1 (codegen redefines MkXY).
             world_map=bool(getattr(getattr(self, "map", None), "width", 0) >= 512),
+            map_width=int(getattr(getattr(self, "map", None), "width", 0) or 0),
+            map_height=int(getattr(getattr(self, "map", None), "height", 0) or 0),
             players=[PlayerSpec(**asdict(p)) for p in self.players],
             units=units, beacons=beacons, walls_tubes=walls,
             building_groups=[BuildingGroupSpec(**asdict(g)) for g in self.building_groups],
