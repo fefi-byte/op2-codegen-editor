@@ -3,8 +3,9 @@
 //
 // Laeuft in AIProc der Missions-DLL. Sie liest den Spielstand (Gebaeude, Fahrzeuge, Rohstoffe, Nahrung,
 // Strom), entscheidet nach Bedarf, was als Naechstes gebaut wird, laesst die Strukturfabrik die Bausaetze
-// herstellen, holt sie mit ConVecs ab und baut sie auf einem Raster um die Kommandozentrale; ein
-// Earthworker legt die Roehren in den Gassen. Robo-Surveyor und Robo-Miner erschliessen Erz, Lastwagen
+// herstellen, holt sie mit ConVecs ab und baut sie so um die Kommandozentrale, dass die Roehrenstuecke,
+// die jedes Gebaeude rechts und unten mitbringt, sie verbinden (am Anfang gibt es kein Metall fuer
+// weitere Roehren). Robo-Surveyor und Robo-Miner erschliessen Erz, Lastwagen
 // fahren es per MiningGroup zur Schmelze. Labore forschen selbststaendig.
 //
 // Jede Entscheidung landet mit Begruendung in <Mission>-KI.jsonl (eine JSON-Zeile je Ereignis, dazu
@@ -18,13 +19,14 @@
 //
 // An AI that builds a colony from scratch (editor scaffolding, first building block). Runs in AIProc,
 // decides by need what to build next, has the Structure Factory produce kits, fetches them with ConVecs
-// and builds on a grid around the Command Center; an Earthworker lays tubes in the lanes. Every decision
+// and places them so the tube stubs every building brings (right and bottom) connect them. Every decision
 // is written with its reason to <Mission>-KI.jsonl, read by the editor's "AI trace" view. All state lives
 // in the fixed-size `ki::Zustand` (no pointers) -- it belongs in the mission's SaveRegion.
 //
 // Benoetigt / needs: Outpost2DLL, HFL (UnitEx, PlayerEx, Research), op2_log.hpp (kiRaw).
 
 #include <cstdarg>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
@@ -38,9 +40,6 @@ constexpr int SPUR_TAKT     = 200;   // alle 200 Ticks eine Momentaufnahme in di
 constexpr int MAX_PLAETZE   = 48;    // geplante/gebaute Bauplaetze
 constexpr int MAX_ROEHREN   = 48;    // offene Roehrenstuecke
 constexpr int MAX_MINEN     = 4;     // Minen mit eigener MiningGroup
-constexpr int RASTER_X      = 5;     // Platz 4 breit + 1 Gasse
-constexpr int RASTER_Y      = 4;     // Platz 3 hoch + 1 Gasse
-constexpr int RASTER_R      = 5;     // Raster reicht 5 Plaetze in jede Richtung
 constexpr int GEDULD_BAU    = 1500;  // so lange darf ein ConVec fuer einen Bau brauchen
 constexpr int GEDULD_KIT    = 2500;  // so lange darf ein Bausatz in der Fabrik dauern
 
@@ -54,7 +53,7 @@ struct Platz {
   int   convec;      // unitID des ConVecs, der hier baut (0 = keiner)
   int   seit;        // Tick der letzten Aenderung
   short versuche;
-  short raster;      // Rasterplatz-Nummer (i+R)*(2R+1)+(j+R), -1 = frei gewaehlt
+  short raster;      // frei (frueher Rasterplatz), immer -1
 };
 
 struct Roehre {      // ein gerades Roehrenstueck (Editor-Kacheln, inklusive)
@@ -312,119 +311,163 @@ inline int geplant(const Zustand& z, int typ) {
 }
 
 // ---------------------------------------------------------------------------------------------------
-// Bauplatz / site selection  (Raster um die Kommandozentrale: Plaetze 4x3, Gassen 1 Kachel breit)
+// Bauplatz / site selection
+//
+// Jedes Gebaeude bringt zwei Roehrenstuecke mit: eins rechts, eins unten, jeweils in der Mitte der
+// Seite und im 1 Kachel breiten Rand (ausser Kraftwerken und Minen). Am Anfang gibt es kein Metall
+// fuer weitere Roehren -- also muessen die Gebaeude so stehen, dass diese Stuecke sie verbinden:
+// genau 1 Kachel Abstand, und das Stueck des einen trifft die Seite des anderen. Kraftwerke und
+// Minen brauchen keinen Anschluss.
+//
+// Every building comes with two tube stubs (right and bottom, centred in the 1-tile border; not power
+// plants or mines). At the start there is no metal for more tubes, so buildings must stand exactly
+// one tile apart with a stub of one touching the side of the other.
 
-inline void rasterEcke(const Zustand& z, int i, int j, int& x0, int& y0) {
-  // Platz (0,0) liegt so, dass die Kommandozentrale um die Basismitte steht.
-  x0 = z.bx - 1 + i * RASTER_X;
-  y0 = z.by - 1 + j * RASTER_Y;
+struct Rechteck { int x0, y0, w, h; bool stutzen; };
+
+inline bool hatStutzen(int typ) {
+  switch (typ) {
+    case mapTokamak: case mapMHDGenerator: case mapSolarPowerArray: case mapGeothermalPlant:
+    case mapCommonOreMine: case mapRareOreMine: case mapMagmaWell:
+    case mapGuardPost: case mapLightTower:
+      return false;
+    default:
+      return true;
+  }
 }
 
-// Grundflaeche frei und bebaubar, Rand befahrbar und ohne Gebaeude?
-inline bool platzFrei(const Zustand& z, int x0, int y0, int w, int h, const char** grund) {
+inline Rechteck rechteckUm(int typ, int cx, int cy) {        // aus der Mitte (Location)
+  const Groesse g = grundflaeche(typ);
+  return { cx - g.w / 2, cy - g.h / 2, g.w, g.h, hatStutzen(typ) };
+}
+
+// Alle eigenen Gebaeude und geplanten Plaetze (gesperrte Plaetze als Hindernis ohne Stutzen).
+inline int hindernisse(const Zustand& z, Rechteck* out, int max) {
+  int n = 0;
+  for (int t : GEBAEUDE) {
+    PlayerBuildingEnum e(z.spieler, (map_id)t);
+    UnitEx u;
+    while (e.GetNext(u) && n < max) {
+      const LOCATION l = u.Location();
+      out[n++] = rechteckUm(t, edX(z, l), edY(z, l));
+    }
+  }
+  for (int i = 0; i < z.anzahlPlaetze && n < max; ++i) {
+    const Platz& q = z.plaetze[i];
+    if (q.zustand == P_FREI) continue;
+    const Groesse g = grundflaeche(q.typ);
+    out[n++] = { q.x0, q.y0, g.w, g.h, q.zustand != P_GESPERRT && hatStutzen(q.typ) };
+  }
+  return n;
+}
+
+inline bool ueberlappt(int ax, int ay, int aw, int ah, int bx, int by, int bw, int bh) {
+  return ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+}
+
+// Grundflaeche bebaubar, Rand befahrbar, keine Bake/kein Wrack, nichts Geplantes im Weg,
+// kein Roehrenstutzen unter der Grundflaeche.
+inline bool platzFrei(const Zustand& z, int x0, int y0, int w, int h, const Rechteck* hin, int nh,
+                      const char** grund) {
   if (!aufKarte(z, x0 - 1, y0 - 1, 2) || !aufKarte(z, x0 + w, y0 + h, 2)) { *grund = "Kartenrand"; return false; }
+  for (int i = 0; i < nh; ++i) {
+    const Rechteck& r = hin[i];
+    // Abstand mindestens 1 Kachel: der Rand des einen darf die Grundflaeche des anderen nicht beruehren
+    if (ueberlappt(x0 - 1, y0 - 1, w + 2, h + 2, r.x0, r.y0, r.w, r.h)) { *grund = "Gebaeude/Plan"; return false; }
+    if (r.stutzen) {
+      const int sx = r.x0 + r.w, sy = r.y0 + r.h / 2;        // rechter Stutzen
+      const int ux = r.x0 + r.w / 2, uy = r.y0 + r.h;        // unterer Stutzen
+      if (ueberlappt(x0, y0, w, h, sx, sy, 1, 1) || ueberlappt(x0, y0, w, h, ux, uy, 1, 1)) {
+        *grund = "Roehrenstutzen"; return false;
+      }
+    }
+  }
   for (int y = y0 - 1; y <= y0 + h; ++y)
     for (int x = x0 - 1; x <= x0 + w; ++x) {
       const int c = zelle(z, x, y);
       const bool innen = x >= x0 && x < x0 + w && y >= y0 && y < y0 + h;
       if (innen ? !zelleBebaubar(c) : !zelleBefahrbar(c)) { *grund = innen ? "Untergrund" : "Rand"; return false; }
     }
-  MAP_RECT r(engine(z, x0 - 1, y0 - 1), engine(z, x0 + w, y0 + h));
-  InRectEnumerator e(r);
+  MAP_RECT rr(engine(z, x0 - 1, y0 - 1), engine(z, x0 + w, y0 + h));
+  InRectEnumerator e(rr);
   Unit u;
   while (e.GetNext(u)) {
     if (u.IsVehicle()) continue;               // Fahrzeuge fahren weg
     *grund = u.IsBuilding() ? "Gebaeude" : "Bake/Wrack";
     return false;
   }
-  for (int i = 0; i < z.anzahlPlaetze; ++i) {  // schon vergebene Plaetze
-    const Platz& q = z.plaetze[i];
-    if (q.zustand == P_FREI || q.zustand == P_GESPERRT) continue;
-    const Groesse g = grundflaeche(q.typ);
-    if (x0 - 1 < q.x0 + g.w + 1 && q.x0 - 1 < x0 + w + 1 && y0 - 1 < q.y0 + g.h + 1 && q.y0 - 1 < y0 + h + 1) {
-      *grund = "reserviert"; return false;
-    }
-  }
   return true;
 }
 
-// Liegt die Gasse vom Platz zur Kommandozentrale frei (Roehre moeglich)?
-inline bool gasseFrei(const Zustand& z, int x0, int y0) {
-  int cx0, cy0; rasterEcke(z, 0, 0, cx0, cy0);
-  const int gy = cy0 - 1, gx = x0 - 1;
-  const int xa = (gx < cx0) ? gx : cx0, xb = (gx < cx0) ? cx0 : gx;
-  for (int x = xa; x <= xb; ++x) if (!zelleBefahrbar(zelle(z, x, gy))) return false;
-  const int ya = (y0 < gy) ? y0 : gy, yb = (y0 < gy) ? gy : y0;
-  for (int y = ya; y <= yb; ++y) if (!zelleBefahrbar(zelle(z, gx, y))) return false;
-  return true;
-}
-
-inline bool rasterBelegt(const Zustand& z, int nr) {
-  for (int i = 0; i < z.anzahlPlaetze; ++i)
-    if (z.plaetze[i].raster == nr && z.plaetze[i].zustand != P_FREI) return true;
-  return false;
-}
-
-// Naechsten freien Rasterplatz fuer `typ` suchen. Liefert Index in z.plaetze oder -1.
-inline int platzWaehlen(Zustand& z, int typ) {
-  const Groesse g = grundflaeche(typ);
-  bool platzImArray = z.anzahlPlaetze < MAX_PLAETZE;
-  for (int i = 0; i < z.anzahlPlaetze && !platzImArray; ++i) if (z.plaetze[i].zustand == P_FREI && !z.plaetze[i].convec) platzImArray = true;
-  if (!platzImArray) return -1;
-  int besterI = 0, besterJ = 0, besterD = 1 << 30;
-  bool gefunden = false;
-  const char* grund = "";
-  int verworfen = 0;
-  for (int j = -RASTER_R; j <= RASTER_R; ++j)
-    for (int i = -RASTER_R; i <= RASTER_R; ++i) {
-      const int nr = (i + RASTER_R) * (2 * RASTER_R + 1) + (j + RASTER_R);
-      if (rasterBelegt(z, nr)) continue;
-      // Platz (0,0) gehoert der Kommandozentrale; sie selbst darf ausweichen, solange noch nichts
-      // anderes geplant ist (dann wandert die Basismitte mit, siehe bauen()).
-      if (typ != mapCommandCenter && i == 0 && j == 0) continue;
-      int x0, y0; rasterEcke(z, i, j, x0, y0);
-      // Schmelze und Lager lieber nah an der Mine? Erster Wurf: alles kompakt um die Mitte.
-      const int d = i * i * 4 + j * j * 6;                            // etwas breiter als hoch
-      if (d >= besterD) continue;
-      if (!platzFrei(z, x0, y0, g.w, g.h, &grund) || (typ != mapCommandCenter && !gasseFrei(z, x0, y0))) {
-        verworfen++;
-        continue;
-      }
-      besterD = d; besterI = i; besterJ = j; gefunden = true;
-    }
-  if (!gefunden) {
-    if (selten(z, 6, 1000))
-      melde(z, "fehler", typ, z.bx, z.by, "kein freier Rasterplatz (%d verworfen, zuletzt: %s)", verworfen, grund);
-    return -1;
-  }
-  int k = z.anzahlPlaetze;                            // freigewordene Eintraege wiederverwenden
+// Neuen Eintrag in z.plaetze anlegen (freigewordene wiederverwenden). -1 = voll.
+inline int platzEintrag(Zustand& z, int typ, int x0, int y0) {
+  int k = -1;
   for (int i = 0; i < z.anzahlPlaetze; ++i) if (z.plaetze[i].zustand == P_FREI && !z.plaetze[i].convec) { k = i; break; }
+  if (k < 0) {
+    if (z.anzahlPlaetze >= MAX_PLAETZE) return -1;
+    k = z.anzahlPlaetze++;
+  }
   Platz& p = z.plaetze[k];
-  int x0, y0; rasterEcke(z, besterI, besterJ, x0, y0);
   p.x0 = (short)x0; p.y0 = (short)y0; p.typ = (short)typ; p.zustand = P_FREI;
-  p.convec = 0; p.seit = TethysGame::Tick(); p.versuche = 0;
-  p.raster = (short)((besterI + RASTER_R) * (2 * RASTER_R + 1) + (besterJ + RASTER_R));
-  if (k == z.anzahlPlaetze) z.anzahlPlaetze++;
+  p.convec = 0; p.seit = TethysGame::Tick(); p.versuche = 0; p.raster = -1;
   return k;
 }
 
-// Roehre von der Kommandozentrale zum Platz in die Auftragsliste (zwei gerade Stuecke).
-inline void roehreAnlegen(Zustand& z, const Platz& p) {
-  if (p.typ == mapCommandCenter) return;
-  int cx0, cy0; rasterEcke(z, 0, 0, cx0, cy0);
-  const short gy = (short)(cy0 - 1), gx = (short)(p.x0 - 1);
-  Roehre stuecke[2] = {
-    { (short)((gx < cx0) ? gx : cx0), gy, (short)((gx < cx0) ? cx0 : gx), gy, 0, 0, 0 },
-    { gx, (short)((p.y0 < gy) ? p.y0 : gy), gx, (short)((p.y0 < gy) ? gy : p.y0), 0, 0, 0 },
+// Platz fuer `typ` suchen. Liefert Index in z.plaetze oder -1.
+inline int platzWaehlen(Zustand& z, int typ) {
+  static Rechteck hin[160];
+  const int nh = hindernisse(z, hin, 160);
+  const Groesse g = grundflaeche(typ);
+  const char* grund = "";
+  int verworfen = 0;
+  int bestX = 0, bestY = 0;
+  int besteWertung = 1 << 30;
+  bool gefunden = false;
+  auto pruefen = [&](int x0, int y0, int wertung) {
+    if (wertung >= besteWertung) return;
+    if (!platzFrei(z, x0, y0, g.w, g.h, hin, nh, &grund)) { verworfen++; return; }
+    besteWertung = wertung; bestX = x0; bestY = y0; gefunden = true;
   };
-  for (const Roehre& r : stuecke) {
-    bool doppelt = false;
-    for (int i = 0; i < z.anzahlRoehren; ++i) {
-      const Roehre& q = z.roehren[i];
-      if (q.x1 <= r.x1 && q.x2 >= r.x2 && q.y1 <= r.y1 && q.y2 >= r.y2) { doppelt = true; break; }
+  const int mx = z.bx, my = z.by;
+  if (!hatStutzen(typ) || typ == mapCommandCenter) {
+    // Kommandozentrale: so nah wie moeglich an die Basismitte. Kraftwerke: etwas abseits (Ring um
+    // die Mitte), damit sie keine Anschlussplaetze belegen.
+    for (int dy = -12; dy <= 12; ++dy)
+      for (int dx = -12; dx <= 12; ++dx) {
+        const int x0 = mx + dx - g.w / 2, y0 = my + dy - g.h / 2;
+        const int d2 = dx * dx + dy * dy;
+        int w;
+        if (typ == mapCommandCenter) w = d2;
+        else { const int d = (int)(d2 > 0 ? d2 : 0); w = (d - 49) * (d - 49) / 8 + d / 4; }  // Ring um ~7
+        pruefen(x0, y0, w);
+      }
+  } else {
+    // Gebaeude mit Anschluss: an einen Stutzen eines vorhandenen/geplanten Gebaeudes, oder mit dem
+    // eigenen Stutzen an dessen Seite -- immer genau 1 Kachel Abstand.
+    for (int i = 0; i < nh; ++i) {
+      const Rechteck& a = hin[i];
+      if (!a.stutzen) continue;
+      const int acx = a.x0 + a.w / 2, acy = a.y0 + a.h / 2;
+      auto wert = [&](int x0, int y0, int ausrichtung) {
+        const int cx = x0 + g.w / 2, cy = y0 + g.h / 2;
+        return abstand2(cx, cy, mx, my) * 4 + ausrichtung;
+      };
+      // rechts von A (A's rechter Stutzen trifft unsere linke Seite)
+      for (int y0 = acy - g.h + 1; y0 <= acy; ++y0) pruefen(a.x0 + a.w + 1, y0, wert(a.x0 + a.w + 1, y0, std::abs(y0 - a.y0)));
+      // unter A (A's unterer Stutzen trifft unsere Oberseite)
+      for (int x0 = acx - g.w + 1; x0 <= acx; ++x0) pruefen(x0, a.y0 + a.h + 1, wert(x0, a.y0 + a.h + 1, std::abs(x0 - a.x0)));
+      // links von A (unser rechter Stutzen trifft A's linke Seite)
+      for (int y0 = a.y0 - g.h / 2; y0 <= a.y0 + a.h - 1 - g.h / 2; ++y0) pruefen(a.x0 - 1 - g.w, y0, wert(a.x0 - 1 - g.w, y0, std::abs(y0 - a.y0)));
+      // ueber A (unser unterer Stutzen trifft A's Oberseite)
+      for (int x0 = a.x0 - g.w / 2; x0 <= a.x0 + a.w - 1 - g.w / 2; ++x0) pruefen(x0, a.y0 - 1 - g.h, wert(x0, a.y0 - 1 - g.h, std::abs(x0 - a.x0)));
     }
-    if (!doppelt && z.anzahlRoehren < MAX_ROEHREN) z.roehren[z.anzahlRoehren++] = r;
   }
+  if (!gefunden) {
+    if (selten(z, 6, 1000))
+      melde(z, "fehler", typ, z.bx, z.by, "kein Bauplatz mit Anschluss (%d verworfen, zuletzt: %s)", verworfen, grund);
+    return -1;
+  }
+  return platzEintrag(z, typ, bestX, bestY);
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -558,24 +601,9 @@ inline void bauen(Zustand& z, UnitEx c, int kit) {
     if (i < 0) return;
     Platz& p = z.plaetze[i];
     const Groesse g = grundflaeche(kit);
-    const int mitte = RASTER_R * (2 * RASTER_R + 1) + RASTER_R;
-    if (kit == mapCommandCenter && p.raster != mitte) {
-      bool alleinig = true;
-      for (int k = 0; k < z.anzahlPlaetze; ++k)
-        if (k != i && z.plaetze[k].zustand != P_FREI && z.plaetze[k].zustand != P_GESPERRT) alleinig = false;
-      const int di = p.raster / (2 * RASTER_R + 1) - RASTER_R, dj = p.raster % (2 * RASTER_R + 1) - RASTER_R;
-      if (alleinig) {                            // Basismitte wandert mit der Kommandozentrale
-        z.bx += di * RASTER_X; z.by += dj * RASTER_Y;
-        p.raster = (short)mitte;
-        melde(z, "info", kit, z.bx, z.by, "Basismitte nicht bebaubar -- Basis um %d,%d Rasterplaetze verschoben", di, dj);
-      } else {
-        melde(z, "info", kit, p.x0, p.y0, "Kommandozentrale nicht in der Mitte (%d,%d) -- Roehren fuehren dorthin", di, dj);
-      }
-    }
     p.zustand = P_FAHRT; p.convec = c.unitID; p.seit = t;
     c.DoBuild((map_id)kit, engine(z, p.x0 + g.w / 2, p.y0 + g.h / 2));
     melde(z, "bau", kit, p.x0, p.y0, "ConVec %d bringt den Bausatz (Platz %dx%d)", c.unitID, g.w, g.h);
-    roehreAnlegen(z, p);
     return;
   }
   Platz& p = z.plaetze[i];
@@ -618,7 +646,7 @@ inline void convecs(Zustand& z, const Lage& l) {
       }
     }
   }
-  // Der ConVec mit der Kommandozentrale zuerst: an ihr haengt das Raster.
+  // Der ConVec mit der Kommandozentrale zuerst: an ihr haengt die ganze Basis.
   // The ConVec carrying the Command Center first: the grid hangs on it.
   {
     PlayerVehicleEnum e(z.spieler);

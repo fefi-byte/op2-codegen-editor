@@ -22,9 +22,9 @@ Kolonisten, Erz und Tech-Level kommen wie gewohnt aus dem Spieler-Dialog.
 | Lagebild | Gebäude, Fahrzeuge, Bausätze, Erz, Nahrung, Strom, Wohnraum | `PlayerBuildingEnum` je Typ, `PlayerVehicleEnum`, HFL `PlayerEx` |
 | Bedarf | Was fehlt als Nächstes? | feste Reihenfolge (CC, Strukturfabrik, Tokamak, Schmelze, Agridome), dann nach Lage: Strom < 25, Nahrung netto < 0, Wohnraum, Fahrzeugfabrik, Labor, Lager, Nursery, University, Medical Center, Standard Lab, Recreation |
 | Strukturfabrik | Bausatz herstellen | `UnitEx::DoProduce`; nicht mehr Bausätze als ConVecs; zu teuer → warten; nach 2500 Ticks ohne Ergebnis wird der Typ eine Weile gesperrt |
-| ConVecs | Bausatz holen und bauen | `DoDock` an der Fabrik, `DoTransferCargo`, `DoBuild` auf dem Raster; drei Fehlversuche → Platz gesperrt, nächster Platz |
-| Raster | Wo gebaut wird | Plätze 4×3 mit 1 Kachel Gasse (Abstand 5×4), Platz (0,0) = Kommandozentrale; Grundfläche bebaubar, Rand befahrbar und ohne Gebäude |
-| Röhren | Anschluss an die CC | je Platz zwei gerade Stücke durch die Gassen; der Earthworker baut sie mit `DoBuildWall(mapTube)` |
+| ConVecs | Bausatz holen und bauen | `DoDock` an der Fabrik, `DoTransferCargo`, `DoBuild` auf dem gewählten Platz; drei Fehlversuche → Platz gesperrt, nächster Platz |
+| Bauplatz | Wo gebaut wird | Jedes Gebäude außer Kraftwerken und Minen bringt zwei Röhrenstücke mit: rechts und unten, jeweils mittig im 1 Kachel breiten Rand. Am Anfang gibt es kein Metall für weitere Röhren, also steht jedes neue Gebäude genau 1 Kachel neben einem vorhandenen, so dass ein Stück des einen die Seite des anderen trifft. Kraftwerke kommen etwas abseits (Ring um die Mitte), die Kommandozentrale so nah an die Basismitte wie möglich |
+| Röhren | (später) | Der Earthworker kann Röhrenaufträge abarbeiten; beim Start werden keine angelegt |
 | Erz | Mine und Route | Surveyor zur nächsten Bake, Miner `DoDeployMiner` auf die vermessene, je Mine eine `MiningGroup` zur Schmelze mit zwei Lastwagen |
 | Fahrzeugfabrik | Nachschub | 2 ConVecs, 1 Earthworker, 2 Lastwagen je Mine, 1 Surveyor, 1 Miner, 3. ConVec bei Erzüberschuss |
 | Forschung | freie Labore | Thema aus der Tech-Tabelle: passendes Labor, Voraussetzungen erfüllt, Vorrang Nahrung → Metalle → Strom → Bevölkerung → Moral → Rest, billigstes zuerst |
@@ -58,8 +58,9 @@ SaveRegion der Mission (`g_save.ki_<Spieler>`). Nach dem Laden macht die KI dort
 
 - Nur Wirtschaft und Forschung, noch kein Militär.
 - Nur gewöhnliches Erz, kein Rare Ore, keine Raumfahrt.
-- Raster kompakt um die Mitte; Schmelzen stehen nicht bei den Minen.
+- Basis kompakt um die Kommandozentrale; Schmelzen stehen nicht bei den Minen.
+- Ohne Schmelze oder Lager kann die Kolonie kein Erz speichern: die Startressourcen verfallen, bis die Schmelze steht.
 - Mehrspieler nicht geprüft (die KI läuft dort auf jedem Rechner und muss überall gleich entscheiden).
 - Annahmen über die Engine, die erst das Spiel bestätigt: Bauplatz-Regeln (Rand frei von Gebäuden),
-  Anschluss über Röhren in den Gassen, Andocken an der Strukturfabrik, Lesart von `DoResearch`.
+  Anschluss über die Röhrenstücke der Gebäude, Andocken an der Strukturfabrik, Lesart von `DoResearch`.
   Wo es klemmt, steht es in der Spur.
