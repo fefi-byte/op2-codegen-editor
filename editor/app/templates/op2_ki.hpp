@@ -779,7 +779,16 @@ inline void roehren(Zustand& z) {
 // ---------------------------------------------------------------------------------------------------
 // Erz / ore: Bake finden, vermessen, Mine bauen, Lastwagen zuteilen
 
-struct BakenFund { UnitEx beste; int gesehen, gewoehnlich, frei; };
+struct BakenFund { UnitEx beste; int gesehen, gewoehnlich, frei, einheiten; };
+
+// Hoechste belegte Einheitennummer. HFL legt die Kartenstruktur des Spiels offen (`mapObj`, siehe
+// HFL/Source/GameMapEx.cpp, struct OP2Map); `lastUsedUnitIndex` liegt dort bei Byte 64.
+// Highest used unit index, read from the game's map object as described by HFL.
+inline int hoechsteEinheit() {
+  if (!isInited || !mapObj) return 0;
+  const int n = *reinterpret_cast<const int*>(reinterpret_cast<const char*>(mapObj) + 64);
+  return (n > 0 && n < 4096) ? n : 0;
+}
 
 inline bool mineAuf(const LOCATION& l) {
   LocationEnumerator e(l);
@@ -792,7 +801,7 @@ inline bool mineAuf(const LOCATION& l) {
 // liefert: Rechteck ueber die Karte, Umkreis um die Basis, selbst angelegte Baken per Kachel.
 // Nearest free common ore beacon, found three ways (map rect, radius around the base, own beacons).
 inline BakenFund bakeSuchen(const Zustand& z) {
-  BakenFund f; f.gesehen = f.gewoehnlich = f.frei = 0;
+  BakenFund f; f.gesehen = f.gewoehnlich = f.frei = f.einheiten = 0;
   int ids[64]; int nids = 0;
   int besterD = 1 << 30;
   auto pruefe = [&](UnitEx& u) {
@@ -810,6 +819,18 @@ inline BakenFund bakeSuchen(const Zustand& z) {
     const int d = abstand2(edX(z, l), edY(z, l), z.bx, z.by) - (vermessen ? 200 : 0);
     if (d < besterD) { besterD = d; f.beste = u; }
   };
+  // Die Aufzaehler der Engine liefern Baken offenbar nicht (zweiter Lauf: 0 gesehen, auch auf der
+  // eigenen Kachel). Darum zuerst alle Einheitennummern durchgehen.
+  // The engine's enumerators apparently skip beacons, so walk all unit indices first.
+  {
+    const int bis = hoechsteEinheit();
+    f.einheiten = bis;
+    for (int id = 1; id <= bis; ++id) {
+      UnitEx u; u.unitID = id;
+      if (!u.IsLive()) continue;
+      pruefe(u);
+    }
+  }
   {
     MAP_RECT alles(engine(z, 1, 1), engine(z, z.breite - 2, z.hoehe - 2));
     InRectEnumerator e(alles);
@@ -841,15 +862,15 @@ inline void erz(Zustand& z, const Lage& l) {
     BakenFund f = bakeSuchen(z);
     if (!f.beste.unitID) {
       if (selten(z, 8, 5000))
-        melde(z, "warte", mapMiningBeacon, z.bx, z.by, "keine freie Erz-Bake (gesehen %d, gewoehnlich %d, frei %d)",
-              f.gesehen, f.gewoehnlich, f.frei);
+        melde(z, "warte", mapMiningBeacon, z.bx, z.by, "keine freie Erz-Bake (gesehen %d, gewoehnlich %d, frei %d, Einheiten bis %d)",
+              f.gesehen, f.gewoehnlich, f.frei, f.einheiten);
     } else {
       UnitEx b = f.beste;
       const LOCATION bl = b.Location();
       if (z.bakeZiel != b.unitID) {
         z.bakeZiel = b.unitID; z.bakeSeit = t;
-        melde(z, "info", mapMiningBeacon, edX(z, bl), edY(z, bl), "naechste Bake (gesehen %d, gewoehnlich %d, frei %d)",
-              f.gesehen, f.gewoehnlich, f.frei);
+        melde(z, "info", mapMiningBeacon, edX(z, bl), edY(z, bl), "naechste Bake %d (gesehen %d, gewoehnlich %d, frei %d, Einheiten bis %d)",
+              b.unitID, f.gesehen, f.gewoehnlich, f.frei, f.einheiten);
       }
       const bool vermessen = (b.GetSurveyedBy() & (1 << p)) != 0;
       // Surveyor
@@ -1150,9 +1171,11 @@ inline void bakenSichern(Zustand& z) {
         for (int xx = x - 2; xx <= x + 2 && frei; ++xx) if (!zelleBebaubar(zelle(z, xx, yy))) frei = false;
       if (!frei) continue;
       const LOCATION l = engine(z, x, y);
-      TethysGame::CreateBeacon(mapMiningBeacon, l.x, l.y, OreTypeCommon, gesetzt == 0 ? Bar2 : Bar3, VariantRandom);
+      const int rueck = TethysGame::CreateBeacon(mapMiningBeacon, l.x, l.y, OreTypeCommon, gesetzt == 0 ? Bar2 : Bar3, VariantRandom);
       if (z.anzahlBaken < 4) { z.bakenX[z.anzahlBaken] = x; z.bakenY[z.anzahlBaken] = y; z.anzahlBaken++; }
-      melde(z, "info", mapMiningBeacon, x, y, "keine Erz-Bake nahe der Basis -- Bake angelegt (Startausruestung)");
+      UnitEx neu; neu.unitID = rueck;
+      melde(z, "info", mapMiningBeacon, x, y, "keine Erz-Bake nahe der Basis -- Bake angelegt (Rueckgabe %d, Typ dort %d, Bake ist Typ %d)",
+            rueck, rueck > 0 && rueck < 4096 ? (int)neu.GetType() : -1, (int)mapMiningBeacon);
       gesetzt++;
       k += 7;                                                   // zweite Bake in eine andere Richtung
     }
