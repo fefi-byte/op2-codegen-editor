@@ -91,8 +91,12 @@ struct Zustand {
   int minenId[MAX_MINEN];     // unitID der Mine je MiningGroup (0 = frei)
   int schmelzeId[MAX_MINEN];
   MiningGroup minenGruppe[MAX_MINEN];
-  int bakeZiel;               // unitID der Bake, zu der der Surveyor faehrt
+  int bakeZiel;               // unitID der Bake, die als Naechstes erschlossen wird
   int bakeMiner;              // unitID des Miners, der gerade eine Mine baut
+  int bakeSeit;               // seit wann diese Bake das Ziel ist
+  int minerSeit;              // wann der Miner den Auftrag bekam
+  int bakenX[4], bakenY[4];   // selbst angelegte Baken (Editor-Kacheln)
+  int anzahlBaken;
 };
 
 // ---------------------------------------------------------------------------------------------------
@@ -390,10 +394,18 @@ inline bool platzFrei(const Zustand& z, int x0, int y0, int w, int h, const Rech
     }
   MAP_RECT rr(engine(z, x0 - 1, y0 - 1), engine(z, x0 + w, y0 + h));
   InRectEnumerator e(rr);
-  Unit u;
-  while (e.GetNext(u)) {
-    if (u.IsVehicle()) continue;               // Fahrzeuge fahren weg
-    *grund = u.IsBuilding() ? "Gebaeude" : "Bake/Wrack";
+  UnitEx u2;
+  while (e.GetNext(u2)) {
+    if (u2.IsVehicle()) {
+      // Fahrende Fahrzeuge sind gleich weg; ein stehendes in der Grundflaeche blockiert den Bau.
+      const LOCATION l = u2.Location();
+      const int vx = edX(z, l), vy = edY(z, l);
+      if (vx >= x0 && vx < x0 + w && vy >= y0 && vy < y0 + h && u2.GetCurAction() == moDone && u2.GetType() != mapConVec) {
+        *grund = "Fahrzeug steht im Weg"; return false;
+      }
+      continue;
+    }
+    *grund = u2.IsBuilding() ? "Gebaeude" : "Bake/Wrack";
     return false;
   }
   return true;
@@ -487,7 +499,11 @@ inline int bedarf(const Zustand& z, const Lage& l, char* warum, int n) {
   if ((l.nahrungNetto < 0 || l.nahrung < 300) && geplant(z, mapAgridome) + l.kitsImSpiel[mapAgridome] == 0) {
     std::snprintf(warum, n, "Nahrung %d, netto %+d", l.nahrung, l.nahrungNetto); return mapAgridome;
   }
-  if (bewohner > l.wohnraum && geplant(z, mapResidence) + l.kitsImSpiel[mapResidence] == 0) {
+  // KI-Spieler bekommen vom Spiel 4096 Arbeiter, 4096 Wissenschaftler, 256 Kinder, wenn die Mission
+  // nichts setzt -- dann zaehlt Wohnraum nicht.
+  // AI players get engine default population if the mission sets none -- housing does not count then.
+  const bool standardVolk = bewohner >= 8000;
+  if (!standardVolk && bewohner > l.wohnraum && geplant(z, mapResidence) + l.kitsImSpiel[mapResidence] == 0) {
     std::snprintf(warum, n, "%d Bewohner, Wohnraum %d", bewohner, l.wohnraum); return mapResidence;
   }
   if (!hat(mapVehicleFactory)) { std::snprintf(warum, n, "Fahrzeuge nachbauen"); return mapVehicleFactory; }
@@ -500,7 +516,7 @@ inline int bedarf(const Zustand& z, const Lage& l, char* warum, int n) {
   if (!hat(mapMedicalCenter)) { std::snprintf(warum, n, "Gesundheit"); return mapMedicalCenter; }
   if (!hat(mapStandardLab)) { std::snprintf(warum, n, "weiter forschen"); return mapStandardLab; }
   if (!hat(mapRecreationFacility)) { std::snprintf(warum, n, "Moral"); return mapRecreationFacility; }
-  if (hat(mapResidence) < 3 && bewohner + 10 > l.wohnraum) {
+  if (!standardVolk && hat(mapResidence) < 3 && bewohner + 10 > l.wohnraum) {
     std::snprintf(warum, n, "Wohnraum wird knapp (%d/%d)", bewohner, l.wohnraum); return mapResidence;
   }
   warum[0] = 0;
@@ -601,6 +617,21 @@ inline bool stehtDa(const Zustand& z, const Platz& p) {
   return false;
 }
 
+// Eigene stehende Fahrzeuge von Grundflaeche und Rand wegschicken (sie blockieren den Bau).
+inline void platzRaeumen(Zustand& z, const Platz& p, int convecId) {
+  const Groesse g = grundflaeche(p.typ);
+  MAP_RECT r(engine(z, p.x0 - 1, p.y0 - 1), engine(z, p.x0 + g.w, p.y0 + g.h));
+  InRectEnumerator e(r);
+  UnitEx u;
+  int n = 0;
+  while (e.GetNext(u)) {
+    if (!u.IsVehicle() || u.OwnerID() != z.spieler || u.unitID == convecId || u.IsBusy()) continue;
+    u.DoMove(engine(z, p.x0 + g.w / 2, p.y0 + g.h + 4));
+    n++;
+  }
+  if (n) melde(z, "info", p.typ, p.x0, p.y0, "%d Fahrzeug(e) vom Bauplatz geschickt", n);
+}
+
 inline void bauen(Zustand& z, UnitEx c, int kit) {
   const int t = TethysGame::Tick();
   int i = platzVon(z, c.unitID);
@@ -618,8 +649,9 @@ inline void bauen(Zustand& z, UnitEx c, int kit) {
   const Groesse g = grundflaeche(p.typ);
   if (p.zustand == P_STEHT) return;              // Gebaeude waechst schon, Bausatz wird gerade verbaut
   if (c.GetCurAction() == moBuild) { if (p.zustand != P_BAUT) { p.zustand = P_BAUT; p.seit = t; } return; }
-  if (c.IsBusy()) return;
-  if (t - p.seit > GEDULD_BAU || (p.zustand == P_FAHRT && !c.IsBusy() && t - p.seit > 200)) {
+  if (c.IsBusy() || c.GetCurAction() != moDone) return;    // faehrt oder baut (Aktion 10 waehrend des Baus)
+  if (t - p.seit > GEDULD_BAU || (p.zustand == P_FAHRT && t - p.seit > 200)) {
+    platzRaeumen(z, p, c.unitID);
     p.versuche++;
     if (p.versuche >= 3) {
       melde(z, "fehler", p.typ, p.x0, p.y0, "Bau klappt hier nicht (%d Versuche) -- Platz gesperrt", p.versuche);
@@ -747,71 +779,111 @@ inline void roehren(Zustand& z) {
 // ---------------------------------------------------------------------------------------------------
 // Erz / ore: Bake finden, vermessen, Mine bauen, Lastwagen zuteilen
 
-inline UnitEx naechsteBake(const Zustand& z, bool nurVermessen) {
-  MAP_RECT alles(engine(z, 1, 1), engine(z, z.breite - 2, z.hoehe - 2));
-  InRectEnumerator e(alles);
-  UnitEx u, beste;
+struct BakenFund { UnitEx beste; int gesehen, gewoehnlich, frei; };
+
+inline bool mineAuf(const LOCATION& l) {
+  LocationEnumerator e(l);
+  Unit v;
+  while (e.GetNext(v)) if (v.GetType() == mapCommonOreMine || v.GetType() == mapRareOreMine) return true;
+  return false;
+}
+
+// Naechste freie gewoehnliche Erz-Bake. Drei Wege, weil nicht sicher ist, welcher Aufzaehler Baken
+// liefert: Rechteck ueber die Karte, Umkreis um die Basis, selbst angelegte Baken per Kachel.
+// Nearest free common ore beacon, found three ways (map rect, radius around the base, own beacons).
+inline BakenFund bakeSuchen(const Zustand& z) {
+  BakenFund f; f.gesehen = f.gewoehnlich = f.frei = 0;
+  int ids[64]; int nids = 0;
   int besterD = 1 << 30;
-  while (e.GetNext(u)) {
-    if (u.GetType() != mapMiningBeacon) continue;
-    if (u.GetOreType() != 0) continue;                                 // nur gewoehnliches Erz
-    const bool vermessen = (u.GetSurveyedBy() & (1 << z.spieler)) != 0;
-    if (nurVermessen != vermessen) continue;
+  auto pruefe = [&](UnitEx& u) {
+    if (u.GetType() != mapMiningBeacon) return;
+    for (int i = 0; i < nids; ++i) if (ids[i] == u.unitID) return;
+    if (nids < 64) ids[nids++] = u.unitID;
+    f.gesehen++;
+    if (u.GetOreType() != 0) return;                                   // nur gewoehnliches Erz
+    f.gewoehnlich++;
     const LOCATION l = u.Location();
-    // Schon eine Mine darauf? Dann steht dort ein Gebaeude.
-    InRangeEnumerator r(l, 0);
-    Unit v; bool belegt = false;
-    while (r.GetNext(v)) if (v.IsBuilding()) { belegt = true; break; }
-    if (belegt) continue;
-    const int d = abstand2(edX(z, l), edY(z, l), z.bx, z.by);
-    if (d < besterD) { besterD = d; beste = u; }
+    if (mineAuf(l)) return;
+    f.frei++;
+    // vermessene Baken bevorzugen (Abzug), sonst die naechste
+    const bool vermessen = (u.GetSurveyedBy() & (1 << z.spieler)) != 0;
+    const int d = abstand2(edX(z, l), edY(z, l), z.bx, z.by) - (vermessen ? 200 : 0);
+    if (d < besterD) { besterD = d; f.beste = u; }
+  };
+  {
+    MAP_RECT alles(engine(z, 1, 1), engine(z, z.breite - 2, z.hoehe - 2));
+    InRectEnumerator e(alles);
+    UnitEx u;
+    while (e.GetNext(u)) pruefe(u);
   }
-  return beste;
+  {
+    InRangeEnumerator e(engine(z, z.bx, z.by), 60);
+    UnitEx u;
+    while (e.GetNext(u)) pruefe(u);
+  }
+  for (int i = 0; i < z.anzahlBaken; ++i) {
+    LocationEnumerator e(engine(z, z.bakenX[i], z.bakenY[i]));
+    UnitEx u;
+    while (e.GetNext(u)) pruefe(u);
+  }
+  return f;
 }
 
 inline void erz(Zustand& z, const Lage& l) {
   const int p = z.spieler;
-  // 1) Surveyor zur naechsten unvermessenen Bake, solange es keine vermessene freie gibt
-  UnitEx frei = naechsteBake(z, true);
-  if (!frei.unitID) {
-    PlayerVehicleEnum e(p);
-    UnitEx s;
-    while (e.GetNext(s)) {
-      if (s.GetType() != mapRoboSurveyor || s.IsBusy()) continue;
-      UnitEx b = naechsteBake(z, false);
-      if (!b.unitID) {
-        if (selten(z, 8, 5000))
-          melde(z, "warte", mapMiningBeacon, z.bx, z.by, "keine freie Erz-Bake auf der Karte -- im Editor Baken setzen");
-        break;
-      }
+  const int t = TethysGame::Tick();
+  // Ziel: naechste freie Bake. Der Surveyor faehrt hin und vermisst (wie ein Spieler es tun wuerde);
+  // der Miner baut, sobald sie vermessen ist -- oder ohne, wenn es keinen Surveyor gibt oder er zu
+  // lange braucht.
+  // Target: nearest free beacon. The surveyor goes there first (human-like); the miner builds once it
+  // is surveyed -- or without, if there is no surveyor or it takes too long.
+  if (l.geb[mapCommonOreMine] < MAX_MINEN) {
+    BakenFund f = bakeSuchen(z);
+    if (!f.beste.unitID) {
+      if (selten(z, 8, 5000))
+        melde(z, "warte", mapMiningBeacon, z.bx, z.by, "keine freie Erz-Bake (gesehen %d, gewoehnlich %d, frei %d)",
+              f.gesehen, f.gewoehnlich, f.frei);
+    } else {
+      UnitEx b = f.beste;
+      const LOCATION bl = b.Location();
       if (z.bakeZiel != b.unitID) {
-        z.bakeZiel = b.unitID;
-        LOCATION ziel = b.Location(); ziel.x += 1;
-        s.DoMove(ziel);
-        melde(z, "vermessen", mapMiningBeacon, edX(z, b.Location()), edY(z, b.Location()), "Surveyor %d faehrt zur Bake", s.unitID);
-      } else if (selten(z, 9, 600)) {
-        // Angekommen, aber nicht vermessen: direkt auf die Bake fahren
-        s.DoMove(b.Location());
-        melde(z, "vermessen", mapMiningBeacon, edX(z, b.Location()), edY(z, b.Location()),
-              "Bake noch nicht vermessen -- Surveyor %d faehrt direkt drauf", s.unitID);
+        z.bakeZiel = b.unitID; z.bakeSeit = t;
+        melde(z, "info", mapMiningBeacon, edX(z, bl), edY(z, bl), "naechste Bake (gesehen %d, gewoehnlich %d, frei %d)",
+              f.gesehen, f.gewoehnlich, f.frei);
       }
-      break;
-    }
-  }
-  // 2) Miner auf die naechste vermessene Bake
-  if (frei.unitID && l.geb[mapCommonOreMine] < MAX_MINEN) {
-    UnitEx m; m.unitID = z.bakeMiner;
-    const bool minerArbeitet = z.bakeMiner && m.IsLive() && m.GetType() == mapRoboMiner && m.IsBusy();
-    if (!minerArbeitet) {
-      PlayerVehicleEnum e(p);
-      UnitEx u;
-      while (e.GetNext(u)) {
-        if (u.GetType() != mapRoboMiner || u.IsBusy()) continue;
-        u.DoDeployMiner(frei.Location());
-        z.bakeMiner = u.unitID;
-        melde(z, "mine", mapCommonOreMine, edX(z, frei.Location()), edY(z, frei.Location()),
-              "Robo-Miner %d baut Mine auf vermessener Bake", u.unitID);
-        break;
+      const bool vermessen = (b.GetSurveyedBy() & (1 << p)) != 0;
+      // Surveyor
+      UnitEx s;
+      bool surveyor = false;
+      { PlayerVehicleEnum e(p); UnitEx u; while (e.GetNext(u)) if (u.GetType() == mapRoboSurveyor) { s = u; surveyor = true; break; } }
+      if (!vermessen && surveyor && !s.IsBusy() && s.GetCurAction() == moDone && selten(z, 9, 400)) {
+        const LOCATION sl = s.Location();
+        const bool dort = abstand2(sl.x, sl.y, bl.x, bl.y) <= 2;
+        LOCATION ziel = bl;
+        if (!dort) ziel.x += 1;
+        s.DoMove(ziel);
+        melde(z, "vermessen", mapMiningBeacon, edX(z, bl), edY(z, bl),
+              dort ? "Surveyor %d steht an der Bake, noch nicht vermessen -- faehrt drauf" : "Surveyor %d faehrt zur Bake", s.unitID);
+      }
+      // Miner
+      UnitEx m; m.unitID = z.bakeMiner;
+      const bool minerAmWerk = z.bakeMiner && m.IsLive() && m.GetType() == mapRoboMiner && (m.IsBusy() || m.GetCurAction() != moDone);
+      const bool darf = vermessen || !surveyor || t - z.bakeSeit > 1200;
+      if (darf && !minerAmWerk) {
+        if (z.bakeMiner && m.IsLive() && m.GetType() == mapRoboMiner && t - z.minerSeit > 300 && selten(z, 10, 1500))
+          melde(z, "fehler", mapCommonOreMine, edX(z, bl), edY(z, bl), "Robo-Miner %d steht, Mine nicht gebaut (vermessen: %s)",
+                m.unitID, vermessen ? "ja" : "nein");
+        PlayerVehicleEnum e(p);
+        UnitEx u;
+        while (e.GetNext(u)) {
+          if (u.GetType() != mapRoboMiner || u.IsBusy()) continue;
+          if (u.unitID == z.bakeMiner && t - z.minerSeit < 600) break;      // gleicher Auftrag, kurz warten
+          u.DoDeployMiner(bl);
+          z.bakeMiner = u.unitID; z.minerSeit = t;
+          melde(z, "mine", mapCommonOreMine, edX(z, bl), edY(z, bl), "Robo-Miner %d baut Mine (%s)", u.unitID,
+                vermessen ? "Bake vermessen" : surveyor ? "Surveyor braucht zu lange" : "ohne Surveyor");
+          break;
+        }
       }
     }
   }
@@ -1055,15 +1127,16 @@ inline void startausruestung(const Zustand& z, int x, int y) {
   };
   Unit u;
   for (const Teil& t : teile)
-    TethysGame::CreateUnit(u, (map_id)t.typ, engine(z, x + t.dx, y + 3 + t.dy), z.spieler, (map_id)t.fracht, 0);
+    // Abseits der Basis parken: stehende Fahrzeuge blockieren Bauplaetze.
+    TethysGame::CreateUnit(u, (map_id)t.typ, engine(z, x + 2 * t.dx, y + 9 + t.dy), z.spieler, (map_id)t.fracht, 0);
 }
 
 // Ohne gewoehnliche Erz-Bake in Reichweite der Basis zwei anlegen (Teil der Startausruestung --
 // Baken kommen sonst aus dem Missionsskript, die Karte selbst hat keine).
 // Without a common ore beacon near the base, create two (part of the start equipment).
 inline void bakenSichern(Zustand& z) {
-  UnitEx b = naechsteBake(z, false);
-  if (!b.unitID) b = naechsteBake(z, true);
+  BakenFund f = bakeSuchen(z);
+  UnitEx b = f.beste;
   if (b.unitID && abstand2(edX(z, b.Location()), edY(z, b.Location()), z.bx, z.by) < 40 * 40) return;
   int gesetzt = 0;
   for (int r = 12; r <= 30 && gesetzt < 2; r += 3)
@@ -1078,6 +1151,7 @@ inline void bakenSichern(Zustand& z) {
       if (!frei) continue;
       const LOCATION l = engine(z, x, y);
       TethysGame::CreateBeacon(mapMiningBeacon, l.x, l.y, OreTypeCommon, gesetzt == 0 ? Bar2 : Bar3, VariantRandom);
+      if (z.anzahlBaken < 4) { z.bakenX[z.anzahlBaken] = x; z.bakenY[z.anzahlBaken] = y; z.anzahlBaken++; }
       melde(z, "info", mapMiningBeacon, x, y, "keine Erz-Bake nahe der Basis -- Bake angelegt (Startausruestung)");
       gesetzt++;
       k += 7;                                                   // zweite Bake in eine andere Richtung
@@ -1099,7 +1173,7 @@ inline void start(Zustand& z, int spieler, LOCATION ursprung, int breite, int ho
   for (int i = 0; i < 8; ++i) { z.kitGesperrtTyp[i] = 0; z.kitGesperrtBis[i] = 0; }
   for (int i = 0; i < 16; ++i) z.meldungenSeit[i] = 0;
   for (int i = 0; i < MAX_MINEN; ++i) { z.minenId[i] = 0; z.schmelzeId[i] = 0; }
-  z.bakeZiel = 0; z.bakeMiner = 0;
+  z.bakeZiel = 0; z.bakeMiner = 0; z.bakeSeit = 0; z.minerSeit = 0; z.anzahlBaken = 0;
   Puffer p;
   p.f("{\"t\":%d,\"art\":\"start\",\"p\":%d,\"breite\":%d,\"hoehe\":%d,\"bx\":%d,\"by\":%d,\"ux\":%d,\"uy\":%d,\"eden\":%d}",
       TethysGame::Tick(), spieler, breite, hoehe, x, y, z.ux, z.uy, Player[spieler].IsEden() ? 1 : 0);
