@@ -7,23 +7,6 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added — building AI (first building block)
-- **AI builds its colony from scratch**: in the player dialog an AI player can
-  be set to *AI builds its colony itself*. The mission DLL then runs
-  `op2_ki.hpp` in AIProc: it reads the game state, decides by need what to
-  build next, has the Structure Factory produce kits, fetches them with
-  ConVecs and builds on a grid around the Command Center, lays tubes with an
-  Earthworker, surveys a beacon, deploys a mine with a cargo-truck route and
-  starts research in free labs. Optional start equipment (ConVecs with kits
-  and vehicles). Its state lives in the mission's save region.
-- **AI trace**: every decision is written with its reason to
-  `<Mission>-KI.jsonl`, plus a snapshot every 200 ticks. *View → AI trace*
-  opens it: a slider over the snapshots, buildings, vehicles, planned sites
-  and tubes on the map, the decisions up to that moment; *Live* re-reads the
-  file while the game runs. See `docs/ki-aufbau.md`.
-- Test `tests/test_ki.py` cross-compiles the generated mission with the AI for
-  32-bit Windows when the `ziglang` package is installed.
-
 ## [0.6.0-alpha] - 2026-11-01
 
 The mission side caught up with the map side: a new layout with the mission

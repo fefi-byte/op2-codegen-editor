@@ -121,7 +121,7 @@ def write_mission_folder(
     written["mission_cpp"] = mcpp
 
     # 3) Logging/Crash-Scaffolding (1:1 kopiert) + version.rc.in
-    for name in ("op2_log.hpp", "op2_crash.hpp", "op2_ki.hpp", "version.rc.in"):
+    for name in ("op2_log.hpp", "op2_crash.hpp", "version.rc.in"):
         target = folder / name
         _copy_template(name, target)
         written[name] = target

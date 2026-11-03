@@ -17,7 +17,6 @@ from .window_terrain import _TerrainMixin
 from .window_klippen import _KlippenMixin
 from .window_neukarte import _NeueKarteMixin
 from .verlauf import _VerlaufMixin
-from .ki_spur import _KiSpurMixin
 from .window_mission import _MissionMixin
 
 
@@ -25,7 +24,7 @@ class EditorWindow(
     _MenuMixin, _SidebarMixin, _OverviewMixin,
     _PlacementMixin, _MapPickMixin, _ProjectMixin,
     _BuildMixin, _OverlaysMixin, _TerrainMixin, _KlippenMixin,
-    _NeueKarteMixin, _VerlaufMixin, _KiSpurMixin, _MissionMixin, QMainWindow,
+    _NeueKarteMixin, _VerlaufMixin, _MissionMixin, QMainWindow,
 ):
     def _zustand_anlegen(self):
         """Jeden Zustand des Fensters VOR allem anderen anlegen.
@@ -174,11 +173,10 @@ class EditorWindow(
         self.conditions_panel.load()
         self._build_overview()
         self._build_verlauf()
-        self._build_ki_spur()
         self._refresh_player_range()
         # Rechte Docks sind im neuen Layout aus; ueber "Ansicht" erreichbar.
         # The right docks are off in the new layout; reachable via "View".
-        for d in (self.overview_dock, self.verlauf_dock, self.validation_dock, self.ki_spur_dock):
+        for d in (self.overview_dock, self.verlauf_dock, self.validation_dock):
             d.hide()
         self._baue_ebenenleiste()
 

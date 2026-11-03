@@ -1316,46 +1316,6 @@ def check_status_and_overview(win, app) -> None:
           win.dockWidgetArea(win.validation_dock).name)
 
 
-def check_ki_spur(win, app) -> None:
-    """KI-Spur: Datei laden, Regler, Entscheidungen, Kartenbild."""
-    import json
-    import tempfile
-    from pathlib import Path
-    zeilen = [
-        {"t": 0, "art": "start", "p": 1, "breite": 64, "hoehe": 64, "bx": 40, "by": 30, "ux": 32, "uy": 0},
-        {"t": 20, "art": "entscheid", "p": 1, "was": "bau", "typ": "CommandCenter", "x": 39, "y": 29,
-         "warum": "keine Kommandozentrale"},
-        {"t": 200, "art": "stand", "p": 1, "erz": 4000, "erzMax": 6000, "nahrung": 900, "nahrungNetto": -3,
-         "strom": [0, 0], "arbeiter": 30, "wiss": 12, "kinder": 20, "wohnraum": 0,
-         "geb": [["CommandCenter", 40, 30, 1]], "fz": [["ConVec", 42, 34, "Tokamak", 1, 77]],
-         "plaetze": [["CommandCenter", 39, 29, 3, 2, 3], ["Tokamak", 44, 29, 2, 2, 1]],
-         "roehren": [[40, 28, 43, 28, 0]]},
-        {"t": 260, "art": "entscheid", "p": 1, "was": "fehler", "typ": "Tokamak", "x": 44, "y": 29,
-         "warum": "Bau klappt hier nicht"},
-        {"t": 400, "art": "stand", "p": 1, "erz": 3500, "erzMax": 6000, "nahrung": 880, "nahrungNetto": -3,
-         "strom": [250, 40], "arbeiter": 30, "wiss": 12, "kinder": 20, "wohnraum": 0,
-         "geb": [["CommandCenter", 40, 30, 0], ["Tokamak", 45, 30, 0]], "fz": [],
-         "plaetze": [], "roehren": []},
-    ]
-    pfad = Path(tempfile.mkdtemp()) / "Test-KI.jsonl"
-    pfad.write_text("\n".join(json.dumps(z) for z in zeilen) + "\nkaputt{\n", encoding="utf-8")
-    win.ki_spur_dock.show()
-    win.ki_spur_laden(pfad)
-    pump(app)
-    check("KI-Spur: zwei Momentaufnahmen im Regler", win._ki_regler.maximum() == 1, str(win._ki_regler.maximum()))
-    check("KI-Spur: steht am Ende", win._ki_regler.value() == 1)
-    check("KI-Spur: Entscheidungen bis jetzt gelistet", win._ki_liste.count() == 2, str(win._ki_liste.count()))
-    check("KI-Spur: Stand auf der Karte", len(win._ki_items) >= 4, str(len(win._ki_items)))
-    win._ki_regler.setValue(0)
-    pump(app)
-    check("KI-Spur: frueherer Zeitpunkt zeigt weniger", win._ki_liste.count() == 1, str(win._ki_liste.count()))
-    win._ki_springen(win._ki_liste.item(0))
-    check("KI-Spur: Klick markiert die Stelle", len(win._ki_marke) == 1)
-    win.ki_spur_dock.hide()
-    pump(app)
-    check("KI-Spur: Dock zu raeumt die Karte", not win._ki_items and not win._ki_marke)
-
-
 def check_languages() -> None:
     """Beide Sprachdateien muessen denselben Schluesselvorrat haben.
 
@@ -1390,7 +1350,6 @@ def run_checks(win, app) -> None:
     check_new_map(win, app)
     check_terrain_save(win, app)
     check_status_and_overview(win, app)
-    check_ki_spur(win, app)
     check_languages()
 
 

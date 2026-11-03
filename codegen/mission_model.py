@@ -84,16 +84,6 @@ class PlayerSpec:
     # Einzelne Vorab-Forschungen (Tech-IDs) zusaetzlich zu tech_level
     # Individual pre-researches (tech IDs) in addition to tech_level
     researches: list[int] = field(default_factory=list)
-    # KI baut die Kolonie selbst auf (op2_ki.hpp, nur fuer KI-Spieler).
-    # Basismitte in Editor-Kacheln (-1 = Kartenmitte); mit Startausruestung
-    # erzeugt die KI ihre ConVecs mit Bausaetzen und Fahrzeuge selbst.
-    # The AI builds its colony itself (op2_ki.hpp, AI players only). Base
-    # centre in editor tiles (-1 = map centre); with start equipment the AI
-    # creates its ConVecs with kits and vehicles itself.
-    ki_aufbau: bool = False
-    ki_x: int = -1
-    ki_y: int = -1
-    ki_ausruestung: bool = True
 
 
 @dataclass
@@ -737,10 +727,6 @@ class Mission:
     # World/wraparound map (512 tiles wide): the engine offset there is
     # -1/-1 instead of +31/-1 -- the codegen redefines MkXY/MkRect/XYPos.
     world_map: bool = False
-    # Kartengroesse in Kacheln (fuer die Aufbau-KI; 0 = zur Laufzeit lesen).
-    # Map size in tiles (for the building AI; 0 = read at runtime).
-    map_width: int = 0
-    map_height: int = 0
     # Kampagne: "" = keine; "eden"/"plymouth" -> missionType wird die
     # POSITIVE campaign_mission-Nummer, DLL-Name muss e##/p## heissen.
     # Die Engine reicht Forschung + Kolonisten via MissionResults an die
