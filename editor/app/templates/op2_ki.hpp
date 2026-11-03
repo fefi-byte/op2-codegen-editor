@@ -97,6 +97,10 @@ struct Zustand {
   int minerSeit;              // wann der Miner den Auftrag bekam
   int bakenX[4], bakenY[4];   // selbst angelegte Baken (Editor-Kacheln)
   int anzahlBaken;
+  int minerWeg;               // wie der Miner zum Bauen gebracht wird: 1 DoBuild, 2 BuildingGroup, 0 HFL
+  int minenGesehen;           // so viele Minen standen beim letzten Schritt
+  int minenBauAn;
+  BuildingGroup minenBau;     // Weg 2: die Spiel-KI setzt den Miner ein
 };
 
 // ---------------------------------------------------------------------------------------------------
@@ -858,6 +862,10 @@ inline void erz(Zustand& z, const Lage& l) {
   // lange braucht.
   // Target: nearest free beacon. The surveyor goes there first (human-like); the miner builds once it
   // is surveyed -- or without, if there is no surveyor or it takes too long.
+  if (l.geb[mapCommonOreMine] > z.minenGesehen) {
+    melde(z, "fertig", mapCommonOreMine, z.bx, z.by, "Mine steht (%d) -- Weg %d hat funktioniert", l.geb[mapCommonOreMine], z.minerWeg);
+  }
+  z.minenGesehen = l.geb[mapCommonOreMine];
   if (l.geb[mapCommonOreMine] < MAX_MINEN) {
     BakenFund f = bakeSuchen(z);
     if (!f.beste.unitID) {
@@ -886,22 +894,52 @@ inline void erz(Zustand& z, const Lage& l) {
         melde(z, "vermessen", mapMiningBeacon, edX(z, bl), edY(z, bl),
               dort ? "Surveyor %d steht an der Bake, noch nicht vermessen -- faehrt drauf" : "Surveyor %d faehrt zur Bake", s.unitID);
       }
-      // Miner
+      // Miner. Wie er zum Bauen gebracht wird, ist noch nicht sicher: HFLs DoDeployMiner faehrt nur
+      // hin (Lauf 4). Die KI probiert der Reihe nach DoBuild mit der beim ConVec gemessenen Lesart und
+      // dann eine BuildingGroup, in der die Spiel-KI den Miner einsetzt -- und schreibt, was klappt.
+      // How to make the miner build is not settled; the AI tries DoBuild, then a BuildingGroup.
       UnitEx m; m.unitID = z.bakeMiner;
-      const bool minerAmWerk = z.bakeMiner && m.IsLive() && m.GetType() == mapRoboMiner && (m.IsBusy() || m.GetCurAction() != moDone);
+      const bool minerLebt = z.bakeMiner && m.IsLive() && m.GetType() == mapRoboMiner;
+      const bool minerAmWerk = minerLebt && (m.IsBusy() || m.GetCurAction() != moDone);
       const bool darf = vermessen || !surveyor || t - z.bakeSeit > 1200;
-      if (darf && !minerAmWerk) {
-        if (z.bakeMiner && m.IsLive() && m.GetType() == mapRoboMiner && t - z.minerSeit > 300 && selten(z, 10, 1500))
-          melde(z, "fehler", mapCommonOreMine, edX(z, bl), edY(z, bl), "Robo-Miner %d steht, Mine nicht gebaut (vermessen: %s)",
-                m.unitID, vermessen ? "ja" : "nein");
+      const bool gruppeArbeitet = z.minerWeg == 2 && z.minenBauAn && z.minenBau.TotalUnitCount() > 0;
+      if (gruppeArbeitet) {
+        if (selten(z, 10, 2000))
+          melde(z, "warte", mapCommonOreMine, edX(z, bl), edY(z, bl), "BuildingGroup soll den Miner einsetzen (%d Einheiten)",
+                z.minenBau.TotalUnitCount());
+      } else if (darf && !minerAmWerk) {
+        if (minerLebt && t - z.minerSeit > 300) {
+          melde(z, "fehler", mapCommonOreMine, edX(z, bl), edY(z, bl), "Robo-Miner %d steht, Mine nicht gebaut (Weg %d, vermessen: %s)",
+                m.unitID, z.minerWeg, vermessen ? "ja" : "nein");
+          z.minerWeg = z.minerWeg == 1 ? 2 : z.minerWeg == 2 ? 0 : 1;
+        }
         PlayerVehicleEnum e(p);
         UnitEx u;
         while (e.GetNext(u)) {
           if (u.GetType() != mapRoboMiner || u.IsBusy()) continue;
-          if (u.unitID == z.bakeMiner && t - z.minerSeit < 600) break;      // gleicher Auftrag, kurz warten
-          u.DoDeployMiner(bl);
+          if (u.unitID == z.bakeMiner && t - z.minerSeit < 300) break;      // gleicher Auftrag, kurz warten
+          const char* weg = "";
+          if (z.minerWeg == 1) {
+            // wie beim ConVec: Zielpunkt = Ecke unten rechts der Grundflaeche (2x1, Bake rechts) mit Rand
+            u.DoBuild(mapCommonOreMine, LOCATION(bl.x + 1, bl.y + 1));
+            weg = "Weg 1: DoBuild";
+          } else if (z.minerWeg == 2) {
+            if (!z.minenBauAn) {
+              z.minenBau = CreateBuildingGroup(Player[p]);
+              MAP_RECT ruhe(engine(z, z.bx - 3, z.by + 6), engine(z, z.bx + 3, z.by + 9));
+              z.minenBau.SetRect(ruhe);
+              z.minenBauAn = 1;
+            }
+            z.minenBau.TakeUnit(u);
+            LOCATION ort = bl;
+            z.minenBau.RecordBuilding(ort, mapCommonOreMine, mapNone);
+            weg = "Weg 2: BuildingGroup";
+          } else {
+            u.DoDeployMiner(bl);
+            weg = "Weg 0: HFL DoDeployMiner";
+          }
           z.bakeMiner = u.unitID; z.minerSeit = t;
-          melde(z, "mine", mapCommonOreMine, edX(z, bl), edY(z, bl), "Robo-Miner %d baut Mine (%s)", u.unitID,
+          melde(z, "mine", mapCommonOreMine, edX(z, bl), edY(z, bl), "Robo-Miner %d baut Mine (%s, %s)", u.unitID, weg,
                 vermessen ? "Bake vermessen" : surveyor ? "Surveyor braucht zu lange" : "ohne Surveyor");
           break;
         }
@@ -1197,6 +1235,7 @@ inline void start(Zustand& z, int spieler, LOCATION ursprung, int breite, int ho
   for (int i = 0; i < 16; ++i) z.meldungenSeit[i] = 0;
   for (int i = 0; i < MAX_MINEN; ++i) { z.minenId[i] = 0; z.schmelzeId[i] = 0; }
   z.bakeZiel = 0; z.bakeMiner = 0; z.bakeSeit = 0; z.minerSeit = 0; z.anzahlBaken = 0;
+  z.minerWeg = 1; z.minenGesehen = 0; z.minenBauAn = 0;
   Puffer p;
   p.f("{\"t\":%d,\"art\":\"start\",\"p\":%d,\"breite\":%d,\"hoehe\":%d,\"bx\":%d,\"by\":%d,\"ux\":%d,\"uy\":%d,\"eden\":%d}",
       TethysGame::Tick(), spieler, breite, hoehe, x, y, z.ux, z.uy, Player[spieler].IsEden() ? 1 : 0);
