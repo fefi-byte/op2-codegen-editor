@@ -584,6 +584,14 @@ inline int platzVon(const Zustand& z, int convecId) {
   return -1;
 }
 
+// Wohin DoBuild zielen muss, damit die Grundflaeche bei (x0, y0) liegt. Im Spiel gemessen (erster
+// Lauf, Spur vom 3.11.): DoBuild(L) legt die Grundflaeche auf [L.x - w, L.x - 1] x [L.y - h, L.y - 1] --
+// L ist die Ecke unten rechts des Rechtecks MIT dem 1-Kachel-Rand. Location() des fertigen Gebaeudes
+// ist dagegen die Mitte (x0 + w/2, y0 + h/2), wie im Editor.
+// Where DoBuild must aim so the footprint lands at (x0, y0): measured in game, L is the bottom-right
+// corner of the footprint rectangle INCLUDING its 1-tile border.
+inline LOCATION bauOrt(const Zustand& z, int x0, int y0, Groesse g) { return engine(z, x0 + g.w, y0 + g.h); }
+
 inline bool stehtDa(const Zustand& z, const Platz& p) {
   const Groesse g = grundflaeche(p.typ);
   MAP_RECT r(engine(z, p.x0, p.y0), engine(z, p.x0 + g.w - 1, p.y0 + g.h - 1));
@@ -602,7 +610,7 @@ inline void bauen(Zustand& z, UnitEx c, int kit) {
     Platz& p = z.plaetze[i];
     const Groesse g = grundflaeche(kit);
     p.zustand = P_FAHRT; p.convec = c.unitID; p.seit = t;
-    c.DoBuild((map_id)kit, engine(z, p.x0 + g.w / 2, p.y0 + g.h / 2));
+    c.DoBuild((map_id)kit, bauOrt(z, p.x0, p.y0, g));
     melde(z, "bau", kit, p.x0, p.y0, "ConVec %d bringt den Bausatz (Platz %dx%d)", c.unitID, g.w, g.h);
     return;
   }
@@ -619,7 +627,7 @@ inline void bauen(Zustand& z, UnitEx c, int kit) {
       return;
     }
     p.seit = t;
-    c.DoBuild((map_id)p.typ, engine(z, p.x0 + g.w / 2, p.y0 + g.h / 2));
+    c.DoBuild((map_id)p.typ, bauOrt(z, p.x0, p.y0, g));
     melde(z, "bau", p.typ, p.x0, p.y0, "erneut beauftragt (Versuch %d)", p.versuche + 1);
   }
 }
@@ -771,12 +779,21 @@ inline void erz(Zustand& z, const Lage& l) {
     while (e.GetNext(s)) {
       if (s.GetType() != mapRoboSurveyor || s.IsBusy()) continue;
       UnitEx b = naechsteBake(z, false);
-      if (!b.unitID) break;
+      if (!b.unitID) {
+        if (selten(z, 8, 5000))
+          melde(z, "warte", mapMiningBeacon, z.bx, z.by, "keine freie Erz-Bake auf der Karte -- im Editor Baken setzen");
+        break;
+      }
       if (z.bakeZiel != b.unitID) {
         z.bakeZiel = b.unitID;
         LOCATION ziel = b.Location(); ziel.x += 1;
         s.DoMove(ziel);
         melde(z, "vermessen", mapMiningBeacon, edX(z, b.Location()), edY(z, b.Location()), "Surveyor %d faehrt zur Bake", s.unitID);
+      } else if (selten(z, 9, 600)) {
+        // Angekommen, aber nicht vermessen: direkt auf die Bake fahren
+        s.DoMove(b.Location());
+        melde(z, "vermessen", mapMiningBeacon, edX(z, b.Location()), edY(z, b.Location()),
+              "Bake noch nicht vermessen -- Surveyor %d faehrt direkt drauf", s.unitID);
       }
       break;
     }
@@ -1041,6 +1058,32 @@ inline void startausruestung(const Zustand& z, int x, int y) {
     TethysGame::CreateUnit(u, (map_id)t.typ, engine(z, x + t.dx, y + 3 + t.dy), z.spieler, (map_id)t.fracht, 0);
 }
 
+// Ohne gewoehnliche Erz-Bake in Reichweite der Basis zwei anlegen (Teil der Startausruestung --
+// Baken kommen sonst aus dem Missionsskript, die Karte selbst hat keine).
+// Without a common ore beacon near the base, create two (part of the start equipment).
+inline void bakenSichern(Zustand& z) {
+  UnitEx b = naechsteBake(z, false);
+  if (!b.unitID) b = naechsteBake(z, true);
+  if (b.unitID && abstand2(edX(z, b.Location()), edY(z, b.Location()), z.bx, z.by) < 40 * 40) return;
+  int gesetzt = 0;
+  for (int r = 12; r <= 30 && gesetzt < 2; r += 3)
+    for (int k = 0; k < 16 && gesetzt < 2; ++k) {
+      static const int RX[16] = { 1, 1, 0, -1, -1, -1, 0, 1, 1, 0, -1, 0, 1, -1, 1, -1 };
+      static const int RY[16] = { 0, 1, 1, 1, 0, -1, -1, -1, 0, 1, 0, -1, 1, 1, -1, -1 };
+      const int x = z.bx + RX[k] * r, y = z.by + RY[k] * r + 2;
+      if (!aufKarte(z, x - 2, y - 2, 3) || !aufKarte(z, x + 2, y + 2, 3)) continue;
+      bool frei = true;
+      for (int yy = y - 1; yy <= y + 1 && frei; ++yy)
+        for (int xx = x - 2; xx <= x + 2 && frei; ++xx) if (!zelleBebaubar(zelle(z, xx, yy))) frei = false;
+      if (!frei) continue;
+      const LOCATION l = engine(z, x, y);
+      TethysGame::CreateBeacon(mapMiningBeacon, l.x, l.y, OreTypeCommon, gesetzt == 0 ? Bar2 : Bar3, VariantRandom);
+      melde(z, "info", mapMiningBeacon, x, y, "keine Erz-Bake nahe der Basis -- Bake angelegt (Startausruestung)");
+      gesetzt++;
+      k += 7;                                                   // zweite Bake in eine andere Richtung
+    }
+}
+
 // Einmal in InitProc. `ursprung` = Engine-Koordinate der Editor-Kachel (0,0), z.B. MkXY(1, 1).
 inline void start(Zustand& z, int spieler, LOCATION ursprung, int breite, int hoehe, int x, int y, bool ausruestung) {
   std::memset(&z.plaetze, 0, sizeof(z.plaetze));
@@ -1057,11 +1100,14 @@ inline void start(Zustand& z, int spieler, LOCATION ursprung, int breite, int ho
   for (int i = 0; i < 16; ++i) z.meldungenSeit[i] = 0;
   for (int i = 0; i < MAX_MINEN; ++i) { z.minenId[i] = 0; z.schmelzeId[i] = 0; }
   z.bakeZiel = 0; z.bakeMiner = 0;
-  if (ausruestung) startausruestung(z, x, y);
   Puffer p;
   p.f("{\"t\":%d,\"art\":\"start\",\"p\":%d,\"breite\":%d,\"hoehe\":%d,\"bx\":%d,\"by\":%d,\"ux\":%d,\"uy\":%d,\"eden\":%d}",
       TethysGame::Tick(), spieler, breite, hoehe, x, y, z.ux, z.uy, Player[spieler].IsEden() ? 1 : 0);
   p.schreiben();
+  if (ausruestung) {
+    startausruestung(z, x, y);
+    bakenSichern(z);
+  }
 }
 
 // Jeden AIProc-Aufruf; arbeitet intern im Takt.

@@ -61,6 +61,10 @@ SaveRegion der Mission (`g_save.ki_<Spieler>`). Nach dem Laden macht die KI dort
 - Basis kompakt um die Kommandozentrale; Schmelzen stehen nicht bei den Minen.
 - Ohne Schmelze oder Lager kann die Kolonie kein Erz speichern: die Startressourcen verfallen, bis die Schmelze steht.
 - Mehrspieler nicht geprüft (die KI läuft dort auf jedem Rechner und muss überall gleich entscheiden).
+- Im Spiel gemessen (erster Lauf): `DoBuild(L)` legt die Grundfläche auf `[L.x−w, L.x−1] × [L.y−h, L.y−1]` —
+  `L` ist die Ecke unten rechts des Rechtecks mit Rand. `Location()` eines Gebäudes ist die Mitte
+  (`x0 + w/2`, `y0 + h/2`). Baken kommen aus dem Missionsskript; mit Startausrüstung legt die KI zwei
+  an, wenn keine in 40 Kacheln Umkreis liegt.
 - Annahmen über die Engine, die erst das Spiel bestätigt: Bauplatz-Regeln (Rand frei von Gebäuden),
   Anschluss über die Röhrenstücke der Gebäude, Andocken an der Strukturfabrik, Lesart von `DoResearch`.
   Wo es klemmt, steht es in der Spur.
