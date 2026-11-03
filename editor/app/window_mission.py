@@ -138,13 +138,15 @@ class _MissionMixin:
         abstand.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         tb.addWidget(abstand)
         for schl, slot in (("window.tb_show_code", self.show_code),
-                           ("window.tb_test_op2", self._launch_op2)):
+                           ("window.tb_test_op2", self._bauen_und_testen)):
             b = QPushButton(tr(schl))
-            b.clicked.connect(slot)
+            b.clicked.connect(lambda _=False, f=slot: f())
+            if schl == "window.tb_test_op2":
+                b.setToolTip(tr("window.tb_test_op2_tip"))
             tb.addWidget(b)
         bauen = QPushButton(tr("window.tb_build_short"))
         apply_role(bauen, "primary")
-        bauen.clicked.connect(self.do_build)
+        bauen.clicked.connect(lambda _=False: self.do_build())
         tb.addWidget(bauen)
 
     def _titel_aktualisieren(self):

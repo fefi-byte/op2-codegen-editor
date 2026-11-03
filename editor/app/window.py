@@ -55,6 +55,7 @@ class EditorWindow(
         self._map_item = None
         self._map_pixmap = None
         self._map_search_folder = None
+        self._nach_bau_starten = False
         self._object_dialog_open = False
         self._overlay_enabled = False
         self._overlay_mode = "speed"

@@ -267,7 +267,19 @@ class _BuildMixin:
         lay.addWidget(btns)
         dlg.exec()
 
-    def do_build(self):
+    def _bauen_und_testen(self):
+        """"In OP2 testen": erst bauen, dann das Spiel mit der frischen DLL starten.
+
+        Frueher startete der Knopf nur das Spiel -- mit der zuletzt gebauten
+        DLL. Wer etwas geaendert und nicht vorher "Bauen" geklickt hatte, sah
+        im Spiel den alten Stand und wunderte sich.
+
+        "Test in OP2": build first, then start the game with the fresh DLL.
+        The button used to start the last built DLL only."""
+        self.do_build(starten=True)
+
+    def do_build(self, starten: bool = False):
+        self._nach_bau_starten = bool(starten)
         self._editor_uebernehmen()
         if self.map is None:
             return
@@ -339,6 +351,10 @@ class _BuildMixin:
             return
         dests = "\n".join(str(t) for t in targets)
         self.statusBar().showMessage(tr("window.status_build_ok", target=targets[0]))
+        if getattr(self, "_nach_bau_starten", False):
+            self._nach_bau_starten = False
+            self._launch_op2()
+            return
         text = tr("window.build_success_text", n=len(self.objects), target=dests)
         if self._op2launcher_path().exists():
             box = QMessageBox(QMessageBox.Information, tr("window.build_success_title"), text, parent=self)
@@ -351,6 +367,7 @@ class _BuildMixin:
             QMessageBox.information(self, tr("window.build_success_title"), text)
 
     def _build_err(self, msg):
+        self._nach_bau_starten = False
         self._progress.close()
         self.statusBar().showMessage(tr("window.status_build_failed"))
         QMessageBox.critical(self, tr("window.build_failed_title"), msg)
