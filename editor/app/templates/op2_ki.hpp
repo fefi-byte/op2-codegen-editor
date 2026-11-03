@@ -101,6 +101,7 @@ struct Zustand {
   int minenGesehen;           // so viele Minen standen beim letzten Schritt
   int minenBauAn;
   BuildingGroup minenBau;     // Weg 2: die Spiel-KI setzt den Miner ein
+  int ladeConvec, ladeSeit;   // ConVec, der gerade an der Strukturfabrik laedt
 };
 
 // ---------------------------------------------------------------------------------------------------
@@ -553,7 +554,9 @@ inline void fabrik(Zustand& z, const Lage& l) {
         z.kitTyp = 0;
         return;
       }
-    if (t - z.kitSeit > 100 && t - z.kitSeit < 100 + TAKT + 1 && sf.GetCurAction() != moDevelop) {
+    // Lauf 5: waehrend der Produktion ist die Aktion nicht moDevelop -- angenommen heisst daher:
+    // beschaeftigt oder irgendeine Aktion ausser "nichts".
+    if (t - z.kitSeit > 100 && t - z.kitSeit < 100 + TAKT + 1 && !sf.IsBusy() && sf.GetCurAction() == moDone) {
       // Auftrag nicht angenommen: Fabrik im Bau, ohne Strom oder ohne Arbeiter? Spaeter erneut.
       melde(z, "warte", z.kitTyp, edX(z, sf.Location()), edY(z, sf.Location()),
             "Strukturfabrik nimmt den Auftrag nicht an (Strom %d, Arbeiter %d) -- in 500 Ticks erneut",
@@ -569,7 +572,7 @@ inline void fabrik(Zustand& z, const Lage& l) {
     }
     return;
   }
-  if (sf.GetCurAction() == moDevelop) return;            // produziert (vielleicht von Hand)
+  if (sf.GetCurAction() == moDevelop || sf.IsBusy()) return;   // produziert (vielleicht von Hand)
   if (t < z.kitPauseBis) return;
   int freieBucht = -1, kitsInBuchten = 0;
   for (int bay = 0; bay < 6; ++bay) {
@@ -717,9 +720,22 @@ inline void convecs(Zustand& z, const Lage& l) {
     const LOCATION dock = sf.GetDockLocation();
     const LOCATION wo = c.Location();
     if (wo.x == dock.x && wo.y == dock.y) {
-      sf.DoTransferCargo(bucht);
-      if (selten(z, 5, 200))
-        melde(z, "laden", sf.GetFactoryCargo(bucht), edX(z, wo), edY(z, wo), "ConVec %d laedt aus Bucht %d", c.unitID, bucht);
+      // Lauf 5: DoTransferCargo laedt nicht (ConVec stand 1400 Ticks am Dock). Erst den regulaeren
+      // Befehl versuchen, nach 300 Ticks den Bausatz direkt umsetzen -- das Ergebnis ist dasselbe.
+      // Run 5: DoTransferCargo does not load. Try it first, then move the kit over directly.
+      const int kit = sf.GetFactoryCargo(bucht);
+      if (z.ladeConvec != c.unitID) { z.ladeConvec = c.unitID; z.ladeSeit = t; }
+      if (t - z.ladeSeit < 300) {
+        sf.DoTransferCargo(bucht);
+        if (selten(z, 5, 200))
+          melde(z, "laden", kit, edX(z, wo), edY(z, wo), "ConVec %d laedt aus Bucht %d", c.unitID, bucht);
+      } else {
+        c.SetCargo((map_id)kit, mapNone);
+        sf.SetFactoryCargo(bucht, mapNone, mapNone);
+        z.ladeConvec = 0;
+        melde(z, "laden", kit, edX(z, wo), edY(z, wo),
+              "TransferCargo greift nicht -- Bausatz aus Bucht %d direkt auf ConVec %d gesetzt", bucht, c.unitID);
+      }
     } else if (abholer == 0 && (!c.IsBusy() || c.GetLastCommand() != ctMoDock)) {
       c.DoDock(dock);
       abholer++;
@@ -894,9 +910,8 @@ inline void erz(Zustand& z, const Lage& l) {
         melde(z, "vermessen", mapMiningBeacon, edX(z, bl), edY(z, bl),
               dort ? "Surveyor %d steht an der Bake, noch nicht vermessen -- faehrt drauf" : "Surveyor %d faehrt zur Bake", s.unitID);
       }
-      // Miner. Wie er zum Bauen gebracht wird, ist noch nicht sicher: HFLs DoDeployMiner faehrt nur
-      // hin (Lauf 4). Die KI probiert der Reihe nach DoBuild mit der beim ConVec gemessenen Lesart und
-      // dann eine BuildingGroup, in der die Spiel-KI den Miner einsetzt -- und schreibt, was klappt.
+      // Miner. HFLs DoDeployMiner faehrt nur hin (Lauf 4); DoBuild mit der beim ConVec gemessenen Lesart
+      // baut die Mine (Lauf 5, Weg 1). Die BuildingGroup bleibt als Rueckfall.
       // How to make the miner build is not settled; the AI tries DoBuild, then a BuildingGroup.
       UnitEx m; m.unitID = z.bakeMiner;
       const bool minerLebt = z.bakeMiner && m.IsLive() && m.GetType() == mapRoboMiner;
@@ -999,7 +1014,7 @@ inline void fahrzeuge(Zustand& z, const Lage& l) {
   UnitEx vf = l.vf;
   const int t = TethysGame::Tick();
   if (z.fzTyp) {
-    if (t - z.fzSeit > 100 && t - z.fzSeit < 100 + TAKT + 1 && vf.GetCurAction() != moDevelop && !vf.IsBusy()) {
+    if (t - z.fzSeit > 100 && t - z.fzSeit < 100 + TAKT + 1 && vf.GetCurAction() == moDone && !vf.IsBusy()) {
       melde(z, "warte", z.fzTyp, edX(z, vf.Location()), edY(z, vf.Location()),
             "Fahrzeugfabrik nimmt den Auftrag nicht an (Strom %d, Arbeiter %d) -- in 500 Ticks erneut",
             vf.HasPower(), vf.HasWorkers());
@@ -1236,6 +1251,7 @@ inline void start(Zustand& z, int spieler, LOCATION ursprung, int breite, int ho
   for (int i = 0; i < MAX_MINEN; ++i) { z.minenId[i] = 0; z.schmelzeId[i] = 0; }
   z.bakeZiel = 0; z.bakeMiner = 0; z.bakeSeit = 0; z.minerSeit = 0; z.anzahlBaken = 0;
   z.minerWeg = 1; z.minenGesehen = 0; z.minenBauAn = 0;
+  z.ladeConvec = 0; z.ladeSeit = 0;
   Puffer p;
   p.f("{\"t\":%d,\"art\":\"start\",\"p\":%d,\"breite\":%d,\"hoehe\":%d,\"bx\":%d,\"by\":%d,\"ux\":%d,\"uy\":%d,\"eden\":%d}",
       TethysGame::Tick(), spieler, breite, hoehe, x, y, z.ux, z.uy, Player[spieler].IsEden() ? 1 : 0);
