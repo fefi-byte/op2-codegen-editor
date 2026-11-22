@@ -67,7 +67,7 @@ language = auto
 - `game_path` — Outpost 2 install folder. If it contains an `OPU\` subfolder, that's used as the content root; otherwise `game_path` itself is.
 - `msvs_path` — must contain `Common7\Tools\VsDevCmd.bat`.
 - `output_dir` — where the built DLL is copied (empty = `game_path`).
-- `op2ki_path` (optional, under `[paths]`) — your own [op2-ki](https://github.com/fefi-byte/op2-ki) checkout instead of the `op2-ki/` submodule. Players controlled by op2-ki need Rust on the PC (the editor builds `op2ki.dll`); see [docs/op2-ki.md](docs/op2-ki.md).
+- `op2ki_path` (optional, under `[paths]`) — your own [op2-ki](https://github.com/fefi-byte/op2-ki) checkout instead of the `op2-ki/` submodule. Its ready-built `op2ki.dll` is copied next to the mission (or built with Rust if `[build] op2ki_selbst_bauen = true`); see [docs/op2-ki.md](docs/op2-ki.md).
 - `[ui] language` — `auto` (follow OS), `de`, or `en`. Switchable at runtime via the Language menu.
 
 An optional `[build] platform_toolset = v143` (VS2022) or `v145` (VS2026) overrides MSBuild's default toolset if the older one isn't installed.

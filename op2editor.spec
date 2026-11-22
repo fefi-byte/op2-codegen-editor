@@ -47,6 +47,7 @@ datas = [
     (str(ROOT / "op2-ki" / "kern"), "op2-ki/kern"),
     (str(ROOT / "op2-ki" / "dll"), "op2-ki/dll"),
     (str(ROOT / "op2-ki" / "missionen" / "gemeinsam"), "op2-ki/missionen/gemeinsam"),
+    (str(ROOT / "op2-ki" / "fertig" / "op2ki.dll"), "op2-ki/fertig"),
     # mapview ohne gecachte PNG-Renders (werden zur Laufzeit aus OP2-Pfad geladen)
     *[
         (str(f), "mapview")

@@ -7,6 +7,14 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.2-alpha] - 2026-11-22
+
+### Changed
+- **op2ki.dll ships ready-built again**: the editor takes `fertig/op2ki.dll`
+  of the op2-ki release in the submodule (bundled in the editor release) and
+  copies it next to the mission. Building it from the sources with Rust is now
+  optional: `[build] op2ki_selbst_bauen = true` in `config.ini`.
+
 ## [0.7.1-alpha] - 2026-11-22
 
 ### Changed

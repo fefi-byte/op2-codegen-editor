@@ -60,9 +60,8 @@ jobs:
             - Visual Studio Build Tools mit C++ (für den Missions-Build; der
               klassische OP2-SDK-Unterbau braucht MSVC)
             - Outpost 2 (OPU 1.4.1 empfohlen)
-            - Nur für Spieler, die die op2-ki steuert: Rust (https://rustup.rs) und
-              `rustup target add i686-pc-windows-msvc` -- der Editor baut op2ki.dll
-              beim ersten Bau auf dem PC (enthalten ist das neueste op2-ki-Release).
+            - Enthalten ist das neueste op2-ki-Release samt fertiger op2ki.dll; wer sie
+              selbst bauen will: Rust und `[build] op2ki_selbst_bauen = true` in config.ini.
 
             Alle Neuerungen stehen im [CHANGELOG](https://github.com/fefi-byte/op2-codegen-editor/blob/main/CHANGELOG.md).
           files: dist/OP2MissionEditor_${{ github.ref_name }}.zip

@@ -140,6 +140,24 @@ def op2ki_dateien() -> dict[str, Path] | None:
     return dateien if all(p.is_file() for p in dateien.values()) else None
 
 
+def op2ki_dll() -> Path:
+    """op2ki.dll fuer die Mission: die fertige aus dem op2-ki-Release (fertig/op2ki.dll,
+    gehoert zum ausgecheckten Tag) -- oder mit [build] op2ki_selbst_bauen = true aus den
+    Quellen auf diesem PC gebaut (Rust noetig).
+
+    op2ki.dll for the mission: the ready-built one from the op2-ki release
+    (fertig/op2ki.dll) -- or, with [build] op2ki_selbst_bauen = true, built from
+    the sources on this PC (needs Rust).
+    """
+    if _load().get("build", "op2ki_selbst_bauen", fallback="false").strip().lower() in ("1", "true", "ja", "yes"):
+        return op2ki_dll_bauen()
+    d = op2ki_dir()
+    dll = d / "fertig" / "op2ki.dll" if d else None
+    if dll is None or not dll.is_file():
+        raise SystemExit(f"op2ki.dll fehlt / missing: {dll}")
+    return dll
+
+
 def op2ki_bauordner() -> Path:
     """Schreibbarer Ordner fuer den Rust-Build der op2ki.dll (cargo target).
 
