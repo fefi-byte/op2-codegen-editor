@@ -105,44 +105,88 @@ def game_path() -> Path:
 
 
 def op2ki_dir() -> Path | None:
-    """Ordner des op2-ki-Projekts aus [paths] op2ki_path (leer = keine KI-Anbindung).
+    """Ordner des op2-ki-Projekts (eigenes Projekt, github.com/fefi-byte/op2-ki).
 
-    op2-ki ist ein eigenes Projekt (github.com/fefi-byte/op2-ki): ein Checkout
-    oder das entpackte Repo-ZIP. Der Editor nimmt daraus nur die Header zum
-    Bauen und op2ki.dll zum Spielen, keinen KI-Code.
+    Vorgabe: das Submodul op2-ki/ (im Release auf dem neuesten op2-ki-Release),
+    im PyInstaller-Build die mitgelieferte Kopie unter _internal/. [paths]
+    op2ki_path in config.ini geht vor (z.B. ein eigener Checkout). None, wenn
+    es keinen gibt.
 
-    Folder of the op2-ki project from [paths] op2ki_path (empty = no AI
-    link). The editor only takes the headers for building and op2ki.dll for
-    playing from it, no AI code.
+    Folder of the op2-ki project. Default: the op2-ki/ submodule (in a release
+    on the latest op2-ki release), in a PyInstaller build the bundled copy;
+    [paths] op2ki_path overrides it. None if there is none.
     """
     val = _load().get("paths", "op2ki_path", fallback="").strip()
-    return Path(val) if val else None
+    if val:
+        return Path(val)
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        d = Path(sys._MEIPASS) / "op2-ki"
+    else:
+        d = base_dir() / "op2-ki"
+    return d if (d / "Cargo.toml").is_file() else None
 
 
 def op2ki_dateien() -> dict[str, Path] | None:
-    """Die Dateien der op2-ki-Schnittstelle oder None, wenn eine fehlt.
+    """Die Header der op2-ki-Schnittstelle ("op2ki.hpp", "op2ki_bruecke.hpp")
+    oder None, wenn das op2-ki-Projekt fehlt.
 
-    Gesucht wird im Repo-Layout (missionen/gemeinsam/, fertig/) und flach im
-    Ordner selbst. Schluessel: "op2ki.hpp", "op2ki_bruecke.hpp", "op2ki.dll".
-
-    The files of the op2-ki interface, or None if one is missing. Looked up
-    in the repo layout (missionen/gemeinsam/, fertig/) and flat in the folder.
+    The headers of the op2-ki interface, or None if the project is missing.
     """
     d = op2ki_dir()
     if d is None:
         return None
-    orte = {"op2ki.hpp": ("missionen/gemeinsam", "."), "op2ki_bruecke.hpp": ("missionen/gemeinsam", "."),
-            "op2ki.dll": ("fertig", ".")}
-    gefunden: dict[str, Path] = {}
-    for name, unter in orte.items():
-        for u in unter:
-            p = d / u / name
-            if p.is_file():
-                gefunden[name] = p
-                break
-        else:
-            return None
-    return gefunden
+    g = d / "missionen" / "gemeinsam"
+    dateien = {name: g / name for name in ("op2ki.hpp", "op2ki_bruecke.hpp")}
+    return dateien if all(p.is_file() for p in dateien.values()) else None
+
+
+def op2ki_bauordner() -> Path:
+    """Schreibbarer Ordner fuer den Rust-Build der op2ki.dll (cargo target).
+
+    Writable folder for the Rust build of op2ki.dll (cargo target dir).
+    """
+    return base_dir() / "build" / "op2ki"
+
+
+def op2ki_dll_bauen(log=print) -> Path:
+    """op2ki.dll aus dem op2-ki-Projekt auf diesem PC bauen (Rust, 32 Bit).
+
+    cargo baut nur neu, was sich geaendert hat -- ein zweiter Aufruf ist schnell.
+    Wirft SystemExit mit einer verstaendlichen Meldung, wenn Rust oder das Ziel
+    i686-pc-windows-msvc fehlt oder der Build scheitert.
+
+    Build op2ki.dll from the op2-ki project on this PC (Rust, 32 bit). cargo
+    only rebuilds what changed. Raises SystemExit with a readable message if
+    Rust or the i686-pc-windows-msvc target is missing or the build fails.
+    """
+    import shutil as _shutil
+    import subprocess as _subprocess
+    d = op2ki_dir()
+    if d is None:
+        raise SystemExit("op2-ki fehlt (Submodul op2-ki/ oder [paths] op2ki_path). "
+                         "op2-ki is missing (op2-ki/ submodule or [paths] op2ki_path).")
+    cargo = _shutil.which("cargo")
+    if cargo is None:
+        raise SystemExit("Rust fehlt: https://rustup.rs installieren, dann "
+                         "'rustup target add i686-pc-windows-msvc'. "
+                         "Rust is missing: install it from https://rustup.rs, then add the target above.")
+    ziel = op2ki_bauordner()
+    ziel.mkdir(parents=True, exist_ok=True)
+    cmd = [cargo, "build", "--release", "-p", "op2ki-dll", "--target", "i686-pc-windows-msvc",
+           "--manifest-path", str(d / "Cargo.toml"), "--target-dir", str(ziel)]
+    log("op2-ki: " + " ".join(cmd))
+    r = _subprocess.run(cmd, cwd=str(d), capture_output=True, text=True,
+                        creationflags=getattr(_subprocess, "CREATE_NO_WINDOW", 0))
+    if r.returncode != 0:
+        ende = "\n".join((r.stderr or r.stdout or "").strip().splitlines()[-25:])
+        hinweis = ""
+        if "i686-pc-windows-msvc" in ende and ("not installed" in ende or "can't find crate" in ende):
+            hinweis = "\n\n'rustup target add i686-pc-windows-msvc' ausfuehren / run it."
+        raise SystemExit(f"op2ki.dll: Rust-Build gescheitert / Rust build failed:\n{ende}{hinweis}")
+    dll = ziel / "i686-pc-windows-msvc" / "release" / "op2ki.dll"
+    if not dll.is_file():
+        raise SystemExit(f"op2ki.dll nicht gefunden / not found: {dll}")
+    return dll
 
 
 def msvs_path() -> Path:

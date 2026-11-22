@@ -8,16 +8,24 @@ mit einer Rolle. Der Editor enthält **keinen KI-Code**: Er bindet die KI nur ei
 
 ## Einrichten
 
-1. op2-ki herunterladen: `git clone https://github.com/fefi-byte/op2-ki` oder das ZIP von GitHub entpacken.
-2. In `config.ini` unter `[paths]` den Ordner eintragen:
+op2-ki steckt als **Git-Submodul** in `op2-ki/` (im Windows-Release: die mitgelieferte Kopie). Das Release des Editors
+enthält immer das **neueste op2-ki-Release** (Tag `v*`); im Checkout holt man es mit
 
-   ```ini
-   [paths]
-   op2ki_path = D:\op2-ki
-   ```
+```
+git submodule update --init op2-ki
+git -C op2-ki fetch --tags && git -C op2-ki checkout $(git -C op2-ki tag -l "v*" --sort=-v:refname | head -n 1)
+```
 
-   Der Editor braucht daraus nur drei Dateien: `missionen/gemeinsam/op2ki.hpp`, `missionen/gemeinsam/op2ki_bruecke.hpp`
-   (zum Bauen) und `fertig/op2ki.dll` (zum Spielen). Liegen sie flach in einem Ordner, geht das auch.
+**op2ki.dll baut der Editor auf deinem PC** aus diesen Quellen (Rust, 32 Bit). Einmalig einrichten:
+
+1. Rust installieren: https://rustup.rs
+2. `rustup target add i686-pc-windows-msvc`
+
+Unter Windows reicht dafür die Visual-Studio-Installation, die der Editor ohnehin für die Missionen braucht. Der erste
+Bau dauert ein paar Minuten, danach baut cargo nur neu, was sich geändert hat. Die DLL landet in `build/op2ki/` neben
+dem Editor und wird nach jedem Bau neben die Missions-DLL kopiert.
+
+Für einen eigenen op2-ki-Checkout kannst du in `config.ini` unter `[paths]` `op2ki_path = D:\op2-ki` setzen.
 
 ## Benutzen
 
@@ -33,16 +41,18 @@ Im Spielerdialog einen **KI-Spieler** wählen und *Von der op2-ki gesteuert* anh
 Die Schwierigkeit kommt aus dem Spiel (leicht/normal/schwer, ohne Boni). Erz-Baken für die KI setzt du wie gewohnt auf
 die Karte.
 
-Beim **Bauen** kopiert der Editor die zwei Header in den Missionsordner; die Mission ruft in `InitProc`
-`op2ki::start(...)` und in `AIProc` `op2ki::schritt(...)` auf. Nach dem Bauen (und bei *In OP2 testen*) liegt
-`op2ki.dll` neben der Missions-DLL. Weitergeben musst du beide DLLs; ohne `op2ki.dll` läuft die Mission, der
+Beim **Bauen** kopiert der Editor die zwei Header in den Missionsordner und baut `op2ki.dll`; die Mission ruft in
+`InitProc` `op2ki::start(...)` und in `AIProc` `op2ki::schritt(...)` auf. Nach dem Bauen (und bei *In OP2 testen*)
+liegt `op2ki.dll` neben der Missions-DLL. Weitergeben musst du beide DLLs; ohne `op2ki.dll` läuft die Mission, der
 KI-Spieler tut dann aber nichts (Meldung im Spiel). Die KI schreibt jede Entscheidung mit Grund nach
 `OPU\logs\<Mission>-KI.jsonl`.
 
 ## English
 
-[op2-ki](https://github.com/fefi-byte/op2-ki) is a separate Outpost 2 AI project. The editor contains no AI code, it
-only links it in: set `[paths] op2ki_path` in `config.ini` to an op2-ki checkout or extracted ZIP, then tick
+[op2-ki](https://github.com/fefi-byte/op2-ki) is a separate Outpost 2 AI project, included as the git submodule
+`op2-ki/`; an editor release always ships the latest op2-ki release (tag `v*`). The editor builds `op2ki.dll` on your
+PC from it: install Rust (https://rustup.rs) and run `rustup target add i686-pc-windows-msvc` once. Tick
 *Controlled by op2-ki* for an AI player in the players dialog (role, base position, start base, extra settings
-`name=value`). Building copies `op2ki.hpp` and `op2ki_bruecke.hpp` into the mission folder; after a build (and on
-*Test in OP2*) `op2ki.dll` is copied next to the mission DLL. Ship both DLLs. Difficulty comes from the game.
+`name=value`). Building copies `op2ki.hpp` and `op2ki_bruecke.hpp` into the mission folder and builds the DLL; after a
+build (and on *Test in OP2*) `op2ki.dll` is copied next to the mission DLL. Ship both DLLs. `[paths] op2ki_path`
+overrides the submodule with your own checkout.

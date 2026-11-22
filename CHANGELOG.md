@@ -7,6 +7,19 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.1-alpha] - 2026-11-22
+
+### Changed
+- **op2-ki as a git submodule** (`op2-ki/`): no download or path setup any
+  more. A release of the editor always contains the latest op2-ki release
+  (the release build checks out the newest `v*` tag); `[paths] op2ki_path`
+  still overrides it with your own checkout.
+- **op2ki.dll is built on your PC** from the op2-ki sources (Rust,
+  `cargo build` for `i686-pc-windows-msvc`) during the mission build, into
+  `build/op2ki/` next to the editor, and copied next to the mission DLL. Needs
+  Rust (https://rustup.rs) and `rustup target add i686-pc-windows-msvc` once;
+  missing Rust gives a clear message. Only missions with op2-ki players need it.
+
 ## [0.7.0-alpha] - 2026-11-22
 
 The AI opponent moved into its own project. The editor no longer carries an AI

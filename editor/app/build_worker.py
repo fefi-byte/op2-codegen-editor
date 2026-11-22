@@ -32,6 +32,13 @@ class BuildWorker(QThread):
                 self.folder, level_main_cpp=cpp, **self.write_files
             )
             dll = build_mod.build_folder(self.folder)
+            # op2-ki (Submodul): ihre DLL auf diesem PC bauen, wenn ein
+            # Spieler sie nutzt -- cargo baut nur neu, was sich geaendert hat.
+            # op2-ki (submodule): build its DLL on this PC when a player uses
+            # it -- cargo only rebuilds what changed.
+            self.op2ki_dll = None
+            if '#include "op2ki.hpp"' in cpp:
+                self.op2ki_dll = appconfig.op2ki_dll_bauen()
             self.ok.emit(str(dll))
         except SystemExit as e:
             self.err.emit(str(e))

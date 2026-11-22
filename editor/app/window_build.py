@@ -346,13 +346,10 @@ class _BuildMixin:
             # bleiben die KI-Spieler im Spiel ohne Steuerung.
             # op2-ki (separate project): its DLL next to the mission,
             # otherwise the AI players have no control in the game.
-            if any(getattr(p, "op2ki", False) and not p.is_human for p in self.players):
-                dateien = appconfig.op2ki_dateien()
-                if dateien is None:
-                    self.statusBar().showMessage(tr("op2ki.dll_fehlt"))
-                else:
-                    for t in targets:
-                        shutil.copy2(dateien["op2ki.dll"], t.parent / "op2ki.dll")
+            op2ki_dll = getattr(self._worker, "op2ki_dll", None)
+            if op2ki_dll:
+                for t in targets:
+                    shutil.copy2(op2ki_dll, t.parent / "op2ki.dll")
         except Exception as e:
             QMessageBox.warning(self, tr("window.copy_failed_title"),
                                 tr("window.copy_failed_text", target=t, e=e))

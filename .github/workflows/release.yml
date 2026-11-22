@@ -15,6 +15,15 @@ jobs:
         with:
           submodules: recursive
 
+      - name: op2-ki auf das neueste Release (Tag v*)
+        shell: bash
+        run: |
+          git -C op2-ki fetch --force --tags origin
+          t=$(git -C op2-ki tag -l "v*" --sort=-v:refname | head -n 1)
+          test -n "$t"
+          git -C op2-ki checkout --quiet "$t"
+          echo "op2-ki $t"
+
       - name: Python 3.11 einrichten
         uses: actions/setup-python@v5
         with:
@@ -51,6 +60,9 @@ jobs:
             - Visual Studio Build Tools mit C++ (für den Missions-Build; der
               klassische OP2-SDK-Unterbau braucht MSVC)
             - Outpost 2 (OPU 1.4.1 empfohlen)
+            - Nur für Spieler, die die op2-ki steuert: Rust (https://rustup.rs) und
+              `rustup target add i686-pc-windows-msvc` -- der Editor baut op2ki.dll
+              beim ersten Bau auf dem PC (enthalten ist das neueste op2-ki-Release).
 
             Alle Neuerungen stehen im [CHANGELOG](https://github.com/fefi-byte/op2-codegen-editor/blob/main/CHANGELOG.md).
           files: dist/OP2MissionEditor_${{ github.ref_name }}.zip

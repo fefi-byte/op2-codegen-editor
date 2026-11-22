@@ -1,3 +1,6 @@
 [submodule "OP2MissionSDK"]
 	path = OP2MissionSDK
 	url = https://github.com/OutpostUniverse/OP2MissionSDK.git
+[submodule "op2-ki"]
+	path = op2-ki
+	url = https://github.com/fefi-byte/op2-ki.git

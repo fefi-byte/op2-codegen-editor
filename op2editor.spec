@@ -36,6 +36,17 @@ datas = [
     (str(ROOT / "OP2MissionSDK" / "Outpost2DLL"), "OP2MissionSDK/Outpost2DLL"),
     (str(ROOT / "OP2MissionSDK" / "OP2Helper"), "OP2MissionSDK/OP2Helper"),
     (str(ROOT / "OP2MissionSDK" / "HFL"), "OP2MissionSDK/HFL"),
+    # op2-ki (Submodul, im Release auf dem neuesten op2-ki-Release): Quellen
+    # fuer den Rust-Build von op2ki.dll auf dem PC und die zwei Missions-Header
+    # (appconfig.op2ki_dir() -> sys._MEIPASS/op2-ki).
+    # op2-ki (submodule, in a release on the latest op2-ki release): sources
+    # for building op2ki.dll on the PC and the two mission headers.
+    (str(ROOT / "op2-ki" / "Cargo.toml"), "op2-ki"),
+    (str(ROOT / "op2-ki" / "Cargo.lock"), "op2-ki"),
+    (str(ROOT / "op2-ki" / "LICENSE"), "op2-ki"),
+    (str(ROOT / "op2-ki" / "kern"), "op2-ki/kern"),
+    (str(ROOT / "op2-ki" / "dll"), "op2-ki/dll"),
+    (str(ROOT / "op2-ki" / "missionen" / "gemeinsam"), "op2-ki/missionen/gemeinsam"),
     # mapview ohne gecachte PNG-Renders (werden zur Laufzeit aus OP2-Pfad geladen)
     *[
         (str(f), "mapview")
