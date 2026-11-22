@@ -104,6 +104,47 @@ def game_path() -> Path:
     return Path(val or DEFAULT_GAME_PATH or ".")
 
 
+def op2ki_dir() -> Path | None:
+    """Ordner des op2-ki-Projekts aus [paths] op2ki_path (leer = keine KI-Anbindung).
+
+    op2-ki ist ein eigenes Projekt (github.com/fefi-byte/op2-ki): ein Checkout
+    oder das entpackte Repo-ZIP. Der Editor nimmt daraus nur die Header zum
+    Bauen und op2ki.dll zum Spielen, keinen KI-Code.
+
+    Folder of the op2-ki project from [paths] op2ki_path (empty = no AI
+    link). The editor only takes the headers for building and op2ki.dll for
+    playing from it, no AI code.
+    """
+    val = _load().get("paths", "op2ki_path", fallback="").strip()
+    return Path(val) if val else None
+
+
+def op2ki_dateien() -> dict[str, Path] | None:
+    """Die Dateien der op2-ki-Schnittstelle oder None, wenn eine fehlt.
+
+    Gesucht wird im Repo-Layout (missionen/gemeinsam/, fertig/) und flach im
+    Ordner selbst. Schluessel: "op2ki.hpp", "op2ki_bruecke.hpp", "op2ki.dll".
+
+    The files of the op2-ki interface, or None if one is missing. Looked up
+    in the repo layout (missionen/gemeinsam/, fertig/) and flat in the folder.
+    """
+    d = op2ki_dir()
+    if d is None:
+        return None
+    orte = {"op2ki.hpp": ("missionen/gemeinsam", "."), "op2ki_bruecke.hpp": ("missionen/gemeinsam", "."),
+            "op2ki.dll": ("fertig", ".")}
+    gefunden: dict[str, Path] = {}
+    for name, unter in orte.items():
+        for u in unter:
+            p = d / u / name
+            if p.is_file():
+                gefunden[name] = p
+                break
+        else:
+            return None
+    return gefunden
+
+
 def msvs_path() -> Path:
     return Path(_load().get("paths", "msvs_path", fallback=DEFAULT_MSVS_PATH).strip()
                 or DEFAULT_MSVS_PATH)

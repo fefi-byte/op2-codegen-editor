@@ -35,7 +35,12 @@ def _emit_player_setup(idx: int, p: PlayerSpec) -> list[str]:
     """One Player's setup block (called from InitProc())."""
     lines = [f"    // --- Player {idx} ---"]
     lines.append(f"    Player[{idx}].{'GoEden' if p.colony == Colony.Eden else 'GoPlymouth'}();")
-    lines.append(f"    Player[{idx}].{'GoHuman' if p.is_human else 'GoAI'}();")
+    # op2-ki-Spieler laufen wie in ihren Duell-Missionen als "Human": GoAI
+    # schaltet die eingebauten KI-Routinen des Spiels dazu.
+    # op2-ki players run as "human" like in their duel missions: GoAI adds the
+    # game's built-in AI routines.
+    mensch = p.is_human or getattr(p, "op2ki", False)
+    lines.append(f"    Player[{idx}].{'GoHuman' if mensch else 'GoAI'}();")
 
     if p.tech_level is not None and p.tech_level != 0:
         lines.append(f"    Player[{idx}].SetTechLevel({int(p.tech_level)});")

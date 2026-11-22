@@ -254,6 +254,62 @@ def _build_codegen_context(mission: Mission) -> dict:
 
 
 
+def _op2ki_spieler(mission) -> list:
+    """(Index, PlayerSpec) aller KI-Spieler, die die op2-ki steuert.
+
+    (index, PlayerSpec) of all AI players controlled by op2-ki."""
+    return [(i, p) for i, p in enumerate(mission.players or [])
+            if getattr(p, "op2ki", False) and not p.is_human]
+
+
+def _op2ki_parametertext(p) -> str:
+    """Stellschrauben-Text der op2-ki fuer einen Spieler ("name=wert" je Zeile).
+
+    Rolle 1..3 schaltet den Missionsmodus ein; die freien Zeilen kommen danach
+    und ueberschreiben einzelne Werte.
+
+    Settings text for one player; role 1..3 enables mission mode, the free
+    lines follow and override single values."""
+    zeilen = []
+    rolle = int(getattr(p, "op2ki_rolle", 0) or 0)
+    if rolle > 0:
+        zeilen += ["missionsModus=1", f"rolle={rolle}"]
+    for z in (getattr(p, "op2ki_parameter", "") or "").replace(";", "\n").splitlines():
+        z = z.strip()
+        if z and not z.startswith("#") and "=" in z:
+            zeilen.append(z)
+    return "".join(z + "\n" for z in zeilen)
+
+
+def _emit_op2ki_start(mission) -> list[str]:
+    """InitProc-Zeilen: op2ki.dll laden und je KI-Spieler starten.
+
+    InitProc lines: load op2ki.dll and start it per AI player."""
+    spieler = _op2ki_spieler(mission)
+    if not spieler:
+        return []
+    z = ["",
+         "    // --- op2-ki (eigenes Projekt; op2ki.dll liegt neben der Mission im OPU-Ordner) ---",
+         "    // --- op2-ki (separate project; op2ki.dll sits next to the mission in the OPU folder) ---",
+         '    if (op2ki::laden()) AddGameMessage("KI: op2-ki geladen");',
+         '    else AddGameMessage("KI: op2ki.dll fehlt - die KI-Spieler bleiben ohne Steuerung (siehe OPU\\\\logs)");',
+         "    {",
+         "        const int w = GameMapEx::GetMapWidth(), h = GameMapEx::GetMapHeight();"]
+    for idx, p in spieler:
+        x = int(getattr(p, "op2ki_x", -1))
+        y = int(getattr(p, "op2ki_y", -1))
+        xe = str(x) if x >= 0 else "w / 2"
+        ye = str(y) if y >= 0 else "h / 2"
+        basis = "true" if getattr(p, "op2ki_startbasis", True) else "false"
+        text = _op2ki_parametertext(p)
+        if text:
+            z.append(f"        op2ki::parameterText[{idx}] = {_cpp_string(text)};")
+        z.append(f"        op2ki::start({idx}, MkXY(1, 1), w, h, {xe}, {ye}, {basis}, 3, 3, 500);")
+        z.append(f'        op2::log::linef("InitProc: op2-ki Spieler {idx} -> %s", op2::log::kiPath());')
+    z.append("    }")
+    return z
+
+
 def generate_levelmain(mission: Mission) -> str:
     """Emit the full `mission.cpp` for `mission`.
 
@@ -276,6 +332,8 @@ def generate_levelmain(mission: Mission) -> str:
     add("#include <HFL/Source/HFL.h>")
     add('#include "op2_log.hpp"')
     add('#include "op2_crash.hpp"')
+    if _op2ki_spieler(mission):
+        add('#include "op2ki.hpp"')
     add("")
 
     if getattr(mission, "world_map", False):
@@ -588,6 +646,9 @@ def generate_levelmain(mission: Mission) -> str:
         for i, t in enabled:
             add(f"    {ctx['trigger_helpers_list'][i]}();")
 
+    for line in _emit_op2ki_start(mission):
+        add(line)
+
     add("")
     add("    TethysGame::ForceMoraleGood(PlayerNum::PlayerAll);")
     add('    op2::log::line("InitProc: done");')
@@ -632,6 +693,8 @@ def generate_levelmain(mission: Mission) -> str:
     add("    // UnitEx queries like GetCurAction only return sentinel values.")
     add("    HFLInit();")
     add("    diff = kDiff[Player[0].Difficulty()];")
+    for idx, _p in _op2ki_spieler(mission):
+        add(f"    op2ki::schritt({idx});")
     add("}")
     add("")
 

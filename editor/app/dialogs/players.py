@@ -42,6 +42,24 @@ class PlayersDialog(QDialog):
         self.rare = ExprEdit(diff_values=self._diff_values)
         self.rare.setPlaceholderText("z.B. 1000 oder ceil(1000 * diff / 10)")
         self.food = ExprEdit(diff_values=self._diff_values)
+        # op2-ki (eigenes Projekt): nur fuer KI-Spieler, nur wenn config.ini sie kennt
+        # EN: op2-ki (separate project): AI players only, only when config.ini knows it
+        self._op2ki_da = appconfig.op2ki_dateien() is not None
+        self.op2ki = QCheckBox(tr("players.op2ki"))
+        self.op2ki.setToolTip(tr("players.op2ki_tip") if self._op2ki_da else tr("players.op2ki_aus"))
+        self.op2ki_rolle = QComboBox()
+        self.op2ki_rolle.addItems([tr(f"players.op2ki_rolle_{i}") for i in range(4)])
+        self.op2ki_x = QSpinBox(); self.op2ki_x.setRange(-1, 1023); self.op2ki_x.setSpecialValueText(tr("players.op2ki_mitte"))
+        self.op2ki_y = QSpinBox(); self.op2ki_y.setRange(-1, 1023); self.op2ki_y.setSpecialValueText(tr("players.op2ki_mitte"))
+        op2ki_ort = QWidget(); kr = QHBoxLayout(op2ki_ort); kr.setContentsMargins(0, 0, 0, 0)
+        kr.addWidget(QLabel("X")); kr.addWidget(self.op2ki_x); kr.addWidget(QLabel("Y")); kr.addWidget(self.op2ki_y)
+        kr.addStretch(1)
+        self.op2ki_startbasis = QCheckBox(tr("players.op2ki_startbasis"))
+        self.op2ki_startbasis.setToolTip(tr("players.op2ki_startbasis_tip"))
+        self.op2ki_parameter = QPlainTextEdit()
+        self.op2ki_parameter.setToolTip(tr("players.op2ki_parameter_tip"))
+        self.op2ki_parameter.setPlaceholderText("zbWache=6")
+        self.op2ki_parameter.setMaximumHeight(70)
 
         # Forschungen: Auswahl per Name + "Tech hinzufügen" + Liste
         # EN: Researches: selection by name + "Add tech" + list
@@ -68,19 +86,27 @@ class PlayersDialog(QDialog):
         form.addRow(tr("players.common_ore"), self.common)
         form.addRow(tr("players.rare_ore"), self.rare)
         form.addRow(tr("players.food"), self.food)
+        form.addRow(self.op2ki)
+        form.addRow(tr("players.op2ki_rolle"), self.op2ki_rolle)
+        form.addRow(tr("players.op2ki_basis"), op2ki_ort)
+        form.addRow(self.op2ki_startbasis)
+        form.addRow(tr("players.op2ki_parameter"), self.op2ki_parameter)
         form.addRow(tr("players.research"), tech_add_row)
         form.addRow(tr("players.pre_researched"), self.research_list)
         form.addRow("", rm_tech)
 
         # bei jeder Aenderung in den aktuellen Spieler schreiben
         # EN: on every change, write into the current player
-        for w in (self.colony, self.ptype):
+        for w in (self.colony, self.ptype, self.op2ki_rolle):
             w.currentIndexChanged.connect(self._store_current)
+        for w in (self.op2ki_x, self.op2ki_y):
+            w.valueChanged.connect(self._store_current)
+        self.op2ki_parameter.textChanged.connect(self._store_current)
         for w in (self.workers, self.scientists, self.kids):
             w.valueChanged.connect(self._store_current)
         for w in (self.common, self.rare, self.food):
             w.valueChanged.connect(self._store_current)
-        for w in (self.init_res, self.set_pop, self.set_res):
+        for w in (self.init_res, self.set_pop, self.set_res, self.op2ki, self.op2ki_startbasis):
             w.toggled.connect(self._store_current)
         # Tech-Level beeinflusst auch die verfuegbaren Forschungen
         # EN: the tech level also affects the available researches
@@ -137,6 +163,13 @@ class PlayersDialog(QDialog):
         self.common.setValue(p.common_ore if p.common_ore is not None else 0)
         self.rare.setValue(p.rare_ore if p.rare_ore is not None else 0)
         self.food.setValue(p.food if p.food is not None else 0)
+        self.op2ki.setChecked(bool(getattr(p, "op2ki", False)))
+        self.op2ki_rolle.setCurrentIndex(max(0, min(3, int(getattr(p, "op2ki_rolle", 2)))))
+        self.op2ki_x.setValue(int(getattr(p, "op2ki_x", -1)))
+        self.op2ki_y.setValue(int(getattr(p, "op2ki_y", -1)))
+        self.op2ki_startbasis.setChecked(bool(getattr(p, "op2ki_startbasis", True)))
+        self.op2ki_parameter.setPlainText(getattr(p, "op2ki_parameter", "") or "")
+        self._op2ki_freigeben()
         self._loading = False
         self._refresh_tech_avail(p.tech_level)
         self._refresh_research_list()
@@ -159,11 +192,30 @@ class PlayersDialog(QDialog):
             rare_ore=self.rare.value() if self.set_res.isChecked() else None,
             food=self.food.value() if self.set_res.isChecked() else None,
             researches=researches,
+            op2ki=self.op2ki.isChecked() and self.ptype.currentIndex() == 1,
+            op2ki_rolle=self.op2ki_rolle.currentIndex(),
+            op2ki_x=self.op2ki_x.value(),
+            op2ki_y=self.op2ki_y.value(),
+            op2ki_startbasis=self.op2ki_startbasis.isChecked(),
+            op2ki_parameter=self.op2ki_parameter.toPlainText(),
         )
         self.players[self._idx] = p
+        self._op2ki_freigeben()
         item = self.plist.item(self._idx)
         if item:
             item.setText(self._label(self._idx, p))
+
+    def _op2ki_freigeben(self):
+        """op2-ki nur fuer KI-Spieler und nur, wenn ihr Ordner eingerichtet ist (ein
+        schon gesetzter Haken bleibt sichtbar); ihre Felder nur mit Haken.
+
+        EN: op2-ki only for AI players and only when its folder is set up (an
+        already set tick stays visible); its fields only when ticked."""
+        ki = self.ptype.currentIndex() == 1
+        self.op2ki.setEnabled(ki and (self._op2ki_da or self.op2ki.isChecked()))
+        an = ki and self.op2ki.isChecked()
+        for w in (self.op2ki_rolle, self.op2ki_x, self.op2ki_y, self.op2ki_startbasis, self.op2ki_parameter):
+            w.setEnabled(an)
 
     def _on_tech_level_changed(self):
         if self._loading or not (0 <= self._idx < len(self.players)):

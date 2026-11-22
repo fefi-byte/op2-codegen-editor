@@ -84,6 +84,21 @@ class PlayerSpec:
     # Einzelne Vorab-Forschungen (Tech-IDs) zusaetzlich zu tech_level
     # Individual pre-researches (tech IDs) in addition to tech_level
     researches: list[int] = field(default_factory=list)
+    # op2-ki (eigenes Projekt, github.com/fefi-byte/op2-ki): die KI-DLL steuert
+    # diesen Spieler. Rolle 0 = Mehrspieler-Gegner, 1 aggressiv, 2 defensiv,
+    # 3 Kolonie (Missionsmodus). Basis in Editor-Kacheln (-1 = Kartenmitte);
+    # mit Startbasis legt die KI ihre Startbasis selbst an. Parameter: weitere
+    # Stellschrauben "name=wert" je Zeile (siehe EINBINDEN.md der op2-ki).
+    # op2-ki (separate project): the AI DLL controls this player. Role 0 =
+    # multiplayer opponent, 1 aggressive, 2 defensive, 3 colony (mission
+    # mode). Base in editor tiles (-1 = map centre); with a start base the AI
+    # creates it itself. Parameters: further settings "name=value" per line.
+    op2ki: bool = False
+    op2ki_rolle: int = 2
+    op2ki_x: int = -1
+    op2ki_y: int = -1
+    op2ki_startbasis: bool = True
+    op2ki_parameter: str = ""
 
 
 @dataclass

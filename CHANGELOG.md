@@ -7,6 +7,33 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0-alpha] - 2026-11-22
+
+The AI opponent moved into its own project. The editor no longer carries an AI
+of its own; instead an AI player can be handed to
+[op2-ki](https://github.com/fefi-byte/op2-ki), which the editor only links in.
+
+### Added
+- **op2-ki opponent**: in the player dialog an AI player can be ticked as
+  *Controlled by op2-ki*, with a role (multiplayer opponent, or mission mode:
+  aggressive, defensive, colony), base position, own start base on/off and
+  free settings (`name=value`). The generated mission loads `op2ki.dll` and
+  calls it every tick; difficulty comes from the game. Needs
+  `[paths] op2ki_path` in `config.ini` pointing to an op2-ki checkout or ZIP;
+  building copies its two headers into the mission folder, a build and
+  *Test in OP2* copy `op2ki.dll` next to the mission DLL. See
+  `docs/op2-ki.md`.
+- Test `tests/test_op2ki.py` for the generated op2-ki calls.
+
+### Changed
+- "Test in OP2" builds the mission first, so editor changes always reach the
+  game.
+- The log/crash headers of a mission (`op2_log.hpp`, `op2_crash.hpp`) gained
+  the AI trace file (`kiPath`, `kiRaw`), the last step name in the crash line,
+  and compile when `<windows.h>` is already included (clang-cl).
+- Original game maps are no longer in the repository; the example missions
+  load them from the game folder.
+
 ## [0.6.0-alpha] - 2026-11-01
 
 The mission side caught up with the map side: a new layout with the mission

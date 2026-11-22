@@ -21,7 +21,9 @@
 namespace op2::log {
 
 // Minimal Win32 imports (all KERNEL32). extern "C" => global C linkage, so these resolve to the real
-// imports despite living in this namespace.
+// imports despite living in this namespace. If <windows.h> is already included (HFL.h does), its
+// declarations are used instead -- clang-cl rejects the conflicting void* redeclarations.
+#ifndef _WINDOWS_
 extern "C" {
   __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void* hModule, char* lpFilename, unsigned long nSize);
   __declspec(dllimport) void*         __stdcall CreateFileA(const char* name, unsigned long access, unsigned long share,
@@ -34,11 +36,13 @@ extern "C" {
   __declspec(dllimport) unsigned long __stdcall GetTickCount();
   __declspec(dllimport) void          __stdcall GetLocalTime(void* lpSystemTime);  // fills a SYSTEMTIME
 }
+#endif
 
 namespace detail {
 
 inline char g_path[600]   = { 0 };   // <dir>\<OP2LOG_NAME>.log     - the main mission log
 inline char g_aiPath[600] = { 0 };   // <dir>\<OP2LOG_NAME>-AI.log  - the scripted-AI action channel
+inline char g_kiPath[600] = { 0 };   // <dir>\<OP2LOG_NAME>-KI.jsonl - trace of the AI (op2ki.dll)
 inline bool g_ready       = false;
 
 // Optional game-tick source: the mission sets this (to e.g. op2::Game::tick) so every log line carries the
@@ -59,11 +63,11 @@ inline void resolve_path() {
   g_ready = true;
   char exe[600] = { 0 };
   const unsigned long n = GetModuleFileNameA(nullptr, exe, sizeof(exe));
-  if (n == 0 || n >= sizeof(exe)) { std::strcpy(g_path, OP2LOG_NAME ".log"); std::strcpy(g_aiPath, OP2LOG_NAME "-AI.log"); return; }
+  if (n == 0 || n >= sizeof(exe)) { std::strcpy(g_path, OP2LOG_NAME ".log"); std::strcpy(g_aiPath, OP2LOG_NAME "-AI.log"); std::strcpy(g_kiPath, OP2LOG_NAME "-KI.jsonl"); return; }
 
   int slash = -1;                                // strip the exe filename -> directory
   for (int i = 0; exe[i]; ++i) if (exe[i] == '\\') slash = i;
-  if (slash < 0) { std::strcpy(g_path, OP2LOG_NAME ".log"); std::strcpy(g_aiPath, OP2LOG_NAME "-AI.log"); return; }
+  if (slash < 0) { std::strcpy(g_path, OP2LOG_NAME ".log"); std::strcpy(g_aiPath, OP2LOG_NAME "-AI.log"); std::strcpy(g_kiPath, OP2LOG_NAME "-KI.jsonl"); return; }
   exe[slash] = 0;
 
   const int len = static_cast<int>(std::strlen(exe));
@@ -75,6 +79,7 @@ inline void resolve_path() {
   ensure_dirs(dir);
   std::snprintf(g_path,   sizeof(g_path),   "%s\\" OP2LOG_NAME ".log",    dir);
   std::snprintf(g_aiPath, sizeof(g_aiPath), "%s\\" OP2LOG_NAME "-AI.log", dir);
+  std::snprintf(g_kiPath, sizeof(g_kiPath), "%s\\" OP2LOG_NAME "-KI.jsonl", dir);
 }
 
 inline void write_raw(const char* path, const char* s, int len) {
@@ -114,10 +119,26 @@ inline void line(const char* msg) { detail::write_line(detail::g_path, msg); }
 /// scripted computer player's decisions, like OP2Lua's AI log. Same tick+pid prefix, flushed per line.
 inline void ai(const char* msg) { detail::write_line(detail::g_aiPath, msg); }
 
+/// Append one raw line (no prefix, CRLF added) to the building-AI trace <name>-KI.jsonl. The editor's
+/// "KI-Spur" view reads it: one JSON object per line.
+inline void kiRaw(const char* s, int len) {
+  if (!detail::g_ready) detail::resolve_path();
+  char nl[2] = { '\r', '\n' };
+  detail::write_raw(detail::g_kiPath, s, len);
+  detail::write_raw(detail::g_kiPath, nl, 2);
+}
+
+/// Path of the building-AI trace.
+inline const char* kiPath() { if (!detail::g_ready) detail::resolve_path(); return detail::g_kiPath; }
+
 /// Log a human-readable local date/time line (call once at startup, so each run is timestamped).
 inline void timestamp() {
   unsigned short st[8] = { 0 };   // SYSTEMTIME: [0]year [1]month [2]dayOfWeek [3]day [4]hour [5]min [6]sec [7]ms
+#ifdef _WINDOWS_
+  GetLocalTime(reinterpret_cast<SYSTEMTIME*>(st));
+#else
   GetLocalTime(st);
+#endif
   char buf[64];
   std::snprintf(buf, sizeof(buf), "started %04u-%02u-%02u %02u:%02u:%02u",
                 st[0], st[1], st[3], st[4], st[5], st[6]);

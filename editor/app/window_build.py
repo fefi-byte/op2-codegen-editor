@@ -342,6 +342,17 @@ class _BuildMixin:
             for t in targets:
                 t.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(dll, t)
+            # op2-ki (eigenes Projekt): ihre DLL neben die Mission, sonst
+            # bleiben die KI-Spieler im Spiel ohne Steuerung.
+            # op2-ki (separate project): its DLL next to the mission,
+            # otherwise the AI players have no control in the game.
+            if any(getattr(p, "op2ki", False) and not p.is_human for p in self.players):
+                dateien = appconfig.op2ki_dateien()
+                if dateien is None:
+                    self.statusBar().showMessage(tr("op2ki.dll_fehlt"))
+                else:
+                    for t in targets:
+                        shutil.copy2(dateien["op2ki.dll"], t.parent / "op2ki.dll")
         except Exception as e:
             QMessageBox.warning(self, tr("window.copy_failed_title"),
                                 tr("window.copy_failed_text", target=t, e=e))

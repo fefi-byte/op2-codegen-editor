@@ -16,6 +16,7 @@ Recent changes: [CHANGELOG.md](CHANGELOG.md).
 
 - **Visual placement** — buildings, vehicles, mining beacons, walls and tubes, drag-drop on a real tile map
 - **Players** — up to 6 players, human or AI, per-player resources, tech level, pre-researched techs
+- **op2-ki opponent (optional)** — an AI player can be handed to [op2-ki](https://github.com/fefi-byte/op2-ki), a separate project: it builds its colony, researches and fights on its own (multiplayer opponent or mission roles). The editor only links it in, see [docs/op2-ki.md](docs/op2-ki.md)
 - **Groups** — BuildingGroup / ReinforceGroup / FightGroup / MiningGroup, each with its own roster and behaviour
 - **Triggers** — conditions (time, count, resource, findUnit, …) with nested if/then/else action blocks and forEach loops
 - **Actions** — 15+ action kinds including createUnit, sendAttackWave, startMining, group commands, unit commands, disasters
@@ -66,6 +67,7 @@ language = auto
 - `game_path` — Outpost 2 install folder. If it contains an `OPU\` subfolder, that's used as the content root; otherwise `game_path` itself is.
 - `msvs_path` — must contain `Common7\Tools\VsDevCmd.bat`.
 - `output_dir` — where the built DLL is copied (empty = `game_path`).
+- `op2ki_path` (optional, under `[paths]`) — folder of the [op2-ki](https://github.com/fefi-byte/op2-ki) project (checkout or extracted ZIP). Needed only for players controlled by op2-ki; see [docs/op2-ki.md](docs/op2-ki.md).
 - `[ui] language` — `auto` (follow OS), `de`, or `en`. Switchable at runtime via the Language menu.
 
 An optional `[build] platform_toolset = v143` (VS2022) or `v145` (VS2026) overrides MSBuild's default toolset if the older one isn't installed.

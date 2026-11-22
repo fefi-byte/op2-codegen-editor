@@ -26,14 +26,21 @@ namespace op2::crash {
 struct ExceptionRecord  { unsigned long code; unsigned long flags; void* pNext; void* address; };
 struct ExceptionPointers { ExceptionRecord* record; void* context; };
 
+#ifndef _WINDOWS_   // <windows.h> already declares it (clang-cl rejects the void* redeclaration)
 extern "C" __declspec(dllimport) void* __stdcall SetUnhandledExceptionFilter(void* filter);
+#endif
 
 /// Log a fault (exception code + faulting address). Returns EXCEPTION_EXECUTE_HANDLER (1) so it can double as
 /// an SEH filter expression.
+/// Wo der Code gerade war (z.B. die Aufbau-KI setzt den Namen ihres Teilschritts) -- steht im Crash-Log mit.
+/// Where the code currently is (e.g. the building AI sets its sub-step name) -- included in the crash log.
+inline const char* g_hinweis = nullptr;
+
 inline long report(const char* where, ExceptionPointers* ep) {
   const unsigned long code = (ep && ep->record) ? ep->record->code    : 0UL;
   void* const         addr = (ep && ep->record) ? ep->record->address : nullptr;
-  op2::log::linef("!!!!!!!! CRASH in %s : exception 0x%08lX at %p !!!!!!!!", where, code, addr);
+  op2::log::linef("!!!!!!!! CRASH in %s : exception 0x%08lX at %p (zuletzt: %s) !!!!!!!!", where, code, addr,
+                  g_hinweis ? g_hinweis : "-");
   return 1;  // EXCEPTION_EXECUTE_HANDLER
 }
 
@@ -44,7 +51,11 @@ inline long __stdcall unhandledFilter(void* exceptionPointers) {
 
 /// Install the unhandled-exception filter. Call once at DLL attach.
 inline void installHandler() {
+#ifdef _WINDOWS_
+  SetUnhandledExceptionFilter(reinterpret_cast<LPTOP_LEVEL_EXCEPTION_FILTER>(&unhandledFilter));
+#else
   SetUnhandledExceptionFilter(reinterpret_cast<void*>(&unhandledFilter));
+#endif
 }
 
 /// Run fn() under an SEH guard: a structured exception is logged, then swallowed so the game keeps running.
@@ -58,6 +69,7 @@ inline void guard(const char* where, void (*fn)()) {
 }
 
 #else // MinGW cross-compile: SEH not available, use no-op stubs
+inline const char* g_hinweis = nullptr;   // siehe oben (hier ohne Wirkung)
 
 inline void installHandler() {}
 

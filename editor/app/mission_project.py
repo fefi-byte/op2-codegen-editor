@@ -126,6 +126,20 @@ def write_mission_folder(
         _copy_template(name, target)
         written[name] = target
 
+    # 3a) op2-ki (eigenes Projekt): ihre Schnittstelle (zwei Header) aus dem
+    #     op2-ki-Ordner aus config.ini -- nur, wenn ein Spieler sie nutzt.
+    # 3a) op2-ki (separate project): its interface (two headers) from the
+    #     op2-ki folder in config.ini -- only when a player uses it.
+    if '#include "op2ki.hpp"' in (level_main_cpp or ""):
+        from .i18n import tr
+        dateien = appconfig.op2ki_dateien()
+        if dateien is None:
+            raise SystemExit(tr("op2ki.fehlt", pfad=str(appconfig.op2ki_dir() or "")))
+        for name in ("op2ki.hpp", "op2ki_bruecke.hpp"):
+            target = folder / name
+            shutil.copy2(dateien[name], target)
+            written[name] = target
+
     # 3b) Vor-Spielstart-Briefing: Dialog-Quelle, Ressourcen-Skript und der
     #     Text als ANSI-Datei (RICHEDIT erwartet cp1252 + CRLF).
     # 3b) Pre-game briefing: dialog source, resource script and the text as
