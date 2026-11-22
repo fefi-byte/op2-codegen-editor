@@ -107,6 +107,8 @@ def _emit_action_condition_expr(c: ActionCondition, depth: int = 0) -> str:
                 f"while (_pe.GetNext(_pu)) if (_pu.GetType() == {mapid(c.building_type)} "
                 f"&& (_pu.GetDamage() {cmp_op} {_expr_or_int(c.value)})) return true; "
                 f"return false; }}())")
+    elif c.kind == "op2kiStatus":
+        expr = f"(op2ki::status({int(c.player)}, {int(getattr(c, 'op2ki_code', 1) or 1)}) {cmp_op} {_expr_or_int(c.value)})"
     elif c.kind == "varCheck":
         var = getattr(c, "var_name", "") or "unknownVar"
         expr = f"({var} {cmp_op} {_expr_or_int(c.value)})"

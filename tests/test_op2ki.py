@@ -46,3 +46,47 @@ def test_op2ki_mehrspieler_und_kartenmitte():
 def test_menschlicher_spieler_nie_op2ki():
     cpp = generate_levelmain(_mission(PlayerSpec(op2ki=True)))
     assert "op2ki" not in cpp
+
+
+# ---------------------------------------------------------------------------------------- Befehle (Drehbuch/Angriff)
+from codegen_op2ki import befehl_text, kurz  # noqa: E402
+from mission_model import ActionCondition, TriggerAction, TriggerDef  # noqa: E402
+
+
+def test_befehl_phase():
+    t = befehl_text({"art": "phase", "id": 2, "bauen": [{"typ": "mapTokamak", "n": 2, "x": -1, "y": -1},
+                                                       {"typ": "mapGuardPost", "n": 3, "x": 50, "y": 60, "r": 4}],
+                     "forschen": [2104, 0], "fahrzeuge": [{"typ": "mapLynx", "waffe": "mapLaser", "n": 4}],
+                     "grund": False, "reihe": True})
+    assert t == ("phase=2\nbauen=Tokamak:2,GuardPost:3@50,60,4\nforschen=2104\nfahrzeuge=Lynx/Laser:4\n"
+                 "grundversorgung=0\nreihenfolge=1\n")
+
+
+def test_befehl_angriff_verteidigung_frei():
+    a = befehl_text({"art": "angriff", "ziel": "spieler", "zielspieler": 0, "angriffsart": "ueberfall",
+                     "parallel": True, "emp": "aus", "truppe": "beste", "anzahl": 6, "rueckzug": 40, "frist": 0})
+    assert a == "angriff=1\nziel=basis:0\nart=ueberfall\nparallel=1\nemp=0\neinheiten=beste:6\nrueckzug=40\n"
+    v = befehl_text({"art": "verteidigung", "truppe": "beste", "anzahl": 5,
+                     "bereich": {"x": 10, "y": 20, "width": 8, "height": 6}, "turm": "mapEMP", "patrouille": "an"})
+    assert v == "verteidigung=1\nwache=5\nbereich=10,20,17,25\nturm=EMP\npatrouille=1\n"
+    assert befehl_text({"art": "befehl", "text": "rolle=2; # aus\nzbWache=6\nkaputt"}) == "rolle=2\nzbWache=6\n"
+    assert befehl_text({"art": "drehbuchAus"}) == "drehbuch=0\n"
+    assert kurz({"spieler": 1, "art": "angriff", "ziel": "punkt", "angriffsart": "halten"}).startswith("P1: Angriff")
+
+
+def test_befehl_aktion_bedingung_und_spielstand():
+    ki = PlayerSpec(is_human=False, op2ki=True, op2ki_rolle=2)
+    m = _mission(PlayerSpec(), ki)
+    aktion = TriggerAction(kind="op2ki", op2ki={"spieler": 1, "art": "phase", "id": 1,
+                                                 "bauen": [{"typ": "mapTokamak", "n": 1}]})
+    wenn = TriggerAction(kind="if", conditions=[ActionCondition(kind="op2kiStatus", player=1, op2ki_code=101,
+                                                                compare="cmpGreaterEqual", value="1")],
+                         then_actions=[TriggerAction(kind="op2ki", op2ki={"spieler": 1, "art": "drehbuchAus"})])
+    m.triggers = [TriggerDef(name="phasen", condition="time", marks=1, actions=[aktion, wenn])]
+    cpp = generate_levelmain(m)
+    assert 'op2ki::befehl(1, "phase=1\\nbauen=Tokamak:1\\ngrundversorgung=1\\nreihenfolge=0\\n");' in cpp
+    assert "op2ki::status(1, 101) >= 1" in cpp
+    assert 'op2ki::befehl(1, "drehbuch=0\\n");' in cpp
+    assert "op2ki::Speicher op2ki;" in cpp          # Befehle ueberleben Speichern/Laden
+    assert "op2ki::speicher(&g_save.op2ki);" in cpp
+    assert "op2ki::fortsetzen();" in cpp

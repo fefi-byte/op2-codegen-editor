@@ -52,6 +52,11 @@ class ConditionEditDialog(QDialog):
         for d, m in WEAPONS:
             if m != "mapNone":
                 self.unit.addItem(tr("action_editor.label_weapon_suffix", d=d), m)
+        # Meldung der op2-ki (op2ki::status)
+        # op2-ki report (op2ki::status)
+        self.op2ki_code = QComboBox()
+        for code in OP2KI_STATUS_CODES:
+            self.op2ki_code.addItem(tr(f"op2ki_status.{code}"), code)
         self.negate = QCheckBox(tr("action_editor.chk_negate"))
         # Befehlszustand fuer "Schleifen-Einheit: Befehl ist"
         # Command state for "loop unit: command is"
@@ -77,7 +82,7 @@ class ConditionEditDialog(QDialog):
         self._rows = {"player": self.player, "building": self.building, "x": self.x, "y": self.y,
                       "compare": self.compare, "value": self.value, "resource": self.resource,
                       "tech_id": self.tech_id, "var_name": self.var_name, "unit": self.unit,
-                      "command": self.command_type, "loop_level": self.loop_level}
+                      "command": self.command_type, "loop_level": self.loop_level, "op2ki_code": self.op2ki_code}
         labels = {"player": tr("action_editor.lbl_player"), "building": tr("action_editor.lbl_building"),
                   "x": tr("action_editor.lbl_x"), "y": tr("action_editor.lbl_y"),
                   "compare": tr("action_editor.lbl_compare"), "value": tr("action_editor.lbl_value"),
@@ -85,7 +90,8 @@ class ConditionEditDialog(QDialog):
                   "var_name": tr("action_editor.lbl_var_name"),
                   "unit": tr("action_editor.lbl_unit"),
                   "command": "Befehl:",
-                  "loop_level": "Schleifenebene:"}
+                  "loop_level": "Schleifenebene:",
+                  "op2ki_code": tr("players.op2ki_meldung")}
         for k, w in self._rows.items():
             self.form.addRow(labels[k], w)
         self.pick_btn = QPushButton(tr("triggers.btn_pick_map"))
@@ -135,6 +141,9 @@ class ConditionEditDialog(QDialog):
         ci = self.command_type.findData(getattr(c, 'command_type', 'Move') or 'Move')
         if ci >= 0:
             self.command_type.setCurrentIndex(ci)
+        oi = self.op2ki_code.findData(int(getattr(c, 'op2ki_code', 1) or 1))
+        if oi >= 0:
+            self.op2ki_code.setCurrentIndex(oi)
         li = self.loop_level.findData(getattr(c, 'loop_level', 'current') or 'current')
         if li >= 0:
             self.loop_level.setCurrentIndex(li)
@@ -153,4 +162,5 @@ class ConditionEditDialog(QDialog):
             resource=RESOURCES[self.resource.currentText()], tech_id=self.tech_id.value(),
             var_name=self.var_name.currentData() or "",
             command_type=self.command_type.currentData() or "Move",
-            loop_level=self.loop_level.currentData() or "current")
+            loop_level=self.loop_level.currentData() or "current",
+            op2ki_code=int(self.op2ki_code.currentData() or 1))

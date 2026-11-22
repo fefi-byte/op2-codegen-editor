@@ -89,6 +89,7 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
         "modUnitStats": ["stats_unit", "player", "stats_editor"],
         "addVictory": ["cond_editor"],
         "addDefeat": ["cond_editor"],
+        "op2ki": ["op2ki_editor"],
     }
 
     _LABEL_OVERRIDES = {
@@ -157,6 +158,10 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
         self.comment = QLineEdit()
         self.comment.setPlaceholderText(tr("action_editor.comment_placeholder"))
 
+        # op2-ki-Befehl: eigenes Unterformular (Phase, Angriff, Verteidigung ...)
+        # op2-ki command: own sub-form
+        from .action_op2ki import Op2kiAktionForm
+        self.op2ki_editor = Op2kiAktionForm(ctx)
         self.form = QFormLayout()
         # Label ueber dem Widget: macht die Formularspalte deutlich schmaler.
         # Label above the widget: makes the form column much narrower.
@@ -206,6 +211,7 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
             "flow_dir": self.flow_dir, "flow_freeze": self.flow_freeze,
             "stats_unit": self.stats_unit, "stats_editor": self.stats_editor,
             "cond_editor": self.cond_editor,
+            "op2ki_editor": self.op2ki_editor,
         }
         labels = {
             "text": tr("action_editor.lbl_text"), "unit": tr("action_editor.lbl_unit"),
@@ -272,6 +278,7 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
             "stats_unit": tr("action_editor.lbl_unit"),
             "stats_editor": tr("action_editor.lbl_stats"),
             "cond_editor": tr("action_editor.lbl_condition"),
+            "op2ki_editor": "",
         }
         for k, w in self._rows.items():
             self.form.addRow(labels[k], w)
@@ -804,10 +811,13 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
         except TypeError:
             self.cond_editor.load(Condition(kind=spec.get("kind", "time")))
         self.cond_editor.set_objective_visible(a.kind != "addDefeat")
+        if a.kind == "op2ki":
+            self.op2ki_editor.laden(a)
         self._loading = False
         self._update()
 
     def _connect_save_signals(self):
+        self.op2ki_editor.changed.connect(self._save)
         self.text.textChanged.connect(self._save)
         self.comment.textChanged.connect(self._save)
         self.caption.textChanged.connect(self._save)
@@ -954,6 +964,12 @@ class ActionInlineForm(_FelderMixin, _ListenMixin, QWidget):
         elif k in ("addVictory", "addDefeat"):
             self.cond_editor.set_objective_visible(k == "addVictory")
             a.condition_spec = asdict(self.cond_editor.make())
+        elif k == "op2ki":
+            if self.op2ki_editor._aktion is not a:
+                self.op2ki_editor.laden(a)
+            d = self.op2ki_editor._d
+            d.clear(); d.update(self.op2ki_editor.daten())
+            a.op2ki = d
         if k in ("unitCmd", "fightGroupCmd"):
             a.patrol_points = self._patrol_points()
         a.var_name = self.var_name.currentData() or ""

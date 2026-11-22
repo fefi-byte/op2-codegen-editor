@@ -262,6 +262,24 @@ def _op2ki_spieler(mission) -> list:
             if getattr(p, "op2ki", False) and not p.is_human]
 
 
+def _op2ki_benutzt(mission) -> bool:
+    """Braucht die Mission op2ki.hpp? (op2-ki-Spieler, op2-ki-Befehle oder -Bedingungen in den Triggern)"""
+    if _op2ki_spieler(mission):
+        return True
+    from mission_model import SUB_ACTION_LISTS
+
+    def suche(aktionen) -> bool:
+        for a in aktionen or []:
+            if getattr(a, "kind", "") == "op2ki":
+                return True
+            if any(getattr(c, "kind", "") == "op2kiStatus" for c in (getattr(a, "conditions", None) or [])):
+                return True
+            if any(suche(getattr(a, k, None)) for k in SUB_ACTION_LISTS):
+                return True
+        return False
+    return any(suche(getattr(t, "actions", None)) for t in (mission.triggers or []))
+
+
 def _op2ki_parametertext(p) -> str:
     """Stellschrauben-Text der op2-ki fuer einen Spieler ("name=wert" je Zeile).
 
@@ -291,6 +309,7 @@ def _emit_op2ki_start(mission) -> list[str]:
     z = ["",
          "    // --- op2-ki (eigenes Projekt; op2ki.dll liegt neben der Mission im OPU-Ordner) ---",
          "    // --- op2-ki (separate project; op2ki.dll sits next to the mission in the OPU folder) ---",
+         '    op2ki::speicher(&g_save.op2ki);',
          '    if (op2ki::laden()) AddGameMessage("KI: op2-ki geladen");',
          '    else AddGameMessage("KI: op2ki.dll fehlt - die KI-Spieler bleiben ohne Steuerung (siehe OPU\\\\logs)");',
          "    {",
@@ -332,7 +351,7 @@ def generate_levelmain(mission: Mission) -> str:
     add("#include <HFL/Source/HFL.h>")
     add('#include "op2_log.hpp"')
     add('#include "op2_crash.hpp"')
-    if _op2ki_spieler(mission):
+    if _op2ki_benutzt(mission):
         add('#include "op2ki.hpp"')
     add("")
 
@@ -474,6 +493,10 @@ def generate_levelmain(mission: Mission) -> str:
         if h in ctx["trigger_handles"]:
             add(f"    Trigger {h}_self;")
             add(f"    bool {h}_an;")
+    # op2-ki: was die KI nach dem Laden wieder braucht (Start, Stellschrauben, Phase, Verteidigung)
+    # op2-ki: what the AI needs again after loading a saved game
+    if _op2ki_benutzt(mission):
+        add("    op2ki::Speicher op2ki;")
     add("};")
     add("static MissionSave g_save;")
     add("")
@@ -693,6 +716,10 @@ def generate_levelmain(mission: Mission) -> str:
     add("    // UnitEx queries like GetCurAction only return sentinel values.")
     add("    HFLInit();")
     add("    diff = kDiff[Player[0].Difficulty()];")
+    if _op2ki_benutzt(mission):
+        # nach dem Laden eines Spielstands: die KI aus der Spiellage neu starten (op2ki::fortsetzen)
+        add("    op2ki::speicher(&g_save.op2ki);")
+        add("    op2ki::fortsetzen();")
     for idx, _p in _op2ki_spieler(mission):
         add(f"    op2ki::schritt({idx});")
     add("}")

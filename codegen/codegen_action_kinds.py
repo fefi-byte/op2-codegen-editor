@@ -835,7 +835,15 @@ def _emit_addVictory_addDefeat(action: TriggerAction, indent: str, ctx: dict, de
     return _unbekannt(indent, k)
 
 
+def _emit_op2ki(action: TriggerAction, indent: str, ctx: dict, depth: int, k: str) -> list[str]:
+    """Aktion op2ki: Befehl an die op2-ki (eigenes Projekt, op2ki.dll)."""
+    from codegen_op2ki import befehl_text
+    d = getattr(action, "op2ki", None) or {}
+    return [f"{indent}op2ki::befehl({int(d.get('spieler', 1) or 0)}, {_cpp_string(befehl_text(d))});"]
+
+
 _EMITTER = {
+    'op2ki': _emit_op2ki,
     'noop': _emit_noop,
     'message': _emit_message,
     'customCode': _emit_customCode,

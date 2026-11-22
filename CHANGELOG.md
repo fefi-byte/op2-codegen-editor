@@ -7,6 +7,30 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0-alpha] - 2026-11-22
+
+### Added
+- **op2-ki commands** (action group *op2-ki*, action *op2-ki command*):
+  script phases (build list with optional spot on the map, research,
+  vehicles; the AI builds nothing on its own while a script runs, *basic
+  supply* keeps the colony alive), attack orders (target, kind: base / target
+  / raid / hold, two routes at once, EMP, which units, retreat, wait limit),
+  defence orders (guard, area, tower weapon, patrol), end script, free
+  `name=value` command.
+- Condition **op2-ki reports** (phase done, attack state, counts) for
+  if/then blocks and extra trigger conditions.
+- op2-ki start and commands are kept in the mission save; after loading a game
+  the AI restarts and gets its commands again.
+
+### Fixed
+- The player option **Set start resources** had no effect: it now emits
+  `InitPlayerResources` (workers, scientists, kids, food and ore by
+  difficulty, OP2Helper CES1 set); explicit values still override it. Without
+  it an op2-ki player started with no colonists and no ore.
+
+### Changed
+- op2-ki submodule updated to v1.1.0 (commands, status, save/load).
+
 ## [0.7.2-alpha] - 2026-11-22
 
 ### Changed

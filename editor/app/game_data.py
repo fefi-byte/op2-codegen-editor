@@ -382,7 +382,11 @@ ACTION_KINDS = {
     "Eigene Aktion (Designer)":          "custom",
     "Siegbedingung hinzufügen":          "addVictory",
     "Niederlagebedingung hinzufügen":    "addDefeat",
+    "op2-ki-Befehl":                     "op2ki",
 }
+
+# Meldungen der op2-ki (op2ki::status): Code -> i18n-Schluessel unter [op2ki_status]
+OP2KI_STATUS_CODES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # Gruppierung des "+ Aktion"-Menues (Untermenue -> Aktions-Kinds).
 # "noop" und "defendArea" werden bewusst NICHT mehr angeboten (Platzhalter
@@ -401,6 +405,7 @@ ACTION_MENU_GROUPS = {
     "macros":   ["startMining", "sendAttackWave", "repairBuildings"],
     "effects":  ["createDisaster", "empMissile", "lavaFlowAni",
                  "setMorale", "setMusic", "modUnitStats"],
+    "op2ki":    ["op2ki"],
 }
 
 # setMorale: Modus -> ForceMoraleX/FreeMoraleLevel
@@ -454,6 +459,8 @@ ACTION_CONDITION_KINDS = {
     "Gebäude-Anzahl":                ("buildingCount",      ["player", "building", "compare", "value"]),
     "Technologie erforscht":         ("hasTech",            ["player", "tech_id"]),
     "Variable prüfen":               ("varCheck",           ["var_name", "compare", "value"]),
+    # op2-ki (eigenes Projekt): Rueckmeldung der KI, z.B. "Phase fertig", "Angriff gewonnen"
+    "op2-ki meldet":                 ("op2kiStatus",        ["player", "op2ki_code", "compare", "value"]),
     # Bedingungen auf die Schleifen-Einheit `unit` (nur in forEach-Schleifen)
     # Conditions on the forEach loop unit `unit`
     "Schleifen-Einheit: Typ ist":        ("loopUnitType",   ["unit", "loop_level"]),

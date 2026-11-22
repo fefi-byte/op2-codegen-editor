@@ -45,6 +45,11 @@ def _emit_player_setup(idx: int, p: PlayerSpec) -> list[str]:
     if p.tech_level is not None and p.tech_level != 0:
         lines.append(f"    Player[{idx}].SetTechLevel({int(p.tech_level)});")
 
+    # Startressourcen nach Schwierigkeit (OP2Helper, CES1-Satz); einzelne Werte darunter gehen vor.
+    # Start resources by difficulty (OP2Helper, CES1 set); explicit values below override.
+    if getattr(p, "init_resources", False):
+        lines.append(f"    InitPlayerResources({idx});")
+
     # population
     if (p.workers is not None) or (p.scientists is not None) or (p.kids is not None):
         lines.append(f"    Player[{idx}].SetWorkers({0 if p.workers is None else int(p.workers)});")

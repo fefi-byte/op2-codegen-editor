@@ -43,6 +43,25 @@ liegt `op2ki.dll` neben der Missions-DLL. Weitergeben musst du beide DLLs; ohne 
 KI-Spieler tut dann aber nichts (Meldung im Spiel). Die KI schreibt jede Entscheidung mit Grund nach
 `OPU\logs\<Mission>-KI.jsonl`.
 
+## Befehle aus Triggern (Drehbuch, Angriff, Verteidigung)
+
+Die Aktion **op2-ki-Befehl** (Gruppe *op2-ki*) sagt der KI im laufenden Spiel, was sie tun soll:
+
+| Befehl | Wirkung |
+|---|---|
+| *Phase* | Drehbuch: Bauliste (Gebäude, Anzahl, optional Ort auf der Karte mit Umkreis), Forschungen, Fahrzeuge. Ist ein Drehbuch aktiv, baut die KI **nichts selbstständig**. *Grundversorgung automatisch* (Standard an) lässt sie trotzdem Notfälle, Wohnraum, Kindergarten, Uni, Krankenhaus und die Kolonie-Forschung erledigen, damit die Bevölkerung lebt. *Der Reihe nach*: erst wenn ein Eintrag steht, kommt der nächste. |
+| *Angriff* | Ziel (Gegnerbasis, Basis eines Spielers, Punkt auf der Karte, schwächstes Ziel), Art (Basis angreifen, Ziel zerstören und heim, Überfall, Ort besetzen und halten), auf zwei Wegen gleichzeitig, EMP-Rakete ja/nein, Einheiten (KI wählt, die besten N, genaue Liste, alles was da ist), Rückzug bei Verlust, Wartefrist |
+| *Verteidigung* | Wache (Anzahl oder genaue Liste), Bereich auf der Karte, Waffe neuer Türme, Patrouille |
+| *Drehbuch beenden* | die KI entscheidet wieder selbst |
+| *Freier Befehl* | jede Stellschraube `name=wert`, z. B. `rolle=1`, `aussenposten=10,20,4` |
+
+Die Bedingung **op2-ki meldet** (in *Wenn/Dann* und als Zusatzbedingung) fragt den Stand ab: Phase N fertig, laufende
+Phase, Angriff (unterwegs, gewonnen, abgebrochen), Zahl der Angriffe, letzter Angriff auf die Basis, Satelliten,
+Gebäude, Kampffahrzeuge, Kampfwert. Damit baut man Phasen: Trigger „Phase 1 fertig“ → Aktion „Phase 2“ usw.
+
+Befehle überleben Speichern/Laden: der Editor legt sie in den Spielstand der Mission, nach dem Laden startet die KI neu
+und bekommt alle Befehle noch einmal.
+
 ## English
 
 [op2-ki](https://github.com/fefi-byte/op2-ki) is a separate Outpost 2 AI project, included as the git submodule
@@ -52,3 +71,9 @@ Tick *Controlled by op2-ki* for an AI player in the players dialog (role, base p
 *Test in OP2*) `op2ki.dll` is copied next to the mission DLL. Ship both DLLs. To build the DLL yourself install Rust,
 add the `i686-pc-windows-msvc` target and set `[build] op2ki_selbst_bauen = true`. `[paths] op2ki_path` overrides the
 submodule with your own checkout.
+
+The action **op2-ki command** gives orders during the game: script *phases* (build list with optional map spots,
+research, vehicles; while a script is active the AI builds nothing on its own, *basic supply* keeps the colony alive),
+*attacks* (target, kind, two routes, EMP, which units, retreat, wait limit) and *defence* (guard size or units, area,
+tower weapon, patrol). The condition **op2-ki reports** reads back phase/attack state and counts. Orders survive
+save/load.

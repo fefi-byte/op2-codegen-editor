@@ -316,6 +316,7 @@ class ActionCondition:
     resource: str = "resCommonOre"
     tech_id: int = 0
     var_name: str = ""        # fuer varCheck: Variable die geprueft wird
+    op2ki_code: int = 1       # fuer op2kiStatus: Meldung der op2-ki (op2ki::status, 1..10)
     command_type: str = "Move"  # fuer loopUnitCommand: abi::CommandType-Name (z.B. "Move", "Idle")
     # Bei verschachtelten forEach-Schleifen: welche Ebene die loopUnit*-Bedingung
     # meint. "current" = die Schleife, in der diese Bedingung selbst haengt;
@@ -351,6 +352,9 @@ class TriggerAction:
     # custom: instance of a designer action (name + parameter values)
     custom_name: str = ""
     custom_args: dict = field(default_factory=dict)
+    # op2ki: Befehl an die op2-ki (Drehbuch-Phase, Angriff, Verteidigung, frei); Daten siehe codegen_op2ki.py
+    # op2ki: command to op2-ki (script phase, attack, defence, free text); data see codegen_op2ki.py
+    op2ki: dict = field(default_factory=dict)
     unit_type: str = "mapScout"
     weapon_type: str = "mapNone"
     target_count: int | str = 1   # int oder Ausdruck (z.B. "ceil(5 * diff / 10)")

@@ -70,6 +70,10 @@ def action_condition_summary(c) -> str:
     if c.kind == "varCheck":
         var = getattr(c, 'var_name', '') or '?'
         return f"{neg}{var} {cmp} {c.value}"
+    if c.kind == "op2kiStatus":
+        code = int(getattr(c, "op2ki_code", 1) or 1)
+        was = tr(f"op2ki_status.{code}").split(" (")[0]
+        return f"{neg}op2-ki P{c.player}: {was} {cmp} {c.value}"
     if c.kind == "loopUnitType":
         return f"{neg}unit.type == {(c.building_type or '?').replace('map', '')}"
     if c.kind == "loopUnitDamage":
@@ -198,6 +202,9 @@ def _action_summary_core(a) -> str:
         return f"C++: {first[:44]}{'…' if len(first) > 44 else ''}"
     if a.kind == "custom":
         return f"{getattr(a, 'custom_name', '') or '?'}(…)"
+    if a.kind == "op2ki":
+        from codegen_op2ki import kurz
+        return kurz(getattr(a, "op2ki", None) or {})
     if a.kind == "setTargCount":
         source = f" via {a.source_group_name} P{a.reinforce_priority}" if a.source_group_name else ""
         entries = list(getattr(a, "targ_counts", None) or [])
@@ -408,6 +415,9 @@ def action_params_summary(a) -> str:
         first = next((l.strip() for l in (getattr(a, "code", "") or "").splitlines()
                       if l.strip()), "")
         return f"C++  {first[:48]}{'…' if len(first) > 48 else ''}"
+    if a.kind == "op2ki":
+        from codegen_op2ki import kurz
+        return kurz(getattr(a, "op2ki", None) or {})
     if a.kind == "custom":
         cn = getattr(a, "custom_name", "") or "?"
         args = getattr(a, "custom_args", None) or {}
