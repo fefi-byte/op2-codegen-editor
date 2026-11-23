@@ -8,6 +8,12 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    # Herkunftsnachweis (actions/attest-build-provenance) und Release anlegen.
+    # Build provenance attestation and creating the release.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - name: Checkout
@@ -57,6 +63,29 @@ jobs:
                            -DestinationPath "dist\OP2MissionEditor_$tag.zip"
         shell: pwsh
 
+      # Pruefsummen und Herkunftsnachweis: wer will, prueft, dass ZIP und op2maplib.dll von
+      # diesem Workflow aus diesem Commit gebaut wurden:
+      #   gh attestation verify <datei> --repo fefi-byte/op2-codegen-editor
+      # Checksums and build provenance: anyone can verify that the ZIP and op2maplib.dll were
+      # built by this workflow from this commit.
+      - name: Pruefsummen
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          Copy-Item build-op2maplib\bin\Release\op2maplib.dll dist\op2maplib.dll
+          $z = "dist\OP2MissionEditor_$tag.zip"
+          $zeilen = foreach ($f in @($z, "dist\op2maplib.dll", "op2-ki\fertig\op2ki.dll")) {
+            "$((Get-FileHash $f -Algorithm SHA256).Hash.ToLower())  $(Split-Path $f -Leaf)" }
+          $zeilen | Set-Content -Encoding ascii dist\SHA256SUMS.txt
+          $zeilen | Tee-Object -Append -FilePath $env:GITHUB_STEP_SUMMARY
+
+      - name: Herkunftsnachweis
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/OP2MissionEditor_${{ github.ref_name }}.zip
+            dist/op2maplib.dll
+
       - name: GitHub Release erstellen & ZIP hochladen
         uses: softprops/action-gh-release@v2
         with:
@@ -78,8 +107,16 @@ jobs:
             - Enthalten ist das neueste op2-ki-Release samt fertiger op2ki.dll; wer sie
               selbst bauen will: Rust und `[build] op2ki_selbst_bauen = true` in config.ini.
 
+            Pruefen, dass ZIP und op2maplib.dll aus diesem Repo gebaut wurden (GitHub CLI):
+            `gh attestation verify OP2MissionEditor_${{ github.ref_name }}.zip --repo fefi-byte/op2-codegen-editor`.
+            Pruefsummen in `SHA256SUMS.txt`. op2maplib.dll baut dieser Workflow aus den Quellen von
+            OP2MappingLib; op2ki.dll kommt fertig aus dem op2-ki-Release.
+
             Alle Neuerungen stehen im [CHANGELOG](https://github.com/fefi-byte/op2-codegen-editor/blob/main/CHANGELOG.md).
-          files: dist/OP2MissionEditor_${{ github.ref_name }}.zip
+          files: |
+            dist/OP2MissionEditor_${{ github.ref_name }}.zip
+            dist/op2maplib.dll
+            dist/SHA256SUMS.txt
           draft: false
           prerelease: false
 

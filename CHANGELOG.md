@@ -7,6 +7,14 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0-alpha] - 2026-11-23
+
+### Added
+- **Verifiable release**: the release workflow signs a GitHub build-provenance
+  attestation for the ZIP and the `op2maplib.dll` it builds from source, and
+  attaches `SHA256SUMS.txt` (ZIP, op2maplib.dll, op2ki.dll). Check with
+  `gh attestation verify <file> --repo fefi-byte/op2-codegen-editor`.
+
 ### Changed
 - The ground brush, the cliff tool (set and live preview) and *clean up
   transitions* now run on [OP2MappingLib](https://github.com/OutpostUniverse/OP2MappingLib)
