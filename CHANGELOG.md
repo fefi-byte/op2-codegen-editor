@@ -7,6 +7,10 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- OP2MappingLib 0.3.4: the DLL's file description now names the library; no
+  library code changes (by leviathan400).
+
 ## [0.9.0-alpha] - 2026-11-23
 
 ### Added
@@ -18,7 +22,7 @@ and the project follows [Semantic Versioning](https://semver.org/).
 ### Changed
 - The ground brush, the cliff tool (set and live preview) and *clean up
   transitions* now run on [OP2MappingLib](https://github.com/OutpostUniverse/OP2MappingLib)
-  0.3.4 (MIT), the C++ port of these tools, added as the submodule
+  0.3.3 (MIT), the C++ port of these tools, added as the submodule
   `OP2MappingLib/`. Measured on a 128×128 map: a sand brush stroke 7 ms
   instead of 163 ms, clean-up 8 ms instead of 470 ms.
 - The release build compiles `op2maplib.dll` from the submodule's sources with
