@@ -24,7 +24,6 @@ cuts). If the library is missing or switched off, `verfuegbar()` is False and
 from __future__ import annotations
 
 import os
-import struct
 import sys
 from pathlib import Path
 
@@ -57,9 +56,11 @@ def _laden():
             if d is None:
                 grund = "OP2MappingLib nicht gefunden (Submodul fehlt?)"
             else:
-                arch = "x64" if struct.calcsize("P") == 8 else "x86"
-                dll = d / "bindings" / "dotnet" / "native" / arch / "op2maplib.dll"
-                if sys.platform == "win32" and dll.is_file() and not os.environ.get("OP2MAPLIB_PATH"):
+                # Welche DLL (EXE: aus den Quellen gebaut; selbst bauen; sonst
+                # die des Submoduls) entscheidet appconfig.op2maplib_dll.
+                # Which DLL is used is decided by appconfig.op2maplib_dll.
+                dll = appconfig.op2maplib_dll()
+                if dll is not None and not os.environ.get("OP2MAPLIB_PATH"):
                     os.environ["OP2MAPLIB_PATH"] = str(dll)
                 binding = str(d / "bindings" / "python")
                 if binding not in sys.path:

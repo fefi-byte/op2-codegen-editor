@@ -24,6 +24,21 @@ jobs:
           git -C op2-ki checkout --quiet "$t"
           echo "op2-ki $t"
 
+      # op2maplib.dll aus den Quellen des Submoduls bauen (nicht die fertige
+      # DLL des Submoduls mitliefern) und testen; op2editor.spec buendelt sie.
+      # Build op2maplib.dll from the submodule's sources (instead of shipping
+      # the submodule's prebuilt DLL) and test it; op2editor.spec bundles it.
+      - name: op2maplib aus den Quellen bauen
+        shell: pwsh
+        run: |
+          cmake -S OP2MappingLib -B build-op2maplib -A x64
+          cmake --build build-op2maplib --config Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          build-op2maplib\bin\Release\op2maplib_tests.exe OP2MappingLib\profiles\op2.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $h = (Get-FileHash build-op2maplib\bin\Release\op2maplib.dll -Algorithm SHA256).Hash.ToLower()
+          "op2maplib.dll SHA-256: $h" | Tee-Object -Append -FilePath $env:GITHUB_STEP_SUMMARY
+
       - name: Python 3.11 einrichten
         uses: actions/setup-python@v5
         with:

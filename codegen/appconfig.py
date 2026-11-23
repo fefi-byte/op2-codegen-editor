@@ -147,6 +147,118 @@ def op2maplib_dir() -> Path | None:
     return d if (d / "profiles" / "op2.json").is_file() else None
 
 
+def op2maplib_selbst_bauen() -> bool:
+    """[build] op2maplib_selbst_bauen: op2maplib.dll aus den Quellen des
+    Submoduls bauen (CMake + MSVC), statt die fertige DLL des Submoduls zu nehmen.
+
+    [build] op2maplib_selbst_bauen: build op2maplib.dll from the submodule's
+    sources (CMake + MSVC) instead of using the submodule's prebuilt DLL.
+    """
+    val = _load().get("build", "op2maplib_selbst_bauen", fallback="false").strip().lower()
+    return val in ("1", "true", "ja", "yes")
+
+
+def op2maplib_bauordner() -> Path:
+    """Wohin `op2maplib_dll_bauen` baut (git-ignoriert). Build folder, git-ignored."""
+    return base_dir() / "build-op2maplib"
+
+
+def _cmake_suchen() -> str | None:
+    """cmake: PATH, sonst die CMake jeder Visual-Studio-Installation (auch Build
+    Tools, Insiders, Program Files (x86)), sonst eine eigene CMake-Installation.
+
+    cmake on PATH, else the CMake of any Visual Studio install (including Build
+    Tools, Insiders, Program Files (x86)), else a standalone CMake install.
+    """
+    import glob
+    import shutil
+    p = shutil.which("cmake")
+    if p:
+        return p
+    for muster in (r"C:\Program Files*\Microsoft Visual Studio\*\*\Common7\IDE\CommonExtensions"
+                   r"\Microsoft\CMake\CMake\bin\cmake.exe",
+                   r"C:\Program Files*\CMake\bin\cmake.exe"):
+        treffer = sorted(glob.glob(muster), reverse=True)   # neuere VS-Versionen zuerst
+        if treffer:
+            return treffer[0]
+    return None
+
+
+def op2maplib_dll_bauen() -> Path:
+    """op2maplib.dll mit CMake aus dem Submodul bauen -> Pfad der DLL.
+
+    Gebaut wird nur, wenn die DLL fehlt oder eine Quelldatei neuer ist.
+    Architektur wie das laufende Python (x64 / Win32). Wirft RuntimeError mit
+    einer lesbaren Meldung, wenn CMake fehlt oder der Build scheitert.
+
+    Build op2maplib.dll from the submodule with CMake. Rebuilds only when the DLL
+    is missing or a source file is newer. Same architecture as the running
+    Python. Raises RuntimeError with a readable message if CMake is missing or
+    the build fails.
+    """
+    import struct
+    import subprocess
+    quelle = op2maplib_dir()
+    if quelle is None or not (quelle / "CMakeLists.txt").is_file():
+        raise RuntimeError("OP2MappingLib-Quellen fehlen (Submodul) / sources missing (submodule)")
+    ziel = op2maplib_bauordner()
+    dll = ziel / "bin" / "Release" / "op2maplib.dll"
+    if dll.is_file():
+        stand = dll.stat().st_mtime
+        quellen = [quelle / "CMakeLists.txt", *(quelle / "src").rglob("*"), *(quelle / "include").rglob("*")]
+        if all(q.stat().st_mtime <= stand for q in quellen if q.is_file()):
+            return dll
+    cmake = _cmake_suchen()
+    if cmake is None:
+        raise RuntimeError("cmake nicht gefunden / not found (Visual Studio mit C++ oder CMake installieren)")
+    import shutil
+    arch = "x64" if struct.calcsize("P") == 8 else "Win32"
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    konfig = [cmake, "-S", str(quelle), "-B", str(ziel), "-A", arch, "-DOP2MAPLIB_BUILD_TESTS=OFF"]
+
+    def lauf(cmd):
+        return subprocess.run(cmd, capture_output=True, text=True, creationflags=flags)
+
+    r = lauf(konfig)
+    if r.returncode != 0 and (ziel / "CMakeCache.txt").is_file():
+        # Alter Cache, z.B. von einer anderen Visual-Studio-Version: einmal
+        # frisch konfigurieren. Stale cache (e.g. another VS version): retry clean.
+        shutil.rmtree(ziel, ignore_errors=True)
+        r = lauf(konfig)
+    if r.returncode == 0:
+        r = lauf([cmake, "--build", str(ziel), "--config", "Release"])
+    if r.returncode != 0:
+        ende = "\n".join((r.stdout + r.stderr).strip().splitlines()[-20:])
+        raise RuntimeError(f"op2maplib-Build gescheitert / build failed:\n{ende}")
+    if not dll.is_file():
+        raise RuntimeError(f"op2maplib.dll nach dem Build nicht gefunden / not found: {dll}")
+    return dll
+
+
+def op2maplib_dll() -> Path | None:
+    """Die op2maplib.dll, die der Editor laedt, oder None.
+
+    - EXE: die beim Release aus den Quellen gebaute DLL (_internal/OP2MappingLib/bin).
+    - [build] op2maplib_selbst_bauen = true: aus den Quellen gebaut (`op2maplib_dll_bauen`).
+    - sonst: die fertige DLL des Submoduls (bindings/dotnet/native/<arch>).
+
+    The DLL the editor loads: in the EXE the one built from source for the
+    release; with op2maplib_selbst_bauen built from source here; otherwise the
+    submodule's prebuilt DLL. None if there is none.
+    """
+    import struct
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        dll = Path(sys._MEIPASS) / "OP2MappingLib" / "bin" / "op2maplib.dll"
+        return dll if dll.is_file() else None
+    if op2maplib_selbst_bauen():
+        return op2maplib_dll_bauen()
+    d = op2maplib_dir()
+    if d is None:
+        return None
+    dll = d / "bindings" / "dotnet" / "native" / ("x64" if struct.calcsize("P") == 8 else "x86") / "op2maplib.dll"
+    return dll if dll.is_file() else None
+
+
 def op2maplib_aktiv() -> bool:
     """[terrain] op2maplib: Gelaendepinsel, Klippen und Aufraeumen ueber
     OP2MappingLib rechnen (Vorgabe) oder mit dem eingebauten Python-Weg.

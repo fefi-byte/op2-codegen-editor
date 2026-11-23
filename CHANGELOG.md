@@ -10,10 +10,13 @@ and the project follows [Semantic Versioning](https://semver.org/).
 ### Changed
 - The ground brush, the cliff tool (set and live preview) and *clean up
   transitions* now run on [OP2MappingLib](https://github.com/OutpostUniverse/OP2MappingLib)
-  (0.3.0 plus a Python-binding shutdown fix), the C++ port of these tools,
-  added as the submodule `OP2MappingLib/`
-  with its prebuilt DLL and Outpost 2 profile. Measured on a 128×128 map: a
-  sand brush stroke 7 ms instead of 163 ms, clean-up 8 ms instead of 470 ms.
+  0.3.3 (MIT), the C++ port of these tools, added as the submodule
+  `OP2MappingLib/`. Measured on a 128×128 map: a sand brush stroke 7 ms
+  instead of 163 ms, clean-up 8 ms instead of 470 ms.
+- The release build compiles `op2maplib.dll` from the submodule's sources with
+  CMake (Windows, x64) and bundles that build, not the submodule's prebuilt
+  DLL. Locally the prebuilt DLL is used unless `[build] op2maplib_selbst_bauen
+  = true`, which builds it from source (rebuilt when a source file changes).
 - The built-in Python path stays as the fallback: when the library is missing,
   for grounds its profile cannot paint (lava, snow), and with
   `[terrain] op2maplib = false` in `config.ini`. `[paths] op2maplib_path`

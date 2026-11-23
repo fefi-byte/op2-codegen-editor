@@ -14,6 +14,19 @@ ROOT = Path(SPECPATH)          # repo root (op2-cpp-poc/)
 EDITOR = ROOT / "editor"
 APP    = EDITOR / "app"
 
+# op2maplib.dll aus den Quellen des Submoduls gebaut, nicht die fertige DLL
+# des Submoduls. Der Release-Workflow baut sie vor diesem Schritt; lokal:
+#   cmake -S OP2MappingLib -B build-op2maplib -A x64 -DOP2MAPLIB_BUILD_TESTS=OFF
+#   cmake --build build-op2maplib --config Release
+# op2maplib.dll built from the submodule's sources, not its prebuilt DLL. The
+# release workflow builds it before this step; locally use the two commands above.
+OP2MAPLIB_DLL = ROOT / "build-op2maplib" / "bin" / "Release" / "op2maplib.dll"
+if not OP2MAPLIB_DLL.is_file():
+    raise SystemExit(f"op2maplib.dll fehlt / missing: {OP2MAPLIB_DLL}\n"
+                     "Zuerst aus den Quellen bauen / build it from source first:\n"
+                     "  cmake -S OP2MappingLib -B build-op2maplib -A x64 -DOP2MAPLIB_BUILD_TESTS=OFF\n"
+                     "  cmake --build build-op2maplib --config Release")
+
 # ---------------------------------------------------------------------------
 # Data files bundled next to the EXE
 # ---------------------------------------------------------------------------
@@ -48,16 +61,17 @@ datas = [
     (str(ROOT / "op2-ki" / "dll"), "op2-ki/dll"),
     (str(ROOT / "op2-ki" / "missionen" / "gemeinsam"), "op2-ki/missionen/gemeinsam"),
     (str(ROOT / "op2-ki" / "fertig" / "op2ki.dll"), "op2-ki/fertig"),
-    # OP2MappingLib (Submodul): Python-Binding, fertige DLL und Profil fuer
-    # Gelaendepinsel und Klippen (appconfig.op2maplib_dir() ->
-    # sys._MEIPASS/OP2MappingLib).
-    # OP2MappingLib (submodule): Python binding, prebuilt DLL and profile for
-    # the terrain brush and cliffs.
+    # OP2MappingLib (Submodul): Python-Binding und Profil fuer Gelaendepinsel,
+    # Klippen und Kartengenerator (appconfig.op2maplib_dir() ->
+    # sys._MEIPASS/OP2MappingLib). Die DLL kommt NICHT fertig aus dem Submodul,
+    # sondern aus dem eigenen Build der Quellen (OP2MAPLIB_DLL, siehe unten).
+    # OP2MappingLib (submodule): Python binding and profile. The DLL is NOT the
+    # submodule's prebuilt one but our own build of its sources (see below).
     (str(ROOT / "OP2MappingLib" / "bindings" / "python" / "op2maplib"),
      "OP2MappingLib/bindings/python/op2maplib"),
-    (str(ROOT / "OP2MappingLib" / "bindings" / "dotnet" / "native" / "x64" / "op2maplib.dll"),
-     "OP2MappingLib/bindings/dotnet/native/x64"),
+    (str(OP2MAPLIB_DLL), "OP2MappingLib/bin"),
     (str(ROOT / "OP2MappingLib" / "profiles" / "op2.json"), "OP2MappingLib/profiles"),
+    (str(ROOT / "OP2MappingLib" / "LICENSE"), "OP2MappingLib"),
     (str(ROOT / "OP2MappingLib" / "THIRD-PARTY-NOTICES.md"), "OP2MappingLib"),
     # mapview ohne gecachte PNG-Renders (werden zur Laufzeit aus OP2-Pfad geladen)
     *[

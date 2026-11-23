@@ -45,6 +45,8 @@ config.ini
 
 # Build artifacts inside mission folders (cmake creates `build/Release/<mission>.dll`).
 missions/*/build/
+# op2maplib.dll built from the OP2MappingLib sources (op2maplib_selbst_bauen, release)
+build-op2maplib/
 
 # Backup / scratch files
 *.orig
