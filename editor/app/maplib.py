@@ -121,6 +121,69 @@ def mischkarte(op2map, gitter: np.ndarray):
                        gitter.astype(np.int64).ravel().tolist())
 
 
+# Merkmalsarten und Symmetrien des Editors -> OP2MappingLib.
+# The editor's feature kinds and symmetries -> OP2MappingLib.
+_MERKMALE = {"tal": 0, "berg": 1, "plateau": 2, "frei": 3, "enge": 4}
+_MERKMAL_NAME = {v: k for k, v in _MERKMALE.items()}
+_SYMMETRIEN = {"none": 0, "mirror_x": 1, "mirror_y": 2, "rot180": 3, "quad": 4}
+
+
+def generieren(params):
+    """Karte mit dem Generator von OP2MappingLib erzeugen -> mapgen.GeneratedMap.
+
+    Nimmt dieselben `mapgen.MapGenParams` wie der Python-Generator und liefert
+    dasselbe Ergebnis-Objekt, damit "Neue Karte" unveraendert bleibt. Ohne
+    Bibliothek (oder ohne Generator in ihrer Version) None -- dann rechnet der
+    Aufrufer mit `mapgen.generate`.
+
+    Generate a map with OP2MappingLib's generator. Takes the same params as the
+    Python generator and returns the same result object; None if the library
+    (or its generator) is not available, so the caller falls back to Python.
+    """
+    if not verfuegbar():
+        return None
+    om = modul()
+    if not hasattr(om, "MapGenerator"):
+        return None
+    import mapgen
+    gen = om.MapGenerator("plains")
+    werte = {
+        "width": params.width, "height": params.height, "roughness": params.roughness,
+        "symmetry": _SYMMETRIEN.get(params.symmetry, 0), "spawns": params.spawns,
+        "spawn_clearance": params.spawn_clearance, "cliffs": params.cliffs, "ramps": params.ramps,
+        "volcanoes": params.volcanoes, "lava_zone_tiles": params.lava_zone_tiles,
+        "smooth": params.smooth, "vegetation_spacing": params.bewuchs_abstand,
+        "min_biome": params.min_biome, "details": params.details,
+        "landscape": 1 if params.landschaft else 0, "rivers": params.fluesse,
+    }
+    for k, v in werte.items():
+        gen.set(k, v)
+    gen.set("seed", int(params.seed) & 0xFFFFFFFFFFFFFFFF)
+    gen.set_mix({k: float(v) for k, v in params.mix.items() if v > 0} or {"mud": 1.0})
+    for f in params.features:
+        if f.kind in _MERKMALE:
+            gen.add_feature(_MERKMALE[f.kind], f.where or "", f.to or "", float(f.size), bool(f.lava))
+    r = gen.generate(profil())
+    p = profil()
+    h, w = r.height, r.width
+    anteile = {p.ground_id(g): s for g, s in enumerate(r.ground_shares) if s > 0}
+    return mapgen.GeneratedMap(
+        tiles=np.array(r.tiles, dtype=np.int32).reshape(h, w),
+        cells=np.array(r.cell_types, dtype=np.uint8).reshape(h, w),
+        spawns=[tuple(s) for s in r.spawns],
+        passable_share=r.stats["passable"],
+        family_share=anteile,
+        connected=bool(r.stats["connected"]),
+        volcanoes=[tuple(v) for v in r.volcanoes],
+        lava_zones=[[tuple(c) for c in z] for z in r.lava_zones],
+        plateau_share=r.stats["plateau"],
+        detail_share=r.stats["details"],
+        features={_MERKMAL_NAME[k]: n for k, n in enumerate(r.feature_report)},
+        feature_spots=[(_MERKMAL_NAME.get(k, str(k)), x, y, s) for k, x, y, s in r.features],
+        fluss_share=r.stats["rivers"],
+    )
+
+
 def boden_feld(bm, x0: int, y0: int, x1: int, y1: int) -> np.ndarray:
     """Boden der Bibliothek je Zelle im Rechteck (inklusive) -> (h, w), -1 = fest."""
     return np.array([[bm.ground_at(x, y) for x in range(x0, x1 + 1)]

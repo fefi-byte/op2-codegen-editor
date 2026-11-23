@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QSlider, QScrollArea
 from ..common import *
 from ..style import apply_role
 from .feature_list import FeatureList
+from .. import maplib
 
 import mapgen
 
@@ -322,7 +323,9 @@ class NewMapPanel(QWidget):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             params = self.params()
-            self._result = mapgen.generate(params)
+            # Der Generator von OP2MappingLib, wenn vorhanden, sonst der Python-Weg.
+            # OP2MappingLib's generator when available, else the Python one.
+            self._result = maplib.generieren(params) or mapgen.generate(params)
             self._window.apply_generated_map(self._result, params)
             self.stats.setText(self._summary(self._result))
         except Exception as e:

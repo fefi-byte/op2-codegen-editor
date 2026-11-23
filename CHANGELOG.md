@@ -21,6 +21,13 @@ and the project follows [Semantic Versioning](https://semver.org/).
   for grounds its profile cannot paint (lava, snow), and with
   `[terrain] op2maplib = false` in `config.ini`. `[paths] op2maplib_path`
   points to your own checkout.
+- *New map* generates with OP2MappingLib's map generator (0.3.3), a C++ port
+  of the editor's generator with the same settings, templates and features.
+  Measured at 128×128: plains 20 ms instead of 2.3 s, New Terra 0.25 s
+  instead of 3.2 s, a canyon full of cliffs 5 s instead of 8.6 s. The same
+  seed gives a different map than before. With symmetry, the mirrored half
+  now gets its own cliffs (the copied tile grid turned them the wrong way).
+  The Python generator stays as the fallback.
 
 ### Fixed
 - Terrain painting did nothing in the release EXE: the map model files
