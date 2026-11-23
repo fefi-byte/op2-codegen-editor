@@ -7,6 +7,12 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Terrain painting did nothing in the release EXE: the map model files
+  (`tiles_model.npz`, `celltypes.json`, cliff models, ...) were bundled under
+  `_internal/mapview/`, but the frozen `mapview` modules look for them next to
+  their `__file__`, which is `_internal/`. The spec now bundles them there too.
+
 ## [0.8.0-alpha] - 2026-11-22
 
 ### Added

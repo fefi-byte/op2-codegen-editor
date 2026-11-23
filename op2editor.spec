@@ -54,6 +54,19 @@ datas = [
         for f in (ROOT / "mapview").iterdir()
         if f.is_file() and f.suffix != ".png"
     ],
+    # Die mapview-Module landen im PYZ, ihr __file__ zeigt dann auf _internal/
+    # statt _internal/mapview/. Sie suchen ihre Modelle neben __file__
+    # (tiles_model.npz, celltypes.json, cliff_*.npz, ...), also die Daten
+    # zusaetzlich dorthin legen -- sonst kann kein Gelaendepinsel malen.
+    # The mapview modules end up in the PYZ, so their __file__ points to
+    # _internal/ instead of _internal/mapview/. They look for their models
+    # next to __file__, so put the data there too -- otherwise no terrain
+    # brush can paint.
+    *[
+        (str(f), ".")
+        for f in (ROOT / "mapview").iterdir()
+        if f.is_file() and f.suffix in (".npz", ".json", ".pkl")
+    ],
 ]
 
 # Nur die tatsächlich benötigten PySide6-Plugins (keine QML, kein WebEngine)
