@@ -7,6 +7,12 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Build error messages (cmake not found, cmake configure/build failed,
+  missing DLL, op2-ki/Rust problems, ...) were always German. They now come
+  from the language files (`[build_errors]`) and follow the UI language; on
+  the command line `build.py` still prints the German text.
+
 ## [0.8.0-alpha] - 2026-11-22
 
 ### Added
