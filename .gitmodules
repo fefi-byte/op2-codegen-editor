@@ -4,3 +4,6 @@
 [submodule "op2-ki"]
 	path = op2-ki
 	url = https://github.com/fefi-byte/op2-ki.git
+[submodule "OP2MappingLib"]
+	path = OP2MappingLib
+	url = https://github.com/OutpostUniverse/OP2MappingLib.git

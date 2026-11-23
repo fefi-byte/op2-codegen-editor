@@ -17,6 +17,7 @@ Recent changes: [CHANGELOG.md](CHANGELOG.md).
 - **Visual placement** — buildings, vehicles, mining beacons, walls and tubes, drag-drop on a real tile map
 - **Players** — up to 6 players, human or AI, per-player resources, tech level, pre-researched techs
 - **op2-ki opponent (optional)** — an AI player can be handed to [op2-ki](https://github.com/fefi-byte/op2-ki), a separate project: it builds its colony, researches and fights on its own (multiplayer opponent or mission roles). The editor only links it in, see [docs/op2-ki.md](docs/op2-ki.md)
+- **Terrain and cliffs** — the ground brush, the cliff tool and *clean up transitions* run on [OP2MappingLib](https://github.com/OutpostUniverse/OP2MappingLib) (submodule `OP2MappingLib/`, prebuilt DLL, no extra Python packages). Without it, or with `[terrain] op2maplib = false` in `config.ini`, the built-in Python path is used
 - **Groups** — BuildingGroup / ReinforceGroup / FightGroup / MiningGroup, each with its own roster and behaviour
 - **Triggers** — conditions (time, count, resource, findUnit, …) with nested if/then/else action blocks and forEach loops
 - **Actions** — 15+ action kinds including createUnit, sendAttackWave, startMining, group commands, unit commands, disasters
@@ -105,6 +106,7 @@ mapview/            Tile renderer for the map view
 missions/           Example mission projects
 LevelTemplate/      C++ mission project template (MSBuild)
 OP2MissionSDK/      SDK submodule (OutpostUniverse/OP2MissionSDK)
+OP2MappingLib/      Terrain blending and cliff library submodule (OutpostUniverse/OP2MappingLib)
 lang.de.ini         German UI strings
 lang.en.ini         English UI strings
 ```

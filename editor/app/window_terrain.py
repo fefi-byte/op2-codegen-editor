@@ -432,20 +432,10 @@ class _TerrainMixin:
         tile from the family field and replaces those sitting where there is no
         border at all with pure ground.
         """
-        import celltypes as _ct
         ebenen = self._paint_layers()
         if ebenen is None:
             return
-        h, w = self.map.height, self.map.width
-        gitter = np.array([[self.map.tile_mapping_index(x, y) for x in range(w)]
-                           for y in range(h)], dtype=np.int32)
-        vorher = gitter.copy()
-        anzahl = mapgen.nachbearbeite_uebergaenge(
-            gitter, ebenen.familie, ebenen.tm, ebenen.rng)
-        ys, xs = np.nonzero(gitter != vorher)
-        aenderungen = [(int(x), int(y), int(gitter[y, x]),
-                        int(_ct.default_cell_type(int(gitter[y, x]))))
-                       for y, x in zip(ys.tolist(), xs.tolist())]
+        aenderungen = ebenen.uebergaenge_aufraeumen()
         self._terrain_uebernehmen(aenderungen, tr("terrain.btn_aufraeumen"))
         self.statusBar().showMessage(
             tr("terrain.aufgeraeumt", n=len(aenderungen)), 4000)

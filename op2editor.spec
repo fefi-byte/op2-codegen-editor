@@ -48,6 +48,17 @@ datas = [
     (str(ROOT / "op2-ki" / "dll"), "op2-ki/dll"),
     (str(ROOT / "op2-ki" / "missionen" / "gemeinsam"), "op2-ki/missionen/gemeinsam"),
     (str(ROOT / "op2-ki" / "fertig" / "op2ki.dll"), "op2-ki/fertig"),
+    # OP2MappingLib (Submodul): Python-Binding, fertige DLL und Profil fuer
+    # Gelaendepinsel und Klippen (appconfig.op2maplib_dir() ->
+    # sys._MEIPASS/OP2MappingLib).
+    # OP2MappingLib (submodule): Python binding, prebuilt DLL and profile for
+    # the terrain brush and cliffs.
+    (str(ROOT / "OP2MappingLib" / "bindings" / "python" / "op2maplib"),
+     "OP2MappingLib/bindings/python/op2maplib"),
+    (str(ROOT / "OP2MappingLib" / "bindings" / "dotnet" / "native" / "x64" / "op2maplib.dll"),
+     "OP2MappingLib/bindings/dotnet/native/x64"),
+    (str(ROOT / "OP2MappingLib" / "profiles" / "op2.json"), "OP2MappingLib/profiles"),
+    (str(ROOT / "OP2MappingLib" / "THIRD-PARTY-NOTICES.md"), "OP2MappingLib"),
     # mapview ohne gecachte PNG-Renders (werden zur Laufzeit aus OP2-Pfad geladen)
     *[
         (str(f), "mapview")

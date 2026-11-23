@@ -43,6 +43,8 @@ import klippe_algo  # noqa: E402
 from op2map import (CELL_TYPE_BITS, CELL_TYPE_MASK,  # noqa: E402
                     MAPPING_INDEX_MASK)
 
+from . import maplib  # noqa: E402
+
 # Pinselarten. `tief` senkt ab, die naechsten setzen das Biom, der Rest sind
 # Sonderflaechen.
 #
@@ -136,6 +138,14 @@ class PaintLayers:
         # in the map: an overlapped block is partly overwritten and no longer
         # matches, while a remembered point stays findable.
         self.klippen_enden: list[tuple[int, int]] = []
+        # OP2MappingLib: Familie -> Profil-Boden (-1 = kann die Bibliothek
+        # nicht malen, dann rechnet der Python-Weg). None = Bibliothek aus.
+        # OP2MappingLib: family -> profile ground (-1 = the library cannot
+        # paint it, the Python path computes it). None = library off.
+        self._lib_boden = None
+        if maplib.verfuegbar():
+            self._lib_boden = np.array([maplib.boden(f) for f in self.tm.families],
+                                       dtype=np.int16)
         self._aus_karte()
 
     # ------------------------------------------------------------------
@@ -195,6 +205,23 @@ class PaintLayers:
             hat_nachbar = zaehler.max(axis=0) > 0
             fam = np.where(offen & hat_nachbar, beste, fam)
         fam = np.where(fam < 0, vorgabe, fam)
+        # Mit OP2MappingLib deren Boden je Zelle uebernehmen, wo sie einen
+        # kennt. Sonst rechnen Ebene und Bibliothek mit verschiedenen Boeden,
+        # und der naechste Strich malt Zellen neu, die er gar nicht beruehrt.
+        # With OP2MappingLib take its ground per cell where it knows one,
+        # otherwise layer and library disagree and the next stroke repaints
+        # cells it never touched.
+        if self._lib_boden is not None:
+            bm = maplib.mischkarte(self.map, kacheln)
+            lib = maplib.boden_feld(bm, 0, 0, w - 1, h - 1)
+            p = maplib.profil()
+            zu_fam = np.full(p.ground_count + 1, -1, dtype=np.int16)
+            for g in range(p.ground_count):
+                gid = p.ground_id(g)
+                if gid in self.tm.families:
+                    zu_fam[g] = self.tm.families.index(gid)
+            von_lib = zu_fam[lib]          # lib == -1 -> letzter Eintrag, -1
+            fam = np.where(von_lib >= 0, von_lib, fam)
         self.familie = fam.astype(np.int16)
 
     # ------------------------------------------------------------------
@@ -373,6 +400,12 @@ class PaintLayers:
         hmin, hmax = klippe_algo.dicke_aus_hoehe(wandhoehe)
         x0, y0 = punkte[0]
         fi = int(self.familie[max(0, min(h - 1, y0)), max(0, min(w - 1, x0))])
+        saat = zlib.crc32(repr(([tuple(map(int, p)) for p in punkte],
+                                hoch_seite)).encode())
+        if self._lib_boden is not None:
+            r = self._klippe_lib(gitter, punkte, hoch_seite, wandhoehe, saat, fi)
+            if r is not None:
+                return r
         familie = (self.tm.families[fi] if 0 <= fi < len(self.tm.families)
                    else "san")
         # Fels, Schnee, Bewuchs und Lava haben keine eigenen Klippenkacheln.
@@ -386,8 +419,6 @@ class PaintLayers:
                 and klippe_algo.verfuegbar(self.tm, KLIPPEN_ERSATZ)):
             self.letzte_klippe_ersatz = familie
             familie = KLIPPEN_ERSATZ
-        saat = zlib.crc32(repr(([tuple(map(int, p)) for p in punkte],
-                                hoch_seite)).encode())
         maske, zellen = self._klippe_belegen(
             gitter, [tuple(p) for p in punkte], hoch_seite, familie,
             np.random.default_rng(saat), hmin, hmax)
@@ -401,6 +432,110 @@ class PaintLayers:
                                 zt if zt >= 0
                                 else celltypes.default_cell_type(kachel)))
         return aenderungen, maske, zellen
+
+    def _klippe_lib(self, gitter, punkte, hoch_seite, wandhoehe, saat, fi):
+        """Die Klippe mit OP2MappingLib rechnen -> wie `klippe_berechnen`.
+
+        None heisst: die Bibliothek kann es nicht (unbekannte Seite, keine
+        Klippenkacheln im Profil) -- dann rechnet der Python-Weg. Die
+        Bibliothek nimmt die Klippenfamilie selbst vom Boden am ersten Punkt
+        und springt auf Boeden ohne eigene Klippen mit mud ein; den Erdrand
+        darum legt weiter der Editor (`letzte_klippe_ersatz`).
+
+        Compute the cliff with OP2MappingLib. None means the library cannot
+        (unknown side, no cliff tiles), so the Python path runs. The library
+        picks the cliff family from the ground at the first point and falls
+        back to mud; the editor still lays the mud rim around it.
+        """
+        seite = maplib.SEITEN.get(hoch_seite)
+        if seite is None:
+            return None
+        p = maplib.profil()
+        g = int(self._lib_boden[fi]) if 0 <= fi < len(self._lib_boden) else -1
+        eigene = p.cliff_ground(g if g >= 0 else p.find_ground(KLIPPEN_ERSATZ))
+        if eigene < 0:
+            return None
+        self.letzte_klippe_ersatz = (self.tm.families[fi]
+                                     if eigene == 0 and g >= 0 else None)
+        bm = maplib.mischkarte(self.map, gitter)
+        try:
+            changes = bm.draw_cliff([(int(x), int(y)) for x, y in punkte], seite,
+                                    float(wandhoehe), saat)
+        except maplib.modul().Op2MapLibError:
+            changes = []                  # z.B. Punkte ausserhalb der Karte
+        if not changes:
+            return [], None, None
+        maske = np.zeros(gitter.shape, dtype=bool)
+        zellen = np.full(gitter.shape, -1, dtype=np.int16)
+        aenderungen = []
+        for c in changes:
+            maske[c.y, c.x] = True
+            zt = c.cell_type if c.cell_type >= 0 else self._zelltyp(c.new_mapping, c.x, c.y)
+            zellen[c.y, c.x] = zt
+            aenderungen.append((c.x, c.y, c.new_mapping, int(zt)))
+        return aenderungen, maske, zellen
+
+    def _zelltyp(self, kachel: int, x: int, y: int) -> int:
+        """Ueblicher Zelltyp der Kachel, sonst der bisherige der Zelle."""
+        zt = celltypes.default_cell_type(kachel)
+        return int(zt) if zt is not None else int(self.map.cell_type(x, y))
+
+    def _synth_lib(self, x0: int, y0: int, x1: int, y1: int):
+        """Den Bereich mit OP2MappingLib rechnen -> Aenderungen oder None.
+
+        Gemalt werden die Zellen dieses Strichs (`gemalt`) und alle, deren
+        Familie nicht mehr zum Boden der Bibliothek passt (Glaettung, Vulkan,
+        Erdrand). Danach waehlt die Bibliothek die Kacheln im Bereich samt
+        Uebergaengen. Klippen und andere feste Kacheln bleiben, ausser der
+        Strich selbst hat sie uebermalt -- wie im Python-Weg.
+
+        None heisst: ein zu malender Boden fehlt im Profil -> Python-Weg.
+
+        Compute the region with OP2MappingLib. Paints the stroke's cells and all
+        cells whose family no longer matches the library's ground, then lets
+        the library pick the tiles and transitions. Cliffs stay unless the
+        stroke itself painted over them. None: a ground is missing in the
+        profile, so the Python path runs.
+        """
+        gitter = self._kachelgitter()
+        bm = maplib.mischkarte(self.map, gitter)
+        lib = maplib.boden_feld(bm, x0, y0, x1, y1)
+        soll = self._lib_boden[self.familie[y0:y1 + 1, x0:x1 + 1]]
+        malen = self.gemalt[y0:y1 + 1, x0:x1 + 1] | ((lib >= 0) & (lib != soll))
+        if not malen.any():
+            return []
+        if (soll[malen] < 0).any():
+            return None
+        for g in np.unique(soll[malen]):
+            ys, xs = np.nonzero(malen & (soll == g))
+            bm.paint(int(g), [(int(x) + x0, int(y) + y0) for y, x in zip(ys, xs)])
+        saat = int(self.rng.integers(0, 2 ** 63))
+        changes = bm.resolve(saat, region=(x0, y0, x1 - x0 + 1, y1 - y0 + 1))
+        return [(c.x, c.y, c.new_mapping,
+                 c.cell_type if c.cell_type >= 0 else self._zelltyp(c.new_mapping, c.x, c.y))
+                for c in changes]
+
+    def uebergaenge_aufraeumen(self) -> list[tuple[int, int, int, int]]:
+        """Alle Uebergangskacheln der Karte neu bestimmen -> Aenderungen.
+
+        Mit OP2MappingLib deren Aufraeum-Durchgang (`resolve_all`), sonst der
+        Python-Weg aus dem Familienfeld.
+        Recompute every transition tile: OP2MappingLib's clean-up pass, else
+        the Python path from the family field.
+        """
+        gitter = self._kachelgitter()
+        if self._lib_boden is not None:
+            bm = maplib.mischkarte(self.map, gitter)
+            changes = bm.resolve_all(int(self.rng.integers(0, 2 ** 63)))
+            return [(c.x, c.y, c.new_mapping,
+                     c.cell_type if c.cell_type >= 0 else self._zelltyp(c.new_mapping, c.x, c.y))
+                    for c in changes]
+        vorher = gitter.copy()
+        mapgen.nachbearbeite_uebergaenge(gitter, self.familie, self.tm, self.rng)
+        ys, xs = np.nonzero(gitter != vorher)
+        return [(int(x), int(y), int(gitter[y, x]),
+                 int(celltypes.default_cell_type(int(gitter[y, x]))))
+                for y, x in zip(ys.tolist(), xs.tolist())]
 
     def _kachelgitter(self):
         """Die Kachelindizes der Karte als Feld (eine frische Kopie)."""
@@ -825,6 +960,10 @@ class PaintLayers:
                 self.familie[y0:y1 + 1, x0:x1 + 1].astype(np.int16),
                 GLAETT_RUNDEN, radius=1)
             self.familie[y0:y1 + 1, x0:x1 + 1] = geglaettet
+        if self._lib_boden is not None:
+            r = self._synth_lib(x0, y0, x1, y1)
+            if r is not None:
+                return r
         fam = self.familie[y0:y1 + 1, x0:x1 + 1].astype(np.int16)
         H = self.hoehe[y0:y1 + 1, x0:x1 + 1].astype(np.int8)
         alt = np.array([[self.map.tile_mapping_index(x, y)

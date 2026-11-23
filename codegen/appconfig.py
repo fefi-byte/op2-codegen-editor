@@ -126,6 +126,38 @@ def op2ki_dir() -> Path | None:
     return d if (d / "Cargo.toml").is_file() else None
 
 
+def op2maplib_dir() -> Path | None:
+    """Ordner von OP2MappingLib (github.com/OutpostUniverse/OP2MappingLib).
+
+    Vorgabe: das Submodul OP2MappingLib/, im PyInstaller-Build die
+    mitgelieferte Kopie unter _internal/. [paths] op2maplib_path in config.ini
+    geht vor (z.B. ein eigener Checkout). None, wenn es keinen gibt.
+
+    Folder of OP2MappingLib. Default: the OP2MappingLib/ submodule, in a
+    PyInstaller build the bundled copy; [paths] op2maplib_path overrides it.
+    None if there is none.
+    """
+    val = _load().get("paths", "op2maplib_path", fallback="").strip()
+    if val:
+        d = Path(val)
+    elif getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        d = Path(sys._MEIPASS) / "OP2MappingLib"
+    else:
+        d = base_dir() / "OP2MappingLib"
+    return d if (d / "profiles" / "op2.json").is_file() else None
+
+
+def op2maplib_aktiv() -> bool:
+    """[terrain] op2maplib: Gelaendepinsel, Klippen und Aufraeumen ueber
+    OP2MappingLib rechnen (Vorgabe) oder mit dem eingebauten Python-Weg.
+
+    [terrain] op2maplib: compute the terrain brush, cliffs and clean-up with
+    OP2MappingLib (default) or with the built-in Python path.
+    """
+    val = _load().get("terrain", "op2maplib", fallback="true").strip().lower()
+    return val not in ("0", "false", "nein", "no")
+
+
 def op2ki_dateien() -> dict[str, Path] | None:
     """Die Header der op2-ki-Schnittstelle ("op2ki.hpp", "op2ki_bruecke.hpp")
     oder None, wenn das op2-ki-Projekt fehlt.
