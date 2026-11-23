@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import appconfig
+from appconfig import BuildFehler
 from codegen import generate_levelmain
 from demo_mission import build_demo
 
@@ -38,15 +39,18 @@ def write_levelmain(cpp: str) -> None:
 
 def build() -> Path:
     if sys.platform != "win32":
-        raise SystemExit(
+        raise BuildFehler(
+            "legacy_windows_only",
             "[FEHLER] Der Legacy-msbuild-Pfad (build()) laeuft nur unter Windows.\n"
             "Benutze build_folder() fuer den CMake-basierten Build (auch auf Linux)."
         )
     vsdevcmd = appconfig.vsdevcmd()
     if not vsdevcmd.exists():
-        raise SystemExit(
-            f"[FEHLER] VsDevCmd.bat nicht gefunden:\n{vsdevcmd}\n"
-            f"Bitte 'msvs_path' in der config.ini anpassen:\n{appconfig.CONFIG_PATH}")
+        raise BuildFehler(
+            "vsdevcmd_missing",
+            "[FEHLER] VsDevCmd.bat nicht gefunden:\n{path}\n"
+            "Bitte 'msvs_path' in der config.ini anpassen:\n{config}",
+            path=vsdevcmd, config=appconfig.CONFIG_PATH)
     props = "/p:Configuration=Release /p:Platform=Win32"
     if appconfig.platform_toolset():
         props += f" /p:PlatformToolset={appconfig.platform_toolset()}"
@@ -72,11 +76,12 @@ def build() -> Path:
     if result.returncode != 0:
         print(result.stdout[-3000:])
         print(result.stderr[-3000:])
-        raise SystemExit(f"[FEHLER] Build fehlgeschlagen (Code {result.returncode})")
+        raise BuildFehler("msbuild_failed", "[FEHLER] Build fehlgeschlagen (Code {code})",
+                          code=result.returncode)
 
     dll = next((TEMPLATE / "Release").glob("*.dll"), None)
     if not dll:
-        raise SystemExit("[FEHLER] Keine DLL im Release-Ordner gefunden")
+        raise BuildFehler("no_dll_release", "[FEHLER] Keine DLL im Release-Ordner gefunden")
     print(f"[ok] DLL: {dll}  ({dll.stat().st_size} Bytes)")
     return dll
 
@@ -99,7 +104,8 @@ def _find_cmake() -> str:
         for c in candidates:
             if c.exists():
                 return str(c)
-    raise SystemExit(
+    raise BuildFehler(
+        "cmake_missing",
         "[FEHLER] cmake nicht gefunden.\n"
         "Windows: CMake installieren oder Visual Studio mit C++/CMake-Komponente.\n"
         "Linux:   sudo apt install cmake  (Debian/Ubuntu)"
@@ -117,7 +123,8 @@ def build_folder(folder: Path) -> Path:
     folder = Path(folder)
     cmakelists = folder / "CMakeLists.txt"
     if not cmakelists.exists():
-        raise SystemExit(f"[FEHLER] CMakeLists.txt nicht gefunden: {cmakelists}")
+        raise BuildFehler("cmakelists_missing", "[FEHLER] CMakeLists.txt nicht gefunden: {path}",
+                          path=cmakelists)
 
     cmake = _find_cmake()
     build_dir = folder / "build"
@@ -131,7 +138,8 @@ def build_folder(folder: Path) -> Path:
     print(f"[..] cmake configure fuer {folder.name} ...")
 
     if sys.platform != "win32":
-        raise SystemExit(
+        raise BuildFehler(
+            "msvc_required",
             "[FEHLER] OP2MissionSDK-Missionen erfordern MSVC (Windows).\n"
             "Outpost2.lib verwendet MSVC-C++-Name-Mangling; ein MinGW-/Clang-\n"
             "Cross-Compile kann nicht dagegen linken."
@@ -146,20 +154,22 @@ def build_folder(folder: Path) -> Path:
 
     res = subprocess.run(configure_cmd, capture_output=True, text=True, env=env)
     if res.returncode != 0:
-        details = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()[-3000:] or "(keine cmake-Ausgabe)"
-        raise SystemExit(
-            f"[FEHLER] cmake configure fehlgeschlagen (Code {res.returncode})\n\n"
-            f"cmake-Ausgabe (letzte Zeilen):\n{details}"
-        )
+        details = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()[-3000:] or "-"
+        raise BuildFehler(
+            "cmake_configure_failed",
+            "[FEHLER] cmake configure fehlgeschlagen (Code {code})\n\n"
+            "cmake-Ausgabe (letzte Zeilen):\n{details}",
+            code=res.returncode, details=details)
 
     print(f"[..] cmake --build (Release) fuer {folder.name} ...")
     res = subprocess.run(build_cmd, capture_output=True, text=True, env=env)
     if res.returncode != 0:
-        details = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()[-3000:] or "(keine cmake-Ausgabe)"
-        raise SystemExit(
-            f"[FEHLER] cmake build fehlgeschlagen (Code {res.returncode})\n\n"
-            f"cmake-Ausgabe (letzte Zeilen):\n{details}"
-        )
+        details = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()[-3000:] or "-"
+        raise BuildFehler(
+            "cmake_build_failed",
+            "[FEHLER] cmake build fehlgeschlagen (Code {code})\n\n"
+            "cmake-Ausgabe (letzte Zeilen):\n{details}",
+            code=res.returncode, details=details)
 
     dll = None
     for d in dll_dirs:
@@ -168,7 +178,7 @@ def build_folder(folder: Path) -> Path:
             if dll:
                 break
     if not dll:
-        raise SystemExit(f"[FEHLER] Keine DLL gefunden unter: {build_dir}")
+        raise BuildFehler("no_dll", "[FEHLER] Keine DLL gefunden unter: {path}", path=build_dir)
     print(f"[ok] DLL: {dll}  ({dll.stat().st_size} Bytes)")
     return dll
 

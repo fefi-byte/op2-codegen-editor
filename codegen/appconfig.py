@@ -86,6 +86,24 @@ def op2sdk_dir() -> Path:
     return base_dir() / "OP2MissionSDK"
 
 
+class BuildFehler(SystemExit):
+    """Build-Fehler mit Schluessel fuer die Sprachdateien ([build_errors]).
+
+    Der Editor zeigt ihn in der Oberflaechensprache (tr("build_errors.<key>",
+    **werte)). Ohne Editor (Kommandozeile) ist str() der deutsche Text wie
+    bisher -- er muss zu lang.de.ini passen.
+
+    Build error carrying a key for the language files ([build_errors]). The
+    editor shows it in the UI language; on the command line str() is the
+    German text as before, which must match lang.de.ini.
+    """
+
+    def __init__(self, key: str, text_de: str, **werte):
+        super().__init__(text_de.format(**werte))
+        self.key = key
+        self.werte = werte
+
+
 def _load() -> configparser.ConfigParser:
     # interpolation=None: Pfade mit '%' werden nicht als Platzhalter missdeutet.
     # interpolation=None: paths containing '%' are not misread as placeholders.
@@ -298,7 +316,7 @@ def op2ki_dll() -> Path:
     d = op2ki_dir()
     dll = d / "fertig" / "op2ki.dll" if d else None
     if dll is None or not dll.is_file():
-        raise SystemExit(f"op2ki.dll fehlt / missing: {dll}")
+        raise BuildFehler("op2ki_dll_missing", "op2ki.dll fehlt: {path}", path=dll)
     return dll
 
 
@@ -325,13 +343,13 @@ def op2ki_dll_bauen(log=print) -> Path:
     import subprocess as _subprocess
     d = op2ki_dir()
     if d is None:
-        raise SystemExit("op2-ki fehlt (Submodul op2-ki/ oder [paths] op2ki_path). "
-                         "op2-ki is missing (op2-ki/ submodule or [paths] op2ki_path).")
+        raise BuildFehler("op2ki_missing",
+                          "op2-ki fehlt (Submodul op2-ki/ oder [paths] op2ki_path).")
     cargo = _shutil.which("cargo")
     if cargo is None:
-        raise SystemExit("Rust fehlt: https://rustup.rs installieren, dann "
-                         "'rustup target add i686-pc-windows-msvc'. "
-                         "Rust is missing: install it from https://rustup.rs, then add the target above.")
+        raise BuildFehler("rust_missing",
+                          "Rust fehlt: https://rustup.rs installieren, dann "
+                          "'rustup target add i686-pc-windows-msvc'.")
     ziel = op2ki_bauordner()
     ziel.mkdir(parents=True, exist_ok=True)
     cmd = [cargo, "build", "--release", "-p", "op2ki-dll", "--target", "i686-pc-windows-msvc",
@@ -341,13 +359,17 @@ def op2ki_dll_bauen(log=print) -> Path:
                         creationflags=getattr(_subprocess, "CREATE_NO_WINDOW", 0))
     if r.returncode != 0:
         ende = "\n".join((r.stderr or r.stdout or "").strip().splitlines()[-25:])
-        hinweis = ""
         if "i686-pc-windows-msvc" in ende and ("not installed" in ende or "can't find crate" in ende):
-            hinweis = "\n\n'rustup target add i686-pc-windows-msvc' ausfuehren / run it."
-        raise SystemExit(f"op2ki.dll: Rust-Build gescheitert / Rust build failed:\n{ende}{hinweis}")
+            raise BuildFehler("rust_build_failed_target",
+                              "op2ki.dll: Rust-Build gescheitert:\n{details}\n\n"
+                              "'rustup target add i686-pc-windows-msvc' ausfuehren.",
+                              details=ende)
+        raise BuildFehler("rust_build_failed",
+                          "op2ki.dll: Rust-Build gescheitert:\n{details}", details=ende)
     dll = ziel / "i686-pc-windows-msvc" / "release" / "op2ki.dll"
     if not dll.is_file():
-        raise SystemExit(f"op2ki.dll nicht gefunden / not found: {dll}")
+        raise BuildFehler("op2ki_dll_not_found", "op2ki.dll nicht gefunden: {path}",
+                          path=dll)
     return dll
 
 

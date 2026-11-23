@@ -7,9 +7,17 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.1-alpha] - 2026-11-23
+
 ### Changed
 - OP2MappingLib 0.3.4: the DLL's file description now names the library; no
   library code changes (by leviathan400).
+
+### Fixed
+- Build error messages (cmake not found, cmake configure/build failed,
+  missing DLL, op2-ki/Rust problems, ...) were always German. They now come
+  from the language files (`[build_errors]`) and follow the UI language; on
+  the command line `build.py` still prints the German text.
 
 ## [0.9.0-alpha] - 2026-11-23
 

@@ -40,6 +40,10 @@ class BuildWorker(QThread):
             if '#include "op2ki.hpp"' in cpp:
                 self.op2ki_dll = appconfig.op2ki_dll()
             self.ok.emit(str(dll))
+        except appconfig.BuildFehler as e:
+            # In der Oberflaechensprache; str(e) waere immer Deutsch.
+            # In the UI language; str(e) would always be German.
+            self.err.emit(tr(f"build_errors.{e.key}", **e.werte))
         except SystemExit as e:
             self.err.emit(str(e))
         except Exception:
