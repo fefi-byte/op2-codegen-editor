@@ -227,7 +227,7 @@ class _ProjectMixin:
             QMessageBox.critical(self, tr("window.save_failed_title"), str(e))
             return False
         self.mission_folder = folder
-        self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}  [{folder.name}]")
+        self.setWindowTitle(f"OP2 Mission Builder — {self.mission_name}  [{folder.name}]")
         try:
             appconfig.set_last_mission(str(folder))
         except Exception as e:          # nur Komfort: zuletzt geoeffnet
@@ -342,7 +342,7 @@ class _ProjectMixin:
                 except Exception as e:
                     fehler.append((f"Trigger {td.get('name', '?')}", e))
                     continue
-        self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}")
+        self.setWindowTitle(f"OP2 Mission Builder — {self.mission_name}")
         self.mapgen_params = data.get("mapgen") or None
         self.spawn_points = [list(p) for p in data.get("spawn_points", [])]
         self.volcano_points = [list(p) for p in data.get("volcano_points", [])]
@@ -405,7 +405,7 @@ class _ProjectMixin:
         parent = Path(path).parent
         if mission_project.is_mission_folder(parent):
             self.mission_folder = parent
-            self.setWindowTitle(f"OP2 Mission Editor — {self.mission_name}  [{parent.name}]")
+            self.setWindowTitle(f"OP2 Mission Builder — {self.mission_name}  [{parent.name}]")
             try:
                 appconfig.set_last_mission(str(parent))
             except Exception as e:      # nur Komfort: zuletzt geoeffnet

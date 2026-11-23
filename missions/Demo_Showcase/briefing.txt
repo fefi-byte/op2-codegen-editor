@@ -1,6 +1,6 @@
 KOLONIE-LEITSTAND - DEMO-MISSION
 
-Commander, dies ist eine Vorfuehrung des OP2 Mission Editors.
+Commander, dies ist eine Vorfuehrung des OP2 Mission Builders.
 
 Ihr befehligt eine kleine Lynx-Truppe im Nordwesten. Die grosse
 Plymouth-Kolonie im Zentrum laeuft vollautomatisch: sie baut ihre

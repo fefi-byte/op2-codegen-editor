@@ -205,7 +205,15 @@ class EditorWindow(
 
     def _einstellungen(self):
         from PySide6.QtCore import QSettings
-        return QSettings("OP2MissionEditor", "Editor")
+        neu = QSettings("OP2MissionBuilder", "Editor")
+        # Bis v0.9 hiess das Programm OP2MissionEditor: dessen Einstellungen
+        # einmal uebernehmen. Until v0.9 the program was called
+        # OP2MissionEditor: take its settings over once.
+        if not neu.allKeys():
+            alt = QSettings("OP2MissionEditor", "Editor")
+            for k in alt.allKeys():
+                neu.setValue(k, alt.value(k))
+        return neu
 
     @staticmethod
     def _layout_merken() -> bool:

@@ -1,10 +1,10 @@
-# op2editor.spec — PyInstaller build spec for the OP2 Mission Editor
+# op2editor.spec — PyInstaller build spec for the OP2 Mission Builder
 #
 # Build:
 #   pip install pyinstaller
 #   pyinstaller op2editor.spec
 #
-# Output: dist/OP2MissionEditor/OP2MissionEditor.exe  (one-folder build)
+# Output: dist/OP2MissionBuilder/OP2MissionBuilder.exe  (one-folder build)
 
 import sys
 from pathlib import Path
@@ -211,7 +211,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="OP2MissionEditor",
+    name="OP2MissionBuilder",
     icon=str(APP / "resources" / "Structure.ico"),
     debug=False,
     bootloader_ignore_signals=False,
@@ -232,5 +232,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="OP2MissionEditor",
+    name="OP2MissionBuilder",
 )

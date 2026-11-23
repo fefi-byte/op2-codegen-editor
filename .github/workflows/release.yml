@@ -59,8 +59,8 @@ jobs:
       - name: Zip erstellen
         run: |
           $tag = "${{ github.ref_name }}"
-          Compress-Archive -Path "dist\OP2MissionEditor\*" `
-                           -DestinationPath "dist\OP2MissionEditor_$tag.zip"
+          Compress-Archive -Path "dist\OP2MissionBuilder\*" `
+                           -DestinationPath "dist\OP2MissionBuilder_$tag.zip"
         shell: pwsh
 
       # Pruefsummen und Herkunftsnachweis: wer will, prueft, dass ZIP und op2maplib.dll von
@@ -73,7 +73,7 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           Copy-Item build-op2maplib\bin\Release\op2maplib.dll dist\op2maplib.dll
-          $z = "dist\OP2MissionEditor_$tag.zip"
+          $z = "dist\OP2MissionBuilder_$tag.zip"
           $zeilen = foreach ($f in @($z, "dist\op2maplib.dll", "op2-ki\fertig\op2ki.dll")) {
             "$((Get-FileHash $f -Algorithm SHA256).Hash.ToLower())  $(Split-Path $f -Leaf)" }
           $zeilen | Set-Content -Encoding ascii dist\SHA256SUMS.txt
@@ -83,20 +83,20 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            dist/OP2MissionEditor_${{ github.ref_name }}.zip
+            dist/OP2MissionBuilder_${{ github.ref_name }}.zip
             dist/op2maplib.dll
 
       - name: GitHub Release erstellen & ZIP hochladen
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "OP2 Mission Editor ${{ github.ref_name }}"
+          name: "OP2 Mission Builder ${{ github.ref_name }}"
           body: |
-            ## OP2 Mission Editor ${{ github.ref_name }}
+            ## OP2 Mission Builder ${{ github.ref_name }}
 
             ### Installation (Windows)
             1. ZIP entpacken
-            2. `OP2MissionEditor.exe` starten
+            2. `OP2MissionBuilder.exe` starten
             3. In der erzeugten `config.ini` den `game_path` auf dein Outpost 2 Verzeichnis setzen
 
             ### Voraussetzungen
@@ -108,13 +108,13 @@ jobs:
               selbst bauen will: Rust und `[build] op2ki_selbst_bauen = true` in config.ini.
 
             Pruefen, dass ZIP und op2maplib.dll aus diesem Repo gebaut wurden (GitHub CLI):
-            `gh attestation verify OP2MissionEditor_${{ github.ref_name }}.zip --repo fefi-byte/op2-codegen-editor`.
+            `gh attestation verify OP2MissionBuilder_${{ github.ref_name }}.zip --repo fefi-byte/op2-codegen-editor`.
             Pruefsummen in `SHA256SUMS.txt`. op2maplib.dll baut dieser Workflow aus den Quellen von
             OP2MappingLib; op2ki.dll kommt fertig aus dem op2-ki-Release.
 
             Alle Neuerungen stehen im [CHANGELOG](https://github.com/fefi-byte/op2-codegen-editor/blob/main/CHANGELOG.md).
           files: |
-            dist/OP2MissionEditor_${{ github.ref_name }}.zip
+            dist/OP2MissionBuilder_${{ github.ref_name }}.zip
             dist/op2maplib.dll
             dist/SHA256SUMS.txt
           draft: false

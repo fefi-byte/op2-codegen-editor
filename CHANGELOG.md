@@ -7,6 +7,17 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0-alpha] - 2026-11-23
+
+### Changed
+- **Renamed to OP2 Mission Builder** (`OP2MissionBuilder.exe`, release
+  `OP2MissionBuilder_<version>.zip`): the old name clashed with leviathan400's
+  [OP2MissionEditor](https://github.com/leviathan400/OP2MissionEditor). The
+  repository stays `op2-codegen-editor`. Window size, docks and the last
+  mission are taken over from the old name on the first start; unpack the
+  new release into a new folder and copy your `config.ini` over. New missions'
+  default start message now says "Created with the OP2 Mission Builder."
+
 ## [0.9.1-alpha] - 2026-11-23
 
 ### Changed

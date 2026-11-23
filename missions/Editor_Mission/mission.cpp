@@ -283,7 +283,7 @@ static void initProc() {
     // verknuepfen (ein einziger wiederkehrender Timer). ---
     CreateTimeTrigger(1, 0, kTicksPerMark, "_repairGroups_cb");
 
-    AddGameMessage("Created with the OP2 Mission Editor.");
+    AddGameMessage("Created with the OP2 Mission Builder.");
 
     // --- Victory conditions ---
     Trigger _v_55737 = CreateCountTrigger(1, 1, 0, mapEvacuationModule, mapAny, 1, cmpGreaterEqual, "NoResponseToTrigger");
