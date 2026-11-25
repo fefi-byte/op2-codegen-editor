@@ -7,6 +7,8 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.1-alpha] - 2026-11-25
+
 ### Changed
 - **Generated maps are cutouts of a larger world**: mountains, plateaus and
   cliffs now run off the map border as in the original maps, where about twelve
