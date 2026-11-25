@@ -7,6 +7,8 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0-alpha] - 2026-11-25
+
 ### Added
 - **Learned map generator** (*New map*, template *Like the originals
   (learned)*): maps in the style of the original maps. Two neural networks
