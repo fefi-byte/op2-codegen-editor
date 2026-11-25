@@ -7,6 +7,14 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Generated maps are cutouts of a larger world**: mountains, plateaus and
+  cliffs now run off the map border as in the original maps, where about twelve
+  walls cross the border of a 128×128 map (before: less than one). Zones and the
+  sketch are laid out 32 tiles beyond every border and then cropped; the classic
+  generator's cliffs likewise (not with volcanoes, features or the dry landscape
+  template). The same seed gives a different map than before.
+
 ## [0.11.0-alpha] - 2026-11-25
 
 ### Added

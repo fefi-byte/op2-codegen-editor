@@ -45,6 +45,9 @@ Was sich dabei gezeigt hat:
   auf Erde, 6 % auf Sand; Wände auf Fels gibt es kaum.
 - **Freie Fläche als Bauland vorgeben,** sonst füllt das Netz alles mit Wänden
   (Klippenregler).
+- **Die Karte ist ein Ausschnitt.** Zonen und Skizze entstehen auf einer Fläche, die
+  ringsum 32 Kacheln weiter reicht, und werden dann ausgeschnitten. Vorher kreuzten 0,7
+  Wände den Rand einer 128×128-Karte, jetzt 8 bis 12, in den Originalen etwa 12.
 - **Nur offene Felder und nur ihren Ausschnitt rechnen:** 128×128 in 2–6 s statt 60–100 s.
 
 ## Grenzen

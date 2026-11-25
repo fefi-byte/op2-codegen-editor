@@ -126,6 +126,7 @@ from mapgen_klippen import (  # noqa: E402,F401
 )
 from mapgen_berge import (  # noqa: E402,F401
     BAUPLATZ,
+    WELT_RAND,
     BergPlan,
     PythonZeichner,
     bauplatz_maske,

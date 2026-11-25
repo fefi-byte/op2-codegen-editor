@@ -65,6 +65,15 @@ HALS_HALB = 4.5
 SCHLUCHT_HALB = 4.6
 TAL_HALB = 13.0
 
+# Die Karte ist ein Ausschnitt aus einer groesseren Welt: geplant wird auf einer
+# Flaeche, die ringsum so viele Zellen weiter reicht, und dann ausgeschnitten --
+# so laufen Berge und Waende ueber den Kartenrand hinaus wie in den Originalen.
+# Ein Vielfaches von 8, damit die Raster passen.
+# The map is a cutout of a larger world: planning happens on an area reaching
+# this many cells further on every side and is then cropped, so mountains and
+# walls run off the map as in the originals. A multiple of 8.
+WELT_RAND = 32
+
 KLIPPEN_ZELLEN = (celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
                   celltypes.CLIFFS_LOW_SIDE)
 
@@ -76,6 +85,16 @@ class Einschnitt:
     flaeche: np.ndarray              # zwischen den Waenden / between the walls
     ende_a: np.ndarray
     ende_b: np.ndarray
+    laengs: np.ndarray               # Lage entlang des Einschnitts / position along it
+
+    @staticmethod
+    def bauen(sohle, flaeche, laengs, erlaubt) -> "Einschnitt | None":
+        """Enden dort, wo die Sohle aufhoert; None, wenn kaum etwas uebrig ist."""
+        if int(sohle.sum()) < 20:
+            return None
+        a, b = float(laengs[sohle].min()), float(laengs[sohle].max())
+        return Einschnitt(sohle, flaeche, flaeche & erlaubt & (np.abs(laengs - a) < 1.5),
+                          flaeche & erlaubt & (np.abs(laengs - b) < 1.5), laengs)
 
 
 @dataclass
@@ -85,6 +104,32 @@ class BergPlan:
     hochebenen: list[np.ndarray] = field(default_factory=list)
     schluchten: list[Einschnitt] = field(default_factory=list)
     taeler: list[Einschnitt] = field(default_factory=list)
+
+    def ausschneiden(self, rand: int = WELT_RAND) -> "BergPlan":
+        """Den Kartenausschnitt aus dem Plan der groesseren Welt nehmen."""
+        s = (slice(rand, -rand), slice(rand, -rand))
+        neu = BergPlan()
+        for m in self.stufen:
+            # Was der Schnitt als Splitter uebrig laesst, ist kein Berg.
+            # Slivers left by the cut are no mountain.
+            klein = shapegen.entferne_kleinkram(
+                m[s].astype(np.int8), mindest=12 if neu.stufen else 90) > 0
+            klein &= m[s]
+            if neu.stufen:
+                klein &= neu.stufen[-1]
+            if not klein.any():
+                break
+            neu.stufen.append(klein)
+        neu.hochebenen = [m[s] for m in self.hochebenen if m[s].any()]
+        for quelle, ziel in ((self.taeler, neu.taeler), (self.schluchten, neu.schluchten)):
+            for e in quelle:
+                # `ende_a | ende_b` liegt in der Grundhaelfte -- bei Symmetrie
+                # zaehlt nur sie. / The ends lie in the base half.
+                grund = _dehne(e.sohle, 8)[s]
+                kurz = Einschnitt.bauen(e.sohle[s], e.flaeche[s], e.laengs[s], grund)
+                if kurz is not None:
+                    ziel.append(kurz)
+        return neu
 
     def alles(self) -> np.ndarray | None:
         masken = self.stufen[:1] + self.hochebenen
@@ -169,21 +214,17 @@ def _spiegeln(m: np.ndarray, sym: str) -> np.ndarray:
 
 
 def _ketten(h: int, w: int, rng: np.random.Generator, sym: str) -> list[dict]:
-    """Mittelpunkte, Richtungen und Groessen der Bergketten -- eine je 128er-
-    Kartenflaeche. / One mountain chain per 128x128 of map area."""
+    """Mittelpunkte, Richtungen und Groessen der Bergketten in der Welt -- eine je
+    128er-Flaeche. / One mountain chain per 128x128 of world area."""
     anzahl = max(1, int(round(w * h / (128 * 128))))
     lang = 0.45 * min(min(w, h), 128)
     kurz = 0.38 * lang
     ketten: list[dict] = []
     for _ in range(anzahl):
         bester = None
-        for _v in range(12):
-            if anzahl == 1:
-                cx = w / 2 + float(rng.uniform(-.06, .06)) * w
-                cy = h / 2 + float(rng.uniform(-.06, .06)) * h
-            else:
-                cx = float(rng.uniform(.18, .82)) * w
-                cy = float(rng.uniform(.22, .78)) * h
+        for _v in range(3):
+            cx = float(rng.uniform(WELT_RAND, w - WELT_RAND))
+            cy = float(rng.uniform(WELT_RAND, h - WELT_RAND))
             # Bei Symmetrie zaehlt nur die Grundhaelfte, der Rest wird gespiegelt.
             # With symmetry only the base half counts, the rest is mirrored.
             if sym in (SYM_MIRROR_X, SYM_QUAD) and cx >= w / 2:
@@ -206,7 +247,13 @@ def _ketten(h: int, w: int, rng: np.random.Generator, sym: str) -> list[dict]:
 
 
 def berg_plan(params: MapGenParams, sperr: np.ndarray | None = None) -> BergPlan:
-    """Die Formen aller Zonen festlegen. `sperr`: Zellen, die frei bleiben.
+    """Die Formen aller Zonen der Karte festlegen. `sperr`: Zellen, die frei
+    bleiben. Fix the shapes of all zones of the map."""
+    return welt_plan(params, sperr).ausschneiden()
+
+
+def welt_plan(params: MapGenParams, sperr: np.ndarray | None = None) -> BergPlan:
+    """Wie `berg_plan`, aber auf der groesseren Welt (Rand `WELT_RAND`).
 
     Das Hoehenfeld ist eine verzerrte Ellipse je Kette plus Grate: die
     Verzerrung der Koordinaten gibt Sporne und Buchten, die Grate Einschnuerungen.
@@ -221,7 +268,9 @@ def berg_plan(params: MapGenParams, sperr: np.ndarray | None = None) -> BergPlan
     plan = BergPlan()
     if not berge_gewuenscht(params):
         return plan
-    h, w = params.height, params.width
+    h, w = params.height + 2 * WELT_RAND, params.width + 2 * WELT_RAND
+    if sperr is not None:
+        sperr = np.pad(sperr, WELT_RAND)
     # Eigener Zufall: ohne Berge bleibt jede bisherige Karte bitgleich.
     # Own randomness: without mountains every existing map stays bit-identical.
     rng = np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 4242])
@@ -249,11 +298,6 @@ def _plane_berge(plan, params, rng, frei, xs, ys) -> None:
     grat = 1 - np.abs(2 * _rauschen(h, w, rng, 14) - 1)
     f = (np.max(felder, axis=0) + .42 * (_rauschen(h, w, rng, 18) - .5)
          + .32 * (grat - .6) + .18 * (_rauschen(h, w, rng, 7) - .5))
-    # Zum Kartenrand weich abfallen: eine Wand, die am Rand entlanglaeuft, ist
-    # ein gerader Strich.
-    # Fall off softly towards the map border; a wall along it is a straight line.
-    rand = np.minimum(np.minimum(xs, w - 1 - xs), np.minimum(ys, h - 1 - ys))
-    f = f - np.clip((15 - rand) / 10, 0, 1) * 1.2
     kipp = np.zeros((h, w))
     for nr in range(len(ketten)):
         k = ketten[nr]
@@ -269,8 +313,17 @@ def _plane_berge(plan, params, rng, frei, xs, ys) -> None:
         return
     # Schwelle so, dass der gewuenschte Anteil der Karte herauskommt.
     # Threshold chosen so the requested share of the map results.
-    ziel = min(.9, params.berge * h * w / float(offen.sum()))
-    roh = (f > np.quantile(f[offen], 1 - ziel)) & offen
+    # Gemessen wird auf der Karte, nicht auf der Welt drumherum.
+    # Measured on the map, not on the world around it.
+    karte = np.zeros((h, w), bool)
+    karte[WELT_RAND:-WELT_RAND, WELT_RAND:-WELT_RAND] = True
+
+    def schwelle(flaeche):
+        z = flaeche & karte
+        if not z.any():
+            return np.inf
+        return np.quantile(f[z], 1 - min(.9, params.berge * karte.sum() / float(z.sum())))
+    roh = (f > schwelle(offen)) & offen
     bleibt = offen.copy()
 
     # Taeler und Schluchten dorthin legen, wo am meisten Berg durchschnitten
@@ -294,8 +347,8 @@ def _plane_berge(plan, params, rng, frei, xs, ys) -> None:
                     continue
                 # Auf beiden Seiten muss Berg bleiben.
                 # Mountain has to remain on both sides.
-                li = int((roh & (d < -halb) & (d > -halb - 10)).sum())
-                re = int((roh & (d > halb) & (d < halb + 10)).sum())
+                li = int((roh & karte & (d < -halb) & (d > -halb - 10)).sum())
+                re = int((roh & karte & (d > halb) & (d < halb + 10)).sum())
                 note = min(li, re) * float(rng.uniform(.8, 1.0))
                 if beste is None or note > beste["note"]:
                     beste = {"art": art, "note": note, "d": d, "vv": vv, "halb": halb,
@@ -306,7 +359,7 @@ def _plane_berge(plan, params, rng, frei, xs, ys) -> None:
         schnitte.append(beste)
         # Was der Schnitt wegnimmt, kommt anderswo dazu -- der Anteil bleibt.
         # What the cut removes is added elsewhere, the share stays.
-        roh = (f > np.quantile(f[bleibt], 1 - min(.9, ziel * offen.sum() / bleibt.sum()))) & bleibt
+        roh = (f > schwelle(bleibt)) & bleibt
     m = _saeubern(_spiegeln(roh, sym), mindest=90)
     # Enge Buchten schliessen, duenne Haelse und Sporne abnehmen: dort
     # ueberlappen sich die Waende beider Seiten, und der Berg wird undicht.
@@ -360,15 +413,12 @@ def _plane_berge(plan, params, rng, frei, xs, ys) -> None:
         # With symmetry the cut counts in the base half; its area is mirrored
         # because it may continue across the axis.
         sohle = (np.abs(d) < (9 if s["art"] == "tal" else 3)) & zwischen & grundhaelfte
-        if int(sohle.sum()) < 20:
-            continue
-        vmin, vmax = float(vv[sohle].min()), float(vv[sohle].max())
         flaeche = np.abs(d) <= halb + 2
         if sym != SYM_NONE:
             flaeche = _spiegeln(flaeche, sym)
-        e = Einschnitt(sohle=sohle, flaeche=flaeche,
-                       ende_a=flaeche & grundhaelfte & (np.abs(vv - vmin) < 1.5),
-                       ende_b=flaeche & grundhaelfte & (np.abs(vv - vmax) < 1.5))
+        e = Einschnitt.bauen(sohle, flaeche, vv, grundhaelfte)
+        if e is None:
+            continue
         (plan.taeler if s["art"] == "tal" else plan.schluchten).append(e)
 
 
@@ -380,20 +430,22 @@ def _plane_hochebenen(plan, params, rng, frei) -> None:
         sperr |= _dehne(plan.stufen[0], 9)
     for e in plan.taeler + plan.schluchten:
         sperr |= e.flaeche & _dehne(e.sohle, 4)
-    klein = min(w, h)
+    rand = WELT_RAND
+    klein = min(w, h) - 2 * rand
     for _ in range(400):
         if len(plan.hochebenen) >= params.hochebenen:
             break
         r = int(rng.integers(13, 18)) if klein >= 128 else int(rng.integers(9, 12))
-        if w <= 2 * r + 13 or h <= 2 * r + 13:
-            break
-        x = int(rng.integers(r + 6, w - r - 6))
-        y = int(rng.integers(r + 6, h - r - 6))
+        # Auch angeschnitten am Rand, aber der groessere Teil liegt in der Karte.
+        # May be cut by the border, but most of it lies on the map.
+        x = int(rng.integers(rand + r // 4, w - rand - r // 4))
+        y = int(rng.integers(rand + r // 4, h - rand - r // 4))
         p = shapegen.blob((h, w), (x, y), r, rng, rauheit=.7) > 0
         p = _saeubern(_spiegeln(p, params.symmetry), mindest=60)
         # Gespiegelte Flaechen duerfen sich nicht ueber die Achse beruehren.
         # Mirrored areas must not touch across the axis.
-        if not p.any() or (p & sperr).any():
+        innen = int(p[rand:-rand, rand:-rand].sum())
+        if innen < .55 * p.sum() or innen < 60 or (p & sperr).any():
             continue
         plan.hochebenen.append(p)
         sperr |= _dehne(p, 9)
@@ -404,11 +456,15 @@ def _plane_hochebenen(plan, params, rng, frei) -> None:
 
 def _boegen(zyklus: list, shape, anzahl: int, lang: tuple[int, int],
             rng: np.random.Generator) -> list[list]:
-    """Randzyklus in Boegen mit zufaellig verteilten Luecken zerlegen.
-    Split the boundary cycle into arcs with randomly placed gaps."""
+    """Randzyklus in Boegen mit zufaellig verteilten Luecken zerlegen. Entlang
+    des Kartenrands steht keine Wand; der letzte Randpunkt bleibt, damit sie bis
+    an den Rand reicht.
+    Split the boundary cycle into arcs with randomly placed gaps. There is no
+    wall along the map border; the last border point stays so walls reach it."""
     h, w = shape
     n = len(zyklus)
-    weg = np.array([x <= 1 or y <= 1 or x >= w - 2 or y >= h - 2 for x, y in zyklus])
+    am_rand = np.array([x <= 0 or y <= 0 or x >= w - 1 or y >= h - 1 for x, y in zyklus])
+    weg = am_rand & np.roll(am_rand, 1) & np.roll(am_rand, -1)
     start = int(rng.integers(n))
     for i in range(anzahl):
         p = start + int((i + float(rng.uniform(-.25, .25))) * n / anzahl)
@@ -451,7 +507,7 @@ def _wellig(b: list, rng: np.random.Generator, shape, hub: float = 1.3) -> list:
     tg = np.roll(p, -3, 0) - np.roll(p, 3, 0) if zu else np.gradient(p, axis=0)
     ln = np.maximum(np.hypot(tg[:, 0], tg[:, 1]), 1e-6)
     q = p + np.stack([-tg[:, 1] / ln, tg[:, 0] / ln], 1) * off[:, None]
-    aus = [(int(round(min(max(a, 3), w - 4))), int(round(min(max(c, 3), h - 4))))
+    aus = [(int(round(min(max(a, 0), w - 1))), int(round(min(max(c, 0), h - 1))))
            for a, c in q]
     return aus + [aus[0]] if zu else aus
 

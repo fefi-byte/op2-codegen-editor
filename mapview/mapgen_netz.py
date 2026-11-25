@@ -45,7 +45,14 @@ from mapgen_basis import (
     GeneratedMap,
     MapGenParams,
 )
-from mapgen_berge import BergPlan, _fluten, bauplatz_maske, berg_plan, zonen_bericht
+from mapgen_berge import (
+    WELT_RAND,
+    BergPlan,
+    _fluten,
+    bauplatz_maske,
+    welt_plan,
+    zonen_bericht,
+)
 from mapgen_felder import _components, _naht_passt, _scatter_details
 from mapgen_relief import _feature_layout, _feature_maske
 from mapgen_wege import _connected, _groesstes_gebiet, _passable_mask, _pick_spawns
@@ -175,9 +182,11 @@ class Skizze:
 
 
 def _zonen(params: MapGenParams) -> tuple[np.ndarray, BergPlan]:
-    """Zonen aus den Reglern (Berge, Schluchten, ...) und den Merkmalen."""
-    plan = berg_plan(params)
-    z = np.zeros((params.height, params.width), np.int8)
+    """Zonen aus den Reglern (Berge, Schluchten, ...) und den Merkmalen, auf der
+    groesseren Welt; der Plan ist schon der Ausschnitt der Karte.
+    Zones on the larger world; the plan is already the map's cutout."""
+    plan = welt_plan(params)
+    z = np.zeros((params.height + 2 * WELT_RAND, params.width + 2 * WELT_RAND), np.int8)
     for e in plan.taeler:
         z[e.sohle] = 3
     for e in plan.schluchten:
@@ -189,6 +198,10 @@ def _zonen(params: MapGenParams) -> tuple[np.ndarray, BergPlan]:
     rng = np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 61])
     for eintrag in _feature_layout(params, rng):
         art = eintrag["feat"].kind
+        eintrag["x"] += WELT_RAND
+        eintrag["y"] += WELT_RAND
+        if "pfad" in eintrag:
+            eintrag["pfad"] = [(x + WELT_RAND, y + WELT_RAND) for x, y in eintrag["pfad"]]
         maske = _feature_maske(eintrag, z.shape)
         if art == FEAT_BERG:
             z[maske] = 1
@@ -203,7 +216,7 @@ def _zonen(params: MapGenParams) -> tuple[np.ndarray, BergPlan]:
                               max(2, eintrag["breite"] // 2), rng) > 0] = 1
     if params.symmetry != SYM_NONE:
         z = _spiegel(z, params.symmetry)
-    return z, plan
+    return z, plan.ausschneiden()
 
 
 def _zonenraster(z: np.ndarray, params: MapGenParams, rng) -> np.ndarray:
@@ -314,7 +327,8 @@ def _mischung(params: MapGenParams) -> np.ndarray | None:
 
 
 def skizze(params: MapGenParams, abbruch=None) -> Skizze:
-    """Die Skizze einer Karte (Bruchteil einer Sekunde bis etwa eine).
+    """Die Skizze einer Karte (etwa eine Sekunde): gezogen auf der groesseren
+    Welt und dann ausgeschnitten.
 
     `abbruch()` -> True bricht mit `Abgebrochen` ab."""
     m = _modell()
@@ -328,12 +342,14 @@ def skizze(params: MapGenParams, abbruch=None) -> Skizze:
     boden0 = _bergboden(raster, rng)
     soll = _mischung(params)
     klein = params.width * params.height <= 128 * 128
-    ziel = .035 + .20 * params.cliffs + .3 * float((raster == 1).mean())
+    r = WELT_RAND // 2
+    karte = (slice(r, -r), slice(r, -r))
+    ziel = .035 + .20 * params.cliffs + .3 * float((raster[karte] == 1).mean())
     bester = None
     for _ in range(2 if klein else 1):
         wand, boden = _skizze_ziehen(m, raster, boden0, soll, rng, 16, pruefe)
         wand = waende.nordkanten_ausduennen(waende.putzen(wand, raster, rng))
-        note = abs(float((wand > 0).mean()) - ziel)
+        note = abs(float((wand[karte] > 0).mean()) - ziel)
         if bester is None or note < bester[0]:
             bester = (note, wand, boden)
     _n, wand, boden = bester
@@ -341,7 +357,11 @@ def skizze(params: MapGenParams, abbruch=None) -> Skizze:
     if params.symmetry != SYM_NONE:
         wand = _spiegel(wand, params.symmetry, wand=True)
         boden = _spiegel(boden, params.symmetry)
-    return Skizze(wand, waende.ein_boden_je_wand(wand, boden), z, plan)
+    boden = waende.ein_boden_je_wand(wand, boden)
+    # Erst jetzt ausschneiden: Waende laufen ueber den Rand hinaus.
+    # Crop only now: walls run off the map.
+    voll = (slice(WELT_RAND, -WELT_RAND), slice(WELT_RAND, -WELT_RAND))
+    return Skizze(wand[karte], boden[karte], z[voll], plan)
 
 
 _FARBEN = np.array([(118, 110, 92), (74, 80, 84), (196, 110, 20), (96, 104, 74),
@@ -489,7 +509,13 @@ class _Maler:
             wand = self.m.wand[g]
             nummern, n = waende.label(wand)
             groesse = np.bincount(nummern.ravel(), minlength=n + 1)
-            klein = wand & (groesse[nummern] < mindest)
+            # Am Kartenrand setzt sich eine Wand gedacht fort.
+            # At the map border a wall continues off the map.
+            rand = np.unique(np.concatenate((nummern[0], nummern[-1],
+                                             nummern[:, 0], nummern[:, -1])))
+            grenze = np.full(n + 1, mindest)
+            grenze[rand] = 4
+            klein = wand & (groesse < grenze)[nummern]
             if not klein.any():
                 break
             m = _dehne(klein, 1 + r // 2) & ~(wand & ~klein)
@@ -661,6 +687,8 @@ class _Nacharbeit:
                 nummern, n = waende.label(fremd)
                 groesse = np.bincount(nummern.ravel(), minlength=n + 1)
                 groesse[0] = gross
+                groesse[np.unique(np.concatenate((nummern[0], nummern[-1],
+                                                  nummern[:, 0], nummern[:, -1])))] += 12
                 klein = np.flatnonzero(groesse < gross)
                 if not len(klein):
                     continue

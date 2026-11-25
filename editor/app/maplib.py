@@ -146,12 +146,22 @@ def generieren(params):
     if not hasattr(om, "MapGenerator"):
         return None
     import mapgen
+    from dataclasses import replace
+    # Klippen: die Bibliothek haelt den Kartenrand frei. Darum eine groessere
+    # Welt erzeugen und die Karte ausschneiden -- ausser bei Vulkanen, Merkmalen
+    # und dem Landschaftsmodus, die ihre Lage auf der Karte brauchen.
+    # Cliffs: the library keeps the map border clear, so generate a larger world
+    # and crop the map, except with volcanoes, features and landscape mode,
+    # which need their position on the map.
+    if (params.cliffs > 0 and not params.volcanoes and not params.features
+            and not params.landschaft and not mapgen.berge_gewuenscht(params)
+            and not getattr(params, "_welt", False)):
+        return _aus_groesserer_welt(params)
     # Mit Bergen: erst die Karte ohne Streugut und Startpunkte, dann die Berge
     # hinein, dann beides.
     # With mountains: first the map without scatter and starting points, then
     # the mountains, then both.
     if mapgen.berge_gewuenscht(params):
-        from dataclasses import replace
         grund = generieren(replace(params, berge=0.0, hochebenen=0,
                                    details=0.0, spawns=0))
         tm = mapgen.model()
@@ -192,6 +202,30 @@ def generieren(params):
         feature_spots=[(_MERKMAL_NAME.get(k, str(k)), x, y, s) for k, x, y, s in r.features],
         fluss_share=r.stats["rivers"],
     )
+
+
+def _aus_groesserer_welt(params):
+    """Groesser erzeugen und die Mitte nehmen; Startplaetze danach."""
+    import mapgen
+    from dataclasses import replace
+    r = mapgen.WELT_RAND
+    gross = replace(params, width=params.width + 2 * r, height=params.height + 2 * r,
+                    spawns=0)
+    gross._welt = True
+    gen = generieren(gross)
+    s = (slice(r, -r), slice(r, -r))
+    gen.tiles, gen.cells = gen.tiles[s].copy(), gen.cells[s].copy()
+    tm = mapgen.model()
+    gen.spawns = mapgen._pick_spawns(
+        gen.cells, params.spawns, params.spawn_clearance, params.symmetry,
+        np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 77]))
+    gen.connected = mapgen._connected(gen.cells, gen.spawns)
+    gen.passable_share = float(mapgen._passable_mask(gen.cells).mean())
+    gen.plateau_share = float(np.isin(gen.cells, (8, 9, 10)).mean())
+    anteile = {n: float((tm.family_of[gen.tiles] == i).mean())
+               for i, n in enumerate(tm.families)}
+    gen.family_share = {n: a for n, a in anteile.items() if a > 0}
+    return gen
 
 
 class Zeichner:

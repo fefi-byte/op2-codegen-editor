@@ -963,6 +963,15 @@ def check_berge():
               gen.connected and len(gen.spawns) == 2)
         check(f"Berge Seed {seed}: Startpunkte auf Bauplatz",
               all(mapgen.bauplatz_maske(gen.cells)[y, x] for x, y in gen.spawns))
+    # Die Karte ist ein Ausschnitt: Berge laufen ueber den Rand (in den
+    # Originalen liegen dort nur etwas weniger Klippen als in der Mitte).
+    # The map is a cutout: mountains run off the border.
+    rand = [mapgen.berg_plan(p(seed=s)).stufen[0] for s in range(12)]
+    beruehrt = sum(bool(m[0].any() or m[-1].any() or m[:, 0].any() or m[:, -1].any())
+                   for m in rand)
+    check("Berge: laufen meist ueber den Kartenrand", beruehrt >= 8, f"{beruehrt} von 12")
+    anteil = float(np.mean([m.mean() for m in rand]))
+    check("Berge: Anteil stimmt trotz Ausschnitt", .10 <= anteil <= .18, f"{anteil:.3f}")
     # Die Form allein: Symmetrie, Groessen, Sperrflaeche -- ohne Waende, schnell.
     # Shape only: symmetry, sizes, blocked area -- without walls, fast.
     for sym, spiegel in ((mapgen.SYM_MIRROR_X, lambda m: m[:, ::-1]),
@@ -1050,6 +1059,9 @@ def check_netz():
     check("Netz: Hochebenen sind Bauland", g.zonen["hochebene"] > .7, str(g.zonen))
     check("Netz: keine Kachel flutet die Karte",
           np.bincount(g.tiles.ravel()).max() / g.tiles.size < .25)
+    kreuzt = [mapgen_netz.skizze(par(width=128, height=128, seed=s)).wand for s in range(6)]
+    n = sum(int((np.concatenate((w[0], w[-1], w[:, 0], w[:, -1])) > 0).sum()) for w in kreuzt)
+    check("Netz: Waende laufen ueber den Kartenrand", n >= 6, f"{n} Randfelder auf 6 Karten")
     check("Netz: Skizzenbild", mapgen_netz.skizzenbild(sk).shape == (32, 32, 3))
     try:
         mapgen_netz.karte(par(), sk, abbruch=lambda: True)
