@@ -47,16 +47,20 @@ FAMILY_VEGETATION = "veg"
 
 # Vorlagen: Voreinstellungen fuer Mischung und Zerkluefung.
 # Templates: presets for terrain mix and roughness.
+# "berge" und "hochebenen" sind Vorschlaege fuer das Panel "Neue Karte";
+# `from_template` uebernimmt sie nicht.
+# "berge" and "hochebenen" are suggestions for the "new map" panel;
+# `from_template` does not take them.
 TEMPLATES: dict[str, dict] = {
     "plains":  {"mix": {"mud": 0.45, "roc": 0.25, "san": 0.15, "veg": 0.15},
-                "roughness": 0.0},
+                "roughness": 0.0, "berge": 0.12, "hochebenen": 2},
     "canyon":  {"mix": {"roc": 0.55, "mud": 0.25, "san": 0.10, "veg": 0.10},
-                "roughness": 0.75},
+                "roughness": 0.75, "berge": 0.24, "hochebenen": 2},
     "desert":  {"mix": {"san": 0.60, "mud": 0.30, "roc": 0.08, "veg": 0.02},
-                "roughness": 0.35},
+                "roughness": 0.35, "berge": 0.10, "hochebenen": 1},
     "islands": {"mix": {"mud": 0.35, "roc": 0.35, "san": 0.20, "veg": 0.10},
-                "roughness": 0.85},
-    "ice":     {"mix": {"sno": 0.45, "roc": 0.35, "mud": 0.20}, "roughness": 0.45},
+                "roughness": 0.85, "berge": 0.14, "hochebenen": 2},
+    "ice":     {"mix": {"sno": 0.45, "roc": 0.35, "mud": 0.20}, "roughness": 0.45, "berge": 0.14, "hochebenen": 1},
     # Landschaftsmodus: nicht Flecken wuerfeln, sondern ein Relief bauen --
     # Hochlandmassiv, Mesas, ausgetrocknete Flussbetten, Klippen als gezeichnete
     # Linien (Gelaende-Loeser). Trocken, karg, leicht vulkanisch -- New Terra.
@@ -67,7 +71,8 @@ TEMPLATES: dict[str, dict] = {
     # Sand share deliberately small: at 0.28 a sand continent regularly grew
     # on 128 maps and swallowed the riverbeds.
     "newterra": {"mix": {"mud": 0.68, "san": 0.20, "roc": 0.12},
-                 "roughness": 0.0, "landschaft": True, "volcanoes": 1},
+                 "roughness": 0.0, "landschaft": True, "volcanoes": 1,
+                 "berge": 0.08},
 }
 
 
@@ -155,6 +160,17 @@ class MapGenParams:
     # (eine je 128er-Kantenlaenge), 0 = keine.
     # Dry riverbeds in landscape mode. -1 = by map size, 0 = none.
     fluesse: int = -1
+    # Berge und Bauland (mapgen_berge): Flaechenanteil der Bergketten (0 =
+    # keine), wie eng die Stufen stehen (1 = so eng wie die Waende erlauben),
+    # und wie viele Schluchten, Taeler und Hochebenen.
+    # Mountains and building ground: area share of the chains (0 = none), how
+    # tight the terraces are (1 = as tight as the walls allow), and the number
+    # of gorges, valleys and plateaus.
+    berge: float = 0.0
+    berg_dichte: float = 0.8
+    schluchten: int = 1
+    taeler: int = 1
+    hochebenen: int = 0
 
     @classmethod
     def from_template(cls, name: str, **kwargs) -> "MapGenParams":
@@ -193,6 +209,9 @@ class GeneratedMap:
     # Anteil der Karte, der im Landschaftsmodus Flussbett ist.
     # Share of the map that is riverbed in landscape mode.
     fluss_share: float = 0.0
+    # Bericht ueber Berge und Zonen (mapgen_berge), leer ohne Berge.
+    # Report on mountains and zones, empty without mountains.
+    zonen: dict = field(default_factory=dict)
 
 
 def _cell_types(grid: np.ndarray) -> np.ndarray:

@@ -7,6 +7,17 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Mountains in *New map***: the generator now places mountain chains, gorges,
+  valleys and plateaus by itself. Mountains have several tight terraces and a
+  closed outer wall (no building), gorges are narrow passages (no building),
+  valleys and plateaus offer building ground. Sliders for the share and the
+  tightness, numbers for gorges, valleys and plateaus; the templates suggest
+  values, 0 switches it off. The status line reports mountains, plateaus,
+  gorges and the share of building ground, and warns if a mountain leaks or a
+  plateau cannot be reached. The walls are drawn by OP2MappingLib, or by the
+  Python solver without it.
+
 ## [0.10.0-alpha] - 2026-11-23
 
 ### Changed

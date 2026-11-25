@@ -34,7 +34,7 @@ import shapegen  # noqa: E402
 from op2map import Op2Map  # noqa: E402
 
 # Der Generator ist auf Module verteilt (mapgen_basis, _modell, _felder,
-# _kacheln, _wege, _relief, _klippen, _uebergaenge). Dieses Modul reicht ALLE
+# _kacheln, _wege, _relief, _klippen, _berge, _uebergaenge). Dieses Modul reicht ALLE
 # Namen weiter -- auch die mit Unterstrich, die Editor und Tests benutzen --,
 # damit `mapgen.X` ueberall gleich bleibt. Hier stehen nur noch `generate`
 # und `apply_to_map`.
@@ -124,6 +124,16 @@ from mapgen_klippen import (  # noqa: E402,F401
     klippen_richtungen,
     klippe_winkel_rasten,
 )
+from mapgen_berge import (  # noqa: E402,F401
+    BAUPLATZ,
+    BergPlan,
+    PythonZeichner,
+    bauplatz_maske,
+    berg_plan,
+    berge_gewuenscht,
+    berge_zeichnen,
+    zonen_bericht,
+)
 from mapgen_uebergaenge import (  # noqa: E402,F401
     _bewuchs_abstand,
     RAND_LIMIT,
@@ -209,6 +219,21 @@ def generate(params: MapGenParams) -> GeneratedMap:
     if frei.any():
         sites = [(vx, vy) for vx, vy in sites if not frei[vy, vx]]
     _steer_feature_families(fam_field, layout, tm)
+    # Berge: die Form steht vor den Uebergaengen fest, aus demselben Grund wie
+    # im Landschaftsmodus -- unter den Waenden muss der Boden einfarbig sein.
+    # Mountains: the shape is fixed before the transitions for the same reason
+    # as in landscape mode -- the ground under the walls must be one colour.
+    bergplan = BergPlan()
+    if berge_gewuenscht(params):
+        sperr = frei.copy()
+        for vx, vy in sites:
+            sperr[max(0, vy - 10):vy + 11, max(0, vx - 10):vx + 11] = True
+        if land_H is not None:
+            sperr |= _dehne(land_H > 0, 3)
+        bergplan = berg_plan(params, sperr)
+        saum = bergplan.saum()
+        if saum is not None and "mud" in tm.families:
+            fam_field[saum] = tm.families.index("mud")
     # Erst die Uebergaenge festlegen, dann den Boden drumherum sampeln.
     # Umgekehrt kann der Uebergang nicht mehr zum schon gesetzten Boden passen.
     # Fix the transitions first, then sample the ground around them. The other
@@ -236,6 +261,11 @@ def generate(params: MapGenParams) -> GeneratedMap:
              | land_H).astype(np.int8)
     else:
         H = _hoehenfeld(params, rng, layout)
+    if bergplan.stufen or bergplan.hochebenen:
+        # Die gestreuten Flecken weichen den Bergen aus.
+        # The scattered patches make way for the mountains.
+        H = shapegen.entferne_kleinkram(
+            (H & ~_dehne(bergplan.alles(), 9)).astype(np.int8), mindest=24)
     if params.symmetry != SYM_NONE:
         H = _apply_symmetry(H, params.symmetry).astype(np.int8)
     H[gesperrt_vulkan] = 0
@@ -279,6 +309,14 @@ def generate(params: MapGenParams) -> GeneratedMap:
     # solver. The block path and the cell-type band are gone.
     klippen, land_zellen = _klippen_aus_linien(grid, fam_field, H, tm,
                                                rng, params.ramps)
+    zonen: dict = {}
+    if bergplan.stufen or bergplan.hochebenen:
+        bk, bz, zonen = berge_zeichnen(grid, bergplan, PythonZeichner(tm), tm, params)
+        klippen = klippen | bk
+        if land_zellen is None:
+            land_zellen = bz
+        else:
+            land_zellen[bz >= 0] = bz[bz >= 0]
     _boden_an_klippen_nachziehen(grid, fam_field, klippen, tm, rng)
     nachbearbeite_uebergaenge(grid, fam_field, tm, rng)
 
@@ -334,6 +372,8 @@ def generate(params: MapGenParams) -> GeneratedMap:
 
     spawns = _pick_spawns(cells, params.spawns, params.spawn_clearance,
                           params.symmetry, rng)
+    if bergplan.stufen or bergplan.hochebenen:
+        zonen.update(zonen_bericht(cells, bergplan))
     shares = {}
     for i, name in enumerate(tm.families):
         share = float((tm.family_of[grid] == i).mean())
@@ -359,7 +399,68 @@ def generate(params: MapGenParams) -> GeneratedMap:
         lava_zones=lava_zones,
         fluss_share=(float(land_betten.mean()) if land_betten is not None
                      else 0.0),
+        zonen=zonen,
     )
+
+
+def berge_nachtragen(gen: GeneratedMap, params: MapGenParams, tm: TileModel,
+                     zeichner) -> GeneratedMap:
+    """Berge in eine fertige Karte setzen -- fuer Karten aus OP2MappingLib.
+
+    Die Karte muss ohne Streugut und Startpunkte erzeugt sein; beides kommt
+    hier danach. `zeichner` legt auch den Boden unter den Waenden um
+    (`boden_legen`).
+
+    Put mountains into a finished map, for maps from OP2MappingLib. The map must
+    have been generated without scatter and starting points; both follow here.
+    """
+    grid, cells = gen.tiles.copy(), gen.cells.copy()
+    rng = np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 55])
+    klippe = np.isin(cells, [celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
+                             celltypes.CLIFFS_LOW_SIDE])
+    sperr = _dehne(klippe, 3)
+    for vx, vy in gen.volcanoes:
+        sperr[max(0, vy - 10):vy + 11, max(0, vx - 10):vx + 11] = True
+    frei = np.zeros(grid.shape, bool)
+    ys, xs = np.ogrid[:grid.shape[0], :grid.shape[1]]
+    for art, fx, fy, r in gen.feature_spots:
+        if art == FEAT_FREI:
+            frei |= (xs - fx) ** 2 + (ys - fy) ** 2 <= (r + 4) ** 2
+    plan = berg_plan(params, sperr | frei)
+    zonen: dict = {}
+    gesperrt = sperr | frei
+    if plan.stufen or plan.hochebenen:
+        zeichner.boden_legen(grid, cells, plan.saum(), int(params.seed))
+        bk, bz, zonen = berge_zeichnen(grid, plan, zeichner, tm, params)
+        cells[bk] = _cell_types(grid)[bk]
+        cells[bz >= 0] = bz[bz >= 0]
+        gesperrt = gesperrt | _dehne(bk, 1)
+    if params.details > 0:
+        vorher = grid.copy()
+        zahl = _scatter_details(grid, tm.family_of[grid], tm, rng, int(round(
+            params.details * 0.06 * grid.size)), gesperrt)
+        neu = grid != vorher
+        cells[neu] = _cell_types(grid)[neu]
+        gen.detail_share = zahl / float(grid.size)
+    if plan.stufen or plan.hochebenen:
+        zonen.update(zonen_bericht(cells, plan))
+    gen.tiles, gen.cells, gen.zonen = grid, cells, zonen
+    gen.spawns = _pick_spawns(cells, params.spawns, params.spawn_clearance,
+                              params.symmetry, rng)
+    gen.connected = _connected(cells, gen.spawns)
+    gen.passable_share = float(_passable_mask(cells).mean())
+    gen.plateau_share = float(np.isin(cells, [
+        celltypes.NORTH_CLIFFS, celltypes.CLIFFS_HIGH_SIDE,
+        celltypes.CLIFFS_LOW_SIDE]).mean())
+    shares = {n: float((tm.family_of[grid] == i).mean())
+              for i, n in enumerate(tm.families)}
+    gen.family_share = {n: s for n, s in shares.items() if s > 0}
+    keine_klippe = ~np.isin(cells, [celltypes.NORTH_CLIFFS,
+                                    celltypes.CLIFFS_HIGH_SIDE,
+                                    celltypes.CLIFFS_LOW_SIDE])
+    zonen_lava = [[(x, y) for x, y in z if keine_klippe[y, x]] for z in gen.lava_zones]
+    gen.lava_zones = [z for z in zonen_lava if z]
+    return gen
 
 
 def apply_to_map(base: Op2Map, generated: GeneratedMap) -> Op2Map:

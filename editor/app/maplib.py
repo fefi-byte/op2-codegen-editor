@@ -146,6 +146,16 @@ def generieren(params):
     if not hasattr(om, "MapGenerator"):
         return None
     import mapgen
+    # Mit Bergen: erst die Karte ohne Streugut und Startpunkte, dann die Berge
+    # hinein, dann beides.
+    # With mountains: first the map without scatter and starting points, then
+    # the mountains, then both.
+    if mapgen.berge_gewuenscht(params):
+        from dataclasses import replace
+        grund = generieren(replace(params, berge=0.0, hochebenen=0,
+                                   details=0.0, spawns=0))
+        tm = mapgen.model()
+        return mapgen.berge_nachtragen(grund, params, tm, Zeichner())
     gen = om.MapGenerator("plains")
     werte = {
         "width": params.width, "height": params.height, "roughness": params.roughness,
@@ -182,6 +192,45 @@ def generieren(params):
         feature_spots=[(_MERKMAL_NAME.get(k, str(k)), x, y, s) for k, x, y, s in r.features],
         fluss_share=r.stats["rivers"],
     )
+
+
+class Zeichner:
+    """Klippenwaende der Berge mit OP2MappingLib (siehe mapgen_berge)."""
+    versuche = 4
+    laeufe = 4
+    grob = False                     # letzte Wand nur im Notweg geloest
+
+    def __init__(self):
+        self._mappings = profil().standard_mapping()
+
+    def _karte(self, grid: np.ndarray):
+        h, w = grid.shape
+        return modul().BlendMap(profil(), w, h, self._mappings,
+                                grid.astype(np.int64).ravel().tolist())
+
+    def boden_legen(self, grid, cells, maske, saat: int) -> None:
+        """Erde unter die Berge malen, mit Uebergaengen zum Rest.
+        Paint dirt under the mountains, blended into the rest."""
+        bm = self._karte(grid)
+        ys, xs = np.nonzero(maske)
+        bm.paint(profil().find_ground("mud"), list(zip(xs.tolist(), ys.tolist())))
+        for c in bm.resolve(saat):
+            grid[c.y, c.x] = c.new_mapping
+            if c.cell_type >= 0:
+                cells[c.y, c.x] = c.cell_type
+
+    def wand(self, grid, punkte, seite: str, saat: int, hoehe: float):
+        maske = np.zeros(grid.shape, bool)
+        zellen = np.full(grid.shape, -1, np.int16)
+        bm = self._karte(grid)
+        for c in bm.draw_cliff([(int(x), int(y)) for x, y in punkte],
+                               SEITEN[seite], hoehe, saat):
+            grid[c.y, c.x] = c.new_mapping
+            if c.cell_type in (8, 9, 10):
+                maske[c.y, c.x] = True
+            zellen[c.y, c.x] = c.cell_type
+        self.grob = bm.last_cliff_stage < 0
+        return maske, zellen
 
 
 def boden_feld(bm, x0: int, y0: int, x1: int, y1: int) -> np.ndarray:

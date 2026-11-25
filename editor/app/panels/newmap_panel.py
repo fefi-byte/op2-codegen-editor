@@ -137,6 +137,38 @@ class NewMapPanel(QWidget):
         self.cliffs.setRange(0, 40)
         form.addRow(tr("newmap.lbl_cliffs"), self.cliffs)
 
+        # Berge und Bauland: Flaechenanteil der Bergketten, wie eng die Stufen
+        # stehen, und wie viele Schluchten (kein Bauplatz), Taeler und
+        # Hochebenen (Bauplatz) es gibt.
+        # Mountains and building ground: area share, how tight the terraces
+        # are, and the number of gorges (no building), valleys and plateaus
+        # (building).
+        self.berge = QSlider(Qt.Horizontal)
+        self.berge.setRange(0, 40)
+        self.berge_value = QLabel("0 %")
+        self.berge_value.setMinimumWidth(42)
+        berge_row = QHBoxLayout()
+        berge_row.setContentsMargins(0, 0, 0, 0)
+        berge_row.addWidget(self.berge, 1)
+        berge_row.addWidget(self.berge_value)
+        berge_box = QWidget()
+        berge_box.setLayout(berge_row)
+        berge_box.setToolTip(tr("newmap.berge_hint"))
+        form.addRow(tr("newmap.lbl_berge"), berge_box)
+        self.berg_dichte = QSlider(Qt.Horizontal)
+        self.berg_dichte.setRange(0, 100)
+        self.berg_dichte.setValue(80)
+        self.berg_dichte.setToolTip(tr("newmap.berg_dichte_hint"))
+        form.addRow(tr("newmap.lbl_berg_dichte"), self.berg_dichte)
+        self.zonen: dict[str, QSpinBox] = {}
+        for key, vorgabe in (("schluchten", 1), ("taeler", 1), ("hochebenen", 0)):
+            feld = QSpinBox()
+            feld.setRange(0, 6)
+            feld.setValue(vorgabe)
+            feld.setToolTip(tr(f"newmap.{key}_hint"))
+            form.addRow(tr(f"newmap.lbl_{key}"), feld)
+            self.zonen[key] = feld
+
         # Streugut: Steine, Risse und Krater im passenden Biom. Die Mitte des
         # Reglers entspricht der Dichte der Originalkarten (rund 3 %).
         # Scatter: stones, cracks and craters in the matching biome. The middle
@@ -202,6 +234,10 @@ class NewMapPanel(QWidget):
             widget.valueChanged.connect(self._schedule)
         self.roughness.valueChanged.connect(self._schedule)
         self.cliffs.valueChanged.connect(self._schedule)
+        self.berge.valueChanged.connect(self._on_berge)
+        self.berg_dichte.valueChanged.connect(self._schedule)
+        for feld in self.zonen.values():
+            feld.valueChanged.connect(self._schedule)
         self.details.valueChanged.connect(self._schedule)
         self.min_biome.valueChanged.connect(self._on_min_biome)
         for slider in self.mix_sliders.values():
@@ -266,11 +302,18 @@ class NewMapPanel(QWidget):
         # spinner stays freely adjustable afterwards.
         if "volcanoes" in tpl:
             self.volcanoes.setValue(int(tpl["volcanoes"]))
+        # Ebenso Berge und Hochebenen. / Likewise mountains and plateaus.
+        self.berge.setValue(int(round(100 * tpl.get("berge", 0.0))))
+        self.zonen["hochebenen"].setValue(int(tpl.get("hochebenen", 0)))
         self._update_mix_labels()
         self._schedule()
 
     def _on_min_biome(self):
         self.min_biome_value.setText(f"{self.min_biome.value() / 10:.1f} %")
+        self._schedule()
+
+    def _on_berge(self):
+        self.berge_value.setText(f"{self.berge.value()} %")
         self._schedule()
 
     def _on_mix_changed(self):
@@ -307,6 +350,11 @@ class NewMapPanel(QWidget):
             details=self.details.value() / 100.0,
             features=self.features.features(),
             volcanoes=self.volcanoes.value(),
+            berge=self.berge.value() / 100.0,
+            berg_dichte=self.berg_dichte.value() / 100.0,
+            schluchten=self.zonen["schluchten"].value(),
+            taeler=self.zonen["taeler"].value(),
+            hochebenen=self.zonen["hochebenen"].value(),
             landschaft=bool(tpl.get("landschaft", False)),
         )
 
@@ -341,6 +389,14 @@ class NewMapPanel(QWidget):
         if gen.plateau_share > 0.005:
             parts.append(tr("newmap.stat_plateaus", pct=round(100 * gen.plateau_share),
                             n=len(gen.mesas)))
+        z = gen.zonen
+        if z.get("berge") or z.get("hochebenen"):
+            parts.append(tr("newmap.stat_berge", n=z["berge"], h=z["hochebenen"],
+                            s=z["schluchten"], pct=round(100 * z["bauplatz"])))
+            if z["undicht"] or z["unerreichbar"] or z["durchfahrbar"] < z["schluchten"]:
+                parts.append(tr("newmap.stat_berge_warnung", u=z["undicht"],
+                                h=z["unerreichbar"],
+                                s=z["schluchten"] - z["durchfahrbar"]))
         if gen.volcanoes:
             parts.append(tr("newmap.stat_volcanoes", n=len(gen.volcanoes),
                             t=sum(len(z) for z in gen.lava_zones)))

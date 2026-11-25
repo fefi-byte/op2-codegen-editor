@@ -935,6 +935,54 @@ def check_landschaft():
               gen.connected and len(gen.spawns) == 2)
 
 
+def check_berge():
+    """Berge: dicht, Hochebenen erreichbar, Schluchten durchfahrbar.
+
+    Mountains: closed, plateaus reachable, gorges passable.
+    """
+    def p(**kw):
+        return mapgen.MapGenParams.from_template(
+            "plains", **{**dict(width=128, height=128, seed=3, spawns=2,
+                                berge=0.15, hochebenen=2), **kw})
+
+    ohne = mapgen.generate(p(berge=0.0, hochebenen=0))
+    check("Berge: aus = kein Bericht", ohne.zonen == {})
+    a, b = mapgen.generate(p()), mapgen.generate(p())
+    check("Berge: gleicher Seed -> gleiche Karte", np.array_equal(a.tiles, b.tiles))
+    for seed, gen in ((3, a), (11, mapgen.generate(p(seed=11)))):
+        z = gen.zonen
+        check(f"Berge Seed {seed}: es gibt Berge und Hochebenen",
+              z["berge"] >= 2 and z["hochebenen"] >= 1, str(z))
+        check(f"Berge Seed {seed}: Schluchten durchfahrbar",
+              z["durchfahrbar"] == z["schluchten"], str(z))
+        check(f"Berge Seed {seed}: kaum Bauplatz im Berg", z["berg"] <= 0.05,
+              f"{z['berg']:.1%}")
+        check(f"Berge Seed {seed}: Hochebene ist Bauland", z["hochebene"] >= 0.5,
+              f"{z['hochebene']:.1%}")
+        check(f"Berge Seed {seed}: Startpunkte verbunden",
+              gen.connected and len(gen.spawns) == 2)
+        check(f"Berge Seed {seed}: Startpunkte auf Bauplatz",
+              all(mapgen.bauplatz_maske(gen.cells)[y, x] for x, y in gen.spawns))
+    # Die Form allein: Symmetrie, Groessen, Sperrflaeche -- ohne Waende, schnell.
+    # Shape only: symmetry, sizes, blocked area -- without walls, fast.
+    for sym, spiegel in ((mapgen.SYM_MIRROR_X, lambda m: m[:, ::-1]),
+                         (mapgen.SYM_MIRROR_Y, lambda m: m[::-1]),
+                         (mapgen.SYM_ROT180, lambda m: m[::-1, ::-1])):
+        plan = mapgen.berg_plan(p(symmetry=sym))
+        check(f"Berge: Plan symmetrisch ({sym})", plan.stufen and all(
+            np.array_equal(m, spiegel(m)) for m in plan.stufen + plan.hochebenen))
+    for w, h in ((64, 64), (128, 64), (64, 128), (256, 128), (512, 256)):
+        plan = mapgen.berg_plan(p(width=w, height=h))
+        check(f"Berge: Plan auf {w}x{h}", bool(plan.stufen)
+              and plan.stufen[0].shape == (h, w))
+    sperr = np.zeros((128, 128), bool)
+    sperr[40:80, 40:80] = True
+    plan = mapgen.berg_plan(p(), sperr)
+    check("Berge: gesperrte Flaeche bleibt frei", not (plan.alles() & sperr).any())
+    check("Berge: jede Stufe liegt in der vorigen", all(
+        not (i & ~a).any() for a, i in zip(plan.stufen, plan.stufen[1:])))
+
+
 def check_schnitt():
     """Boden quer ueber eine Wand: beide Enden muessen sauber schliessen.
 
@@ -997,6 +1045,7 @@ def main() -> int:
     check_kantenzuordnung()
     check_klippe_algo()
     check_schnitt()
+    check_berge()
     check_cliffs()
     check_min_biome()
     check_details()

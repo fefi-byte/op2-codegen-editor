@@ -2835,3 +2835,45 @@ Strichabschluss die Enden (`klippe_algo.schnitt_schliessen`,
 So entsteht eine Auffahrt (Rampe): Tiefland quer ueber die Wand malen.
 Suite: mud und san, waagerecht und senkrecht -- schliesst, 0 Fels ins Freie.
 Die bisherigen Klippen sind bitgleich (die neuen Parameter sind optional).
+
+## 30. Berge, Schluchten, Hochebenen, Taeler (24.11.2026)
+
+`mapgen_berge.py`. Vier Zonen, unterschieden danach, ob man bauen kann; als
+Bauplatz gilt eine Zelle, auf der ein freies, erreichbares 7x7-Quadrat liegt.
+
+**Form** (`berg_plan`, ohne Kacheln): verzerrte Ellipse je Bergkette plus Grate,
+Schwelle nach Flaechenanteil; Taeler und Schluchten werden dorthin gelegt, wo am
+meisten Berg durchschnitten wird; weitere Stufen mit eigener Schwelle je
+Gipfelblock auf einem gekippten Feld.
+
+Was dabei gemessen wurde:
+
+- **Das Fuenferraster ist fuer den Gelaende-Loeser nicht mehr noetig.** Es
+  stammt vom Blockweg (Abschnitt 18, entfernt in 24) und macht rechteckige
+  Rahmen. Geglaettete freie Konturen gehen.
+- **Stufenabstand 4 Zellen, im Norden 3, und zwar ECHTER Abstand.** In
+  Treppenschritten gezaehlt bleiben an Schraegen 2,8, dort zerbeissen sich die
+  Waende. Unter 4 ebenso, weil eine Seitenwand drei Zellen dick ist.
+- **Haelse und Sporne unter 9 Zellen sind undicht** (`HALS_HALB`): mit dem
+  Abnehmen sank undicht von 2 auf 0 von 47-48 Bergen, die Zeit von 8,1 auf 3,8 s.
+- **Versuche je Wandzelle bewerten, nicht in Summe** -- sonst gewinnt die
+  kuerzeste Wand.
+- **Dichtheit auch diagonal pruefen**, sonst rutscht ein Durchgang durch.
+
+Stand ueber 16 Seeds (128x128, 15 % Berge, OP2MappingLib 0.3.4): 47 Berge, 0
+undicht; 32 Hochebenen, 0 unerreichbar; 14 Schluchten, alle durchfahrbar;
+Bauplatz im Berg bis 2 %, im Tal ab 93 %, in Schluchten 9-95 % (Mittel 36); Startpunkte immer verbunden; im Mittel
+3,7 s. Kachelpaare an Waenden, die keine Originalkarte kennt: 24-30 % (Klippen
+der Bibliothek ohne Berge, drei Seeds: 38-52 %).
+
+Im Originalspiel (Harness, 3 Karten, 71 Panzer, 6000 Ticks): keiner der 53 auf
+einen Berg geschickten kam ins Innere, alle 12 zu Hochebenen, 3 durch Schluchten
+und 3 von Start zu Start kamen an.
+
+### Offen
+
+- Grosse Karten (256x256 und mehr): 22-30 s, und je ein Berg von 10-14 blieb
+  undicht. Das Panel meldet es.
+- Nicht jeder Seed schafft Tal und Schlucht (2 von 16 ohne).
+- Bauplatz je Spieler ist ohne Symmetrie nicht ausgeglichen.
+- Baken setzt der Generator nicht; wer sie setzt, muss unerreichbare Flaechen meiden.
