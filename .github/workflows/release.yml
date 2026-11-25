@@ -51,7 +51,7 @@ jobs:
           python-version: "3.11"
 
       - name: Abhängigkeiten installieren
-        run: pip install PySide6 numpy Pillow pyinstaller
+        run: pip install PySide6 numpy Pillow onnxruntime pyinstaller
 
       - name: EXE bauen
         run: python -m PyInstaller op2editor.spec

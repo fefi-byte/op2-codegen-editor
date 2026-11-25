@@ -8,6 +8,18 @@ and the project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Learned map generator** (*New map*, template *Like the originals
+  (learned)*): maps in the style of the original maps. Two neural networks
+  trained on 61 existing maps run on ONNX Runtime (CPU): one sketches walls and
+  grounds from zones (mountain, gorge, valley, plateau), the other paints the
+  map tile by tile after that sketch and only uses tile pairs seen in the
+  training maps. Sliders: ground mix, cliffs, mountains and their tightness,
+  gorges, valleys, plateaus, details, rocks in mountains; seed, size, symmetry,
+  starting points and features as before. The sketch shows at once, the map
+  follows in the background and can be cancelled; *Generate in good quality*
+  paints the same sketch more carefully. Measured here on 8 threads: 128×128
+  about 2–6 s, 256×256 16 s (good: 34 s). New dependency `onnxruntime`,
+  needed for this template only; model files 8 MB. See `docs/kartenmodell.md`.
 - **Mountains in *New map***: the generator now places mountain chains, gorges,
   valleys and plateaus by itself. Mountains have several tight terraces and a
   closed outer wall (no building), gorges are narrow passages (no building),

@@ -8,7 +8,8 @@
 
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import (collect_data_files, collect_dynamic_libs,
+                                     collect_submodules)
 
 ROOT = Path(SPECPATH)          # repo root (op2-cpp-poc/)
 EDITOR = ROOT / "editor"
@@ -90,7 +91,7 @@ datas = [
     *[
         (str(f), ".")
         for f in (ROOT / "mapview").iterdir()
-        if f.is_file() and f.suffix in (".npz", ".json", ".pkl")
+        if f.is_file() and f.suffix in (".npz", ".json", ".pkl", ".onnx")
     ],
 ]
 
@@ -117,6 +118,10 @@ hiddenimports = [
     "PIL.ImageQt",
     "ctypes",
     "ctypes.wintypes",
+    # gelernter Kartengenerator / learned map generator
+    "onnxruntime",
+    "mapgen_netz",
+    "mapgen_netz_waende",
     # codegen modules (added to sys.path at runtime, not a proper package import)
     "mission_model",
     "codegen",
@@ -137,7 +142,7 @@ a = Analysis(
         str(ROOT / "mapview"),
         str(EDITOR),
     ],
-    binaries=[],
+    binaries=collect_dynamic_libs("onnxruntime"),
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -231,6 +236,7 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    # onnxruntime vertraegt kein UPX / onnxruntime does not survive UPX
+    upx_exclude=["onnxruntime.dll", "onnxruntime_pybind11_state.pyd"],
     name="OP2MissionBuilder",
 )

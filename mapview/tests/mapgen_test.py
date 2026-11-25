@@ -983,6 +983,81 @@ def check_berge():
         not (i & ~a).any() for a, i in zip(plan.stufen, plan.stufen[1:])))
 
 
+def check_netz():
+    """Gelernter Generator: Skizze, Karte, Abbruch, Zonen, Determinismus.
+
+    Learned generator: sketch, map, cancelling, zones, determinism."""
+    import mapgen_netz
+    import mapgen_netz_waende as waende
+    # Die Skizzenwerkzeuge laufen auch ohne onnxruntime.
+    # The sketch tools run without onnxruntime too.
+    rng = np.random.default_rng(1)
+    m = rng.random((40, 50)) < .4
+    nummern, n = waende.label(m)
+    check("Netz: label trennt und nummeriert", (nummern > 0).sum() == m.sum()
+          and n == len(np.unique(nummern)) - 1)
+    ok = all(nummern[a, b] == nummern[c, d]
+             for a, b in np.argwhere(m).tolist()
+             for c, d in ((a, b + 1), (a + 1, b - 1), (a + 1, b), (a + 1, b + 1))
+             if 0 <= c < 40 and 0 <= d < 50 and m[c, d])
+    check("Netz: label verbindet Nachbarn auch diagonal", ok)
+    w = np.zeros((32, 32), np.int64)
+    w[10, 4:12] = 3
+    w[10, 14:24] = 3
+    w[25, 25] = 3
+    p = waende.putzen(w, np.zeros((32, 32), int), np.random.default_rng(2))
+    check("Netz: Luecke geschlossen, Schnipsel weg",
+          (p[10, 4:24] > 0).all() and not p[25, 25])
+    for tab in (waende.SPIEGEL_X, waende.SPIEGEL_Y, waende.DREHEN):
+        check("Netz: Spiegeltabelle ist ihre eigene Umkehr",
+              np.array_equal(tab[tab], np.arange(9)))
+    if not mapgen_netz.verfuegbar():
+        print("--  Netz: onnxruntime fehlt, Rest uebersprungen")
+        return
+    tpl = mapgen.TEMPLATES["netz"]
+
+    def par(**kw):
+        d = dict(width=64, height=64, seed=3, spawns=2)
+        d.update({k: tpl[k] for k in ("berge", "berg_dichte", "hochebenen",
+                                      "cliffs", "details")})
+        d.update(kw)
+        return mapgen.MapGenParams.from_template("netz", **d)
+
+    a = mapgen_netz.karte(par(), mapgen_netz.skizze(par()))
+    b = mapgen_netz.karte(par(), mapgen_netz.skizze(par()))
+    check("Netz: gleicher Seed -> gleiche Karte", np.array_equal(a.tiles, b.tiles))
+    check("Netz: Zelltypen passen zu den Kacheln", all(
+        int(a.cells[y, x]) == celltypes.default_cell_type(int(a.tiles[y, x]))
+        for y in range(0, 64, 5) for x in range(0, 64, 5)))
+    for sym in (mapgen.SYM_NONE, mapgen.SYM_MIRROR_X, mapgen.SYM_ROT180):
+        g = mapgen_netz.karte(par(symmetry=sym, seed=5, width=128, height=64),
+                              mapgen_netz.skizze(par(symmetry=sym, seed=5, width=128, height=64)))
+        check(f"Netz: Startpunkte verbunden ({sym})", g.connected and len(g.spawns) == 2,
+              str(g.spawns))
+    sk = mapgen_netz.skizze(par(symmetry=mapgen.SYM_MIRROR_X))
+    check("Netz: Skizze gespiegelt", np.array_equal(
+        sk.wand, waende.SPIEGEL_X[sk.wand[:, ::-1]]))
+    wenig = mapgen_netz.skizze(par(width=128, height=128, cliffs=0.0))
+    viel = mapgen_netz.skizze(par(width=128, height=128, cliffs=0.4))
+    check("Netz: Klippenregler wirkt", (viel.wand > 0).sum() > 1.5 * (wenig.wand > 0).sum(),
+          f"{(wenig.wand > 0).sum()} / {(viel.wand > 0).sum()}")
+    sand = mapgen_netz.skizze(par(width=128, height=128, mix={"san": .9, "mud": .1}))
+    erde = mapgen_netz.skizze(par(width=128, height=128, mix={"mud": 1.0}))
+    check("Netz: Mischungsregler wirkt", (sand.boden == 2).mean() > (erde.boden == 2).mean() + .2,
+          f"{(sand.boden == 2).mean():.2f} / {(erde.boden == 2).mean():.2f}")
+    g = mapgen_netz.karte(par(width=128, height=128, seed=8),
+                          mapgen_netz.skizze(par(width=128, height=128, seed=8)))
+    check("Netz: Hochebenen sind Bauland", g.zonen["hochebene"] > .7, str(g.zonen))
+    check("Netz: keine Kachel flutet die Karte",
+          np.bincount(g.tiles.ravel()).max() / g.tiles.size < .25)
+    check("Netz: Skizzenbild", mapgen_netz.skizzenbild(sk).shape == (32, 32, 3))
+    try:
+        mapgen_netz.karte(par(), sk, abbruch=lambda: True)
+        check("Netz: Abbruch", False)
+    except mapgen_netz.Abgebrochen:
+        check("Netz: Abbruch", True)
+
+
 def check_schnitt():
     """Boden quer ueber eine Wand: beide Enden muessen sauber schliessen.
 
@@ -1046,6 +1121,7 @@ def main() -> int:
     check_klippe_algo()
     check_schnitt()
     check_berge()
+    check_netz()
     check_cliffs()
     check_min_biome()
     check_details()

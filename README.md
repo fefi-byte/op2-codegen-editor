@@ -6,33 +6,56 @@ A visual mission editor for *Outpost 2: Divided Destiny*. Design missions by cli
 
 Built against the classic [OP2MissionSDK](https://github.com/OutpostUniverse/OP2MissionSDK) (Outpost2DLL + OP2Helper + HFL) maintained by Outpost Universe.
 
-![Main window](docs/images/Main.png)
+![Mission mode: outline on the left, the colony on the real map, timeline of time triggers](docs/images/Main.png)
 
-**Feature manual:** [English](EDITOR_DOCS.md) · [Deutsch](EDITOR_DOKU.md) — full walk-through of every panel, dialog, and action type.
+**Feature manual:** [English](EDITOR_DOCS.md) · [Deutsch](EDITOR_DOKU.md) — walk-through of the panels, dialogs and action types.
 
-Recent changes: [CHANGELOG.md](CHANGELOG.md).
+Download: [Releases](https://github.com/fefi-byte/op2-codegen-editor/releases) (Windows ZIP, no Python needed) · Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## What's in the editor
 
-- **Visual placement** — buildings, vehicles, mining beacons, walls and tubes, drag-drop on a real tile map
+### Missions
+
+- **Mission outline** — players, objects, groups, triggers and victory/defeat in one tree; click shows it on the map, double-click edits it
+- **Visual placement** — buildings, vehicles with facing, mining beacons, walls and tubes on the real tile map, drawn with the game's own graphics in the player colour
 - **Players** — up to 6 players, human or AI, per-player resources, tech level, pre-researched techs
-- **op2-ki opponent (optional)** — an AI player can be handed to [op2-ki](https://github.com/fefi-byte/op2-ki), a separate project: it builds its colony, researches and fights on its own (multiplayer opponent or mission roles). The editor only links it in, see [docs/op2-ki.md](docs/op2-ki.md)
-- **Terrain and cliffs** — the ground brush, the cliff tool and *clean up transitions* run on [OP2MappingLib](https://github.com/OutpostUniverse/OP2MappingLib) (submodule `OP2MappingLib/`, no extra Python packages). Releases build `op2maplib.dll` from the submodule's sources; locally the submodule's prebuilt DLL is used, or set `[build] op2maplib_selbst_bauen = true` to build it from source with CMake. Without it, or with `[terrain] op2maplib = false` in `config.ini`, the built-in Python path is used
-- **Groups** — BuildingGroup / ReinforceGroup / FightGroup / MiningGroup, each with its own roster and behaviour
-- **Triggers** — conditions (time, count, resource, findUnit, …) with nested if/then/else action blocks and forEach loops
-- **Actions** — 15+ action kinds including createUnit, sendAttackWave, startMining, group commands, unit commands, disasters
+- **Groups** — BuildingGroup / ReinforceGroup / FightGroup / MiningGroup, each with its own roster and behaviour; areas can be dragged on the map
+- **Triggers and actions** — conditions (time, count, resource, point, rect, …), 15+ action kinds, nested if/then/else, loops, branches by difficulty, own actions from the action designer, a timeline of time triggers
 - **Self-healing groups** — mission-wide watchdog that re-attaches rebuilt buildings/mines/smelters to their group automatically
+- **op2-ki opponent (optional)** — an AI player can be handed to [op2-ki](https://github.com/fefi-byte/op2-ki), a separate project: it builds its colony, researches and fights on its own (multiplayer opponent or mission roles, with script and attack commands from triggers). The editor only links it in, see [docs/op2-ki.md](docs/op2-ki.md)
 - **Save-game safe** — persistent state (variables, groups, unit handles) lives in a single POD struct that survives save/load
-- **Live validation** — mission-wide error/warning panel updates on every edit
+- **Live validation** — errors, warnings and hints update on every edit; the build stops on anything the generator could not translate
+- **One-click build** — C++ is generated, compiled to a 32-bit DLL with MSVC and copied into your OP2 folder; *Test in OP2* starts the game with it
+
+![Triggers with actions](docs/images/Trigger.png)
+
+### Maps
+
+![New map: the learned generator with its instant sketch preview](docs/images/NewMap.png)
+
+- **New map, learned from the originals** — the template *Like the originals (learned)* paints maps in the style of the game's own maps. Two small neural networks (8 MB, CPU only) first sketch walls and grounds, then paint the map tile by tile, using only tile pairs that occur in existing maps. You set where the mountains, gorges, valleys and plateaus go and how many cliffs, rocks and which ground mix you want. The sketch appears at once; a 128×128 map takes a few seconds. How it was trained and measured: [docs/kartenmodell.md](docs/kartenmodell.md)
+- **New map, classic generator** — plains, canyon, desert, islands, ice and dry landscape from [OP2MappingLib](https://github.com/OutpostUniverse/OP2MappingLib), in a fraction of a second, now with **mountain chains, gorges, valleys and plateaus**: mountains are closed and cannot be built on, valleys and plateaus are building ground
+- Both: seed, sizes from 64×64 to 512×256, symmetry for fair multiplayer maps, connected starting points, and features with a rough position (valley, mountain, plateau, clearing, choke point)
+- **Terrain brushes** — dirt, rock, sand, vegetation, snow with the game's own transition tiles, volcanoes, lava fields, building ground
+- **Cliff tool** — draw a line, get a wall: live preview, wall height like the map, ramps, closed ends
+- **Tiles, groups and packages** — single tiles and stamps by ground and kind, 63 ready-made detail packages (wreckage, boulder and crater fields), save your own
+- **Passability overlay** and *clean up transitions*
+
+![Map editor: brushes and the whole map](docs/images/Terrain.png)
+
+The ground brush, the cliff tool and the classic generator run on OP2MappingLib (submodule `OP2MappingLib/`, no extra Python packages). Releases build `op2maplib.dll` from the submodule's sources; locally the submodule's prebuilt DLL is used, or set `[build] op2maplib_selbst_bauen = true` to build it from source with CMake. Without it, or with `[terrain] op2maplib = false` in `config.ini`, the built-in Python path is used. The learned generator needs the Python package `onnxruntime` (included in the releases); without it only that template is unavailable.
+
+### General
+
 - **Localised UI** — German and English, switch at runtime
-- **One-click build** — MSBuild integration, DLL is copied straight into your OP2 folder
+- Undo/redo with a history list, remembered window layout
 
 ## Quick start
 
 ### Requirements
 
 - Python 3.11+
-- `pip install PySide6 numpy Pillow`
+- `pip install -r requirements.txt` (PySide6, numpy, Pillow, onnxruntime)
 - Visual Studio Build Tools 2019+ with the **C++ x86 build tools** component (for the 32-bit DLL)
 - Outpost 2 installed (OPU 1.4.1 recommended — the editor reads its extracted `OPU\base\` and `OPU\maps` layout, no `.vol` archives needed)
 
@@ -86,12 +109,7 @@ Or double-click `editor\Editor (modular) starten.bat`.
 
 ### Build a mission DLL
 
-Use the **Build → DLL** button in the toolbar, or manually:
-
-```powershell
-cd LevelTemplate
-msbuild OP2Script.vcxproj /p:Configuration=Release /p:Platform=Win32
-```
+Use **Build** in the header bar. Every mission folder is self-contained, so you can also run its `build.bat`.
 
 ## Repository layout
 
@@ -102,9 +120,12 @@ editor/
     panels/         Sidebar panels (placement, triggers, groups, objects)
     Editor (modular) starten.bat
 codegen/            Mission model + C++ code generator
-mapview/            Tile renderer for the map view
+mapview/            Map files, tile renderer, terrain tools and map generators
+                    (mapgen*.py classic, mapgen_netz*.py + netz_* learned)
 missions/           Example mission projects
-LevelTemplate/      C++ mission project template (MSBuild)
+docs/               op2-ki, cliff notes, map model, images
+tests/              The check suites under pytest
+op2-ki/             op2-ki submodule (AI opponent, MIT)
 OP2MissionSDK/      SDK submodule (OutpostUniverse/OP2MissionSDK)
 OP2MappingLib/      Terrain blending, cliff and map generator library submodule (OutpostUniverse/OP2MappingLib, MIT)
 lang.de.ini         German UI strings
@@ -116,7 +137,7 @@ lang.en.ini         English UI strings
 1. The editor loads a project into an in-memory **Mission model** (`codegen/mission_model.py`), a set of dataclasses describing every unit, group, trigger and action.
 2. Every change is validated live (`editor/app/validation.py`) — errors and warnings appear in the right sidebar.
 3. On **Build**, the code generator (`codegen/codegen.py`) walks the model and emits a single self-contained `mission.cpp` against the classic OP2MissionSDK (Outpost2DLL + OP2Helper + HFL).
-4. **MSBuild** compiles that C++ into a 32-bit DLL.
+4. **CMake + MSVC** compile that C++ into a 32-bit DLL.
 5. **Test in OP2** launches Outpost 2 with the mission preselected via `op2launcher.exe`.
 
 ## Running the checks
@@ -127,10 +148,11 @@ pytest -n auto
 ```
 
 This runs the map-generator suite (one test per check group, in parallel), the
-`.map` round trip and the editor smoke test (offscreen Qt), about 1½ minutes.
+`.map` round trip, the editor smoke test (offscreen Qt) and the op2-ki tests.
 Each suite also runs on its own, e.g. `python mapview/tests/mapgen_test.py`.
 The game folder comes from `OP2_GAME`, else `game_path` in `config.ini`.
 
 ## License
 
-*(project-specific — add your preferred license file here)*
+[MIT](LICENSE). The submodules carry their own licences. *Outpost 2* itself, its graphics and its maps are not
+part of this repository; the editor reads them from your installation.

@@ -14,14 +14,16 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QSlider, QScrollArea
+from PySide6.QtWidgets import QProgressBar, QSlider, QScrollArea
 
 from ..common import *
+from ..netz_worker import NetzWorker
 from ..style import apply_role
 from .feature_list import FeatureList
 from .. import maplib
 
 import mapgen
+import mapgen_netz
 
 # Auswaehlbare Kartengroessen -- die Breite steckt als Zweierpotenz im
 # Dateikopf, deshalb keine freien Werte.
@@ -29,7 +31,7 @@ import mapgen
 # header, hence no free values.
 SIZES = [(64, 64), (128, 64), (128, 128), (256, 128), (256, 256), (512, 256)]
 
-TEMPLATE_KEYS = ["plains", "canyon", "desert", "islands", "ice", "newterra"]
+TEMPLATE_KEYS = ["plains", "canyon", "desert", "islands", "ice", "newterra", "netz"]
 # "veg" = bewachsener Fels -- OP2 kennt kein Grasland, aber diese Kacheln
 # bilden im Original zusammenhaengende bewachsene Flaechen.
 # "veg" = overgrown rock -- OP2 has no grassland, but these tiles form
@@ -44,6 +46,13 @@ class NewMapPanel(QWidget):
         self._result: mapgen.GeneratedMap | None = None
         self._busy = False
         self._backup = None
+        # Gelernter Generator: laufende Rechnung, letzte Skizze und ob nach dem
+        # Abbruch gleich neu begonnen werden soll.
+        # Learned generator: running computation, last sketch, and whether to
+        # restart right after cancelling.
+        self._worker: NetzWorker | None = None
+        self._skizze = None                     # (Parameter, Skizze)
+        self._nochmal: str | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(4, 4, 4, 4)
@@ -55,6 +64,7 @@ class NewMapPanel(QWidget):
         form = QFormLayout(inner)
 
         self.size_combo = QComboBox()
+        self._form = form
         for w, h in SIZES:
             self.size_combo.addItem(f"{w} × {h}", (w, h))
         self.size_combo.setCurrentIndex(2)
@@ -97,6 +107,8 @@ class NewMapPanel(QWidget):
             box.setLayout(row)
             form.addRow(tr(f"newmap.fam_{key}"), box)
             self.mix_sliders[key] = slider
+            if key == "sno":
+                self._sno_box = box
             self.mix_values[key] = value
 
         self.roughness = QSlider(Qt.Horizontal)
@@ -122,6 +134,7 @@ class NewMapPanel(QWidget):
         min_row.addWidget(self.min_biome_value)
         min_box = QWidget()
         min_box.setLayout(min_row)
+        self._min_box = min_box
         form.addRow(tr("newmap.lbl_min_biome"), min_box)
 
         self.symmetry = QComboBox()
@@ -135,6 +148,7 @@ class NewMapPanel(QWidget):
         # stamps, so plateaus prefer those areas.
         self.cliffs = QSlider(Qt.Horizontal)
         self.cliffs.setRange(0, 40)
+        self.cliffs.setToolTip(tr("newmap.cliffs_hint"))
         form.addRow(tr("newmap.lbl_cliffs"), self.cliffs)
 
         # Berge und Bauland: Flaechenanteil der Bergketten, wie eng die Stufen
@@ -168,6 +182,10 @@ class NewMapPanel(QWidget):
             feld.setToolTip(tr(f"newmap.{key}_hint"))
             form.addRow(tr(f"newmap.lbl_{key}"), feld)
             self.zonen[key] = feld
+        self.berg_felsen = QCheckBox(tr("newmap.berg_felsen"))
+        self.berg_felsen.setChecked(True)
+        self.berg_felsen.setToolTip(tr("newmap.berg_felsen_hint"))
+        form.addRow("", self.berg_felsen)
 
         # Streugut: Steine, Risse und Krater im passenden Biom. Die Mitte des
         # Reglers entspricht der Dichte der Originalkarten (rund 3 %).
@@ -200,6 +218,29 @@ class NewMapPanel(QWidget):
         scroll.setWidget(inner)
         root.addWidget(scroll, 1)
 
+        # Gelernter Generator: Sofortvorschau, Fortschritt, gute Stufe.
+        # Learned generator: instant preview, progress, good quality.
+        self.netz_box = QWidget()
+        netz = QVBoxLayout(self.netz_box)
+        netz.setContentsMargins(0, 0, 0, 0)
+        self.netz_bild = QLabel()
+        self.netz_bild.setAlignment(Qt.AlignCenter)
+        netz.addWidget(self.netz_bild)
+        self.netz_balken = QProgressBar()
+        self.netz_balken.setRange(0, 100)
+        netz.addWidget(self.netz_balken)
+        netz_row = QHBoxLayout()
+        self.netz_gut = QPushButton(tr("newmap.netz_gut"))
+        self.netz_gut.setToolTip(tr("newmap.netz_gut_hint"))
+        self.netz_gut.clicked.connect(lambda: self._netz_start("gut"))
+        netz_row.addWidget(self.netz_gut, 1)
+        self.netz_stop = QPushButton(tr("newmap.netz_stop"))
+        self.netz_stop.clicked.connect(self._netz_abbrechen)
+        netz_row.addWidget(self.netz_stop)
+        netz.addLayout(netz_row)
+        self.netz_box.setVisible(False)
+        root.addWidget(self.netz_box)
+
         self.stats = QLabel("")
         self.stats.setWordWrap(True)
         self.stats.setProperty("secondary", "true")
@@ -228,6 +269,9 @@ class NewMapPanel(QWidget):
         self._timer.setSingleShot(True)
         self._timer.setInterval(400)
         self._timer.timeout.connect(self._regenerate)
+        # Ein laufender Thread darf das Programmende nicht ueberleben.
+        # A running thread must not outlive the program.
+        QApplication.instance().aboutToQuit.connect(self.beenden)
         for widget in (self.size_combo, self.symmetry):
             widget.currentIndexChanged.connect(self._schedule)
         for widget in (self.seed, self.spawns, self.volcanoes):
@@ -236,6 +280,7 @@ class NewMapPanel(QWidget):
         self.cliffs.valueChanged.connect(self._schedule)
         self.berge.valueChanged.connect(self._on_berge)
         self.berg_dichte.valueChanged.connect(self._schedule)
+        self.berg_felsen.toggled.connect(self._schedule)
         for feld in self.zonen.values():
             feld.valueChanged.connect(self._schedule)
         self.details.valueChanged.connect(self._schedule)
@@ -260,12 +305,15 @@ class NewMapPanel(QWidget):
 
     def keep(self):
         """Erzeugte Karte behalten und das Panel schliessen."""
+        if self._ist_netz() and (self._worker is not None or self._result is None):
+            return                              # rechnet noch / still computing
         if self._result is None:
             self._regenerate()
         self._window.close_newmap_panel(keep=True)
 
     def discard(self):
         """Vorherige Karte wiederherstellen und das Panel schliessen."""
+        self.beenden()
         self._window.close_newmap_panel(keep=False)
 
     def restore_backup(self):
@@ -304,6 +352,17 @@ class NewMapPanel(QWidget):
             self.volcanoes.setValue(int(tpl["volcanoes"]))
         # Ebenso Berge und Hochebenen. / Likewise mountains and plateaus.
         self.berge.setValue(int(round(100 * tpl.get("berge", 0.0))))
+        self.berg_dichte.setValue(int(round(100 * tpl.get("berg_dichte", 0.8))))
+        self.cliffs.setValue(int(round(100 * tpl.get("cliffs", 0.0))))
+        self.details.setValue(int(round(100 * tpl.get("details", 0.5))))
+        # Was der gelernte Generator nicht kann, verschwindet (Schnee, Vulkane,
+        # Zerklueftung), was nur er kann, erscheint.
+        # What the learned generator cannot do disappears and vice versa.
+        netz = self._ist_netz()
+        for feld in (self.roughness, self._min_box, self._sno_box, self.volcanoes):
+            self._form.setRowVisible(feld, not netz)
+        self._form.setRowVisible(self.berg_felsen, netz)
+        self.netz_box.setVisible(netz)
         self.zonen["hochebenen"].setValue(int(tpl.get("hochebenen", 0)))
         self._update_mix_labels()
         self._schedule()
@@ -324,6 +383,9 @@ class NewMapPanel(QWidget):
         total = sum(s.value() for s in self.mix_sliders.values()) or 1
         for key, slider in self.mix_sliders.items():
             self.mix_values[key].setText(f"{100 * slider.value() // total} %")
+
+    def _ist_netz(self) -> bool:
+        return bool(mapgen.TEMPLATES.get(self.template.currentData(), {}).get("netz"))
 
     def _schedule(self):
         self.stats.setText(tr("newmap.status_working"))
@@ -355,6 +417,7 @@ class NewMapPanel(QWidget):
             schluchten=self.zonen["schluchten"].value(),
             taeler=self.zonen["taeler"].value(),
             hochebenen=self.zonen["hochebenen"].value(),
+            berg_felsen=self.berg_felsen.isChecked(),
             landschaft=bool(tpl.get("landschaft", False)),
         )
 
@@ -365,6 +428,10 @@ class NewMapPanel(QWidget):
 
     def _regenerate(self):
         """Karte erzeugen und SOFORT in die grosse Ansicht uebernehmen."""
+        if self._ist_netz():
+            self._netz_start("schnell")
+            return
+        self.beenden()
         if self._busy:
             return
         self._busy = True
@@ -381,6 +448,91 @@ class NewMapPanel(QWidget):
         finally:
             QApplication.restoreOverrideCursor()
             self._busy = False
+
+    # ------------------------------------------------------------------
+    # Gelernter Generator: in einem eigenen Thread, mit Sofortvorschau
+    # Learned generator: in its own thread, with an instant preview
+
+    def _netz_start(self, stufe: str):
+        """Skizze und Karte rechnen. Laeuft schon eine Rechnung, wird sie
+        abgebrochen und danach neu begonnen.
+
+        Compute sketch and map; a running computation is cancelled first."""
+        self._timer.stop()
+        if not mapgen_netz.verfuegbar():
+            self.stats.setText(tr("newmap.netz_fehlt"))
+            self._netz_knoepfe(False)
+            return
+        if self._worker is not None:
+            self._nochmal = stufe
+            self._worker.abbrechen()
+            return
+        params = self.params()
+        sk = self._skizze[1] if self._skizze and self._skizze[0] == params else None
+        worker = NetzWorker(params, stufe, sk)
+        worker.skizze_fertig.connect(self._netz_skizze)
+        worker.fortschritt.connect(self.netz_balken.setValue)
+        worker.ok.connect(self._netz_fertig)
+        worker.err.connect(self.stats.setText)
+        worker.finished.connect(self._netz_ende)
+        self._worker = worker
+        self.netz_balken.setValue(0)
+        self.stats.setText(tr("newmap.status_working"))
+        self._netz_knoepfe(True)
+        worker.start()
+
+    def _netz_knoepfe(self, rechnet: bool):
+        self.keep_btn.setEnabled(not rechnet)
+        self.netz_gut.setEnabled(not rechnet)
+        self.netz_stop.setEnabled(rechnet)
+
+    def _netz_abbrechen(self):
+        self._nochmal = None
+        if self._worker is not None:
+            self._worker.abbrechen()
+
+    def _netz_skizze(self, sk):
+        worker = self.sender()
+        if worker is not self._worker:
+            return
+        self._skizze = (worker.params, sk)
+        bild = np.ascontiguousarray(mapgen_netz.skizzenbild(sk))
+        h, w = bild.shape[:2]
+        pix = QPixmap.fromImage(QImage(bild.data, w, h, w * 3,
+                                       QImage.Format_RGB888).copy())
+        self.netz_bild.setPixmap(pix.scaled(
+            max(120, self.width() - 24), 150, Qt.KeepAspectRatio, Qt.FastTransformation))
+
+    def _netz_fertig(self, gen):
+        worker = self.sender()
+        if worker is not self._worker or self._nochmal is not None:
+            return
+        self._result = gen
+        self._window.apply_generated_map(gen, worker.params)
+        self.stats.setText(self._summary(gen))
+
+    def _netz_ende(self):
+        worker, self._worker = self._worker, None
+        if worker is not None:
+            worker.deleteLater()
+        self._netz_knoepfe(False)
+        stufe, self._nochmal = self._nochmal, None
+        if stufe is not None and self._ist_netz():
+            self._netz_start(stufe)
+        elif worker is not None and worker.abgebrochen:
+            self.stats.setText(tr("newmap.netz_abgebrochen"))
+
+    def beenden(self):
+        """Laufende Rechnung abbrechen und auf ihr Ende warten.
+        Cancel a running computation and wait for it."""
+        self._nochmal = None
+        worker, self._worker = self._worker, None
+        if worker is not None:
+            worker.blockSignals(True)
+            worker.abbrechen()
+            worker.wait()
+            worker.deleteLater()
+            self._netz_knoepfe(False)
 
     def _summary(self, gen: mapgen.GeneratedMap) -> str:
         mix = ", ".join(f"{k} {100 * v:.0f} %" for k, v in sorted(gen.family_share.items())

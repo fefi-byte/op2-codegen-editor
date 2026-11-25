@@ -11,14 +11,16 @@ Alpha-Version. Die Doku bildet den aktuellen Editor-Stand ab.
 5. [Panel: Trigger](#panel-trigger)
 6. [Panel: Objekte](#panel-objekte)
 7. [Missions-Übersicht & Validierung](#missions-übersicht--validierung)
-8. [Dialog: Einstellungen](#dialog-einstellungen)
-9. [Dialog: Spieler](#dialog-spieler)
-10. [Dialog: Sieg & Niederlage](#dialog-sieg--niederlage)
-11. [Aktionseditor](#aktionseditor)
-12. [Selbstheilende Gruppen](#selbstheilende-gruppen)
-13. [Ausdrucksfelder](#ausdrucksfelder)
-14. [Codegenerierung](#codegenerierung)
-15. [Projektformat](#projektformat)
+8. [Map Editor](#map-editor)
+9. [Neue Karte](#neue-karte)
+10. [Dialog: Einstellungen](#dialog-einstellungen)
+11. [Dialog: Spieler](#dialog-spieler)
+12. [Dialog: Sieg & Niederlage](#dialog-sieg--niederlage)
+13. [Aktionseditor](#aktionseditor)
+14. [Selbstheilende Gruppen](#selbstheilende-gruppen)
+15. [Ausdrucksfelder](#ausdrucksfelder)
+16. [Codegenerierung](#codegenerierung)
+17. [Projektformat](#projektformat)
 
 ---
 
@@ -26,30 +28,20 @@ Alpha-Version. Die Doku bildet den aktuellen Editor-Stand ab.
 
 ![Hauptfenster](docs/images/Main.png)
 
-Drei Bereiche:
+- **Kopfleiste** — Missions- und Kartenname, der Umschalter **Mission | Map Editor**, die Werkzeuge **Auswahl** und **Platzieren** (Missionsmodus), rechts **Code anzeigen**, **In OP2 testen** und **Build**.
+- **Links** — im Missionsmodus die **Missionsgliederung**: Einstellungen, Spieler, Objekte, Gruppen, Ablauf der Trigger, Sieg & Niederlage. Oben die Suche, **+ Neu** legt an, ein Klick zeigt den Eintrag auf der Karte, ein Doppelklick öffnet seinen Editor an Ort und Stelle (Bestätigen / Abbrechen / Löschen). Im Kartenmodus der **Map Editor**.
+- **Mitte** — die Karte. Die Knöpfe unten blenden Objekte, Gruppen, Trigger-Bereiche und den Zeitstrahl ein und aus; der Zeitstrahl oben zeigt die Zeit-Trigger in Marks.
+- **Statusleiste** — letzte Aktion, Zahl der Fehler und Warnungen (Klick blendet die Liste ein), Zoom, Kachel unter dem Zeiger.
 
-- **Linke Seitenleiste** — das gerade aktive Panel: Platzieren / Trigger / Gruppen / Objekte. Umschalten über die Tabs oben.
-- **Mitte** — die Kartenansicht.
-- **Rechte Seitenleiste** — Validierungsbericht (oben) und Missions-Übersicht (unten).
-
-### Toolbar
-
-| Schaltfläche | Funktion |
-|---|---|
-| **Einstellungen** | Missionsname, -typ, Techtree, Schwierigkeitswerte, eigene Variablen |
-| **Spieler** | Kolonien, Mensch/KI, Tech-Level, Ressourcen, Vorabforschung |
-| **Sieg / Niederlage** | Sieg- und Niederlage-Bedingungen |
-| **Code anzeigen** | Generierten C++-Code mit Syntax-Highlighting anzeigen |
-| **Build → DLL** | Kompilieren und DLL in den OP2-Ordner kopieren |
-| **In OP2 testen** | OP2 mit dieser Mission direkt starten (via `op2launcher.exe`) |
-| **Objekte leeren** | Alle platzierten Einheiten und Gebäude entfernen |
+Validierung, Übersicht und Verlauf sind Docks, die das Menü Ansicht einblendet.
 
 ### Menüs
 
-- **Datei** — Projekt öffnen / speichern / speichern unter · Karte wählen · Ausgabeort · Beenden
-- **Bearbeiten** — Rückgängig / Wiederholen der Platzierungs-Schritte
-- **Ansicht** — Gitter ein/aus · Zoom 1:1 · Karte einpassen
+- **Datei** — Neue Karte · Projekt öffnen / speichern / speichern unter · Ausgabeort der DLL · Beenden
+- **Bearbeiten** — Rückgängig (Strg+Z) · Wiederholen (Strg+Y) · Aktions-Designer · Lavafelder bearbeiten · alle Objekte und Gruppen löschen
+- **Ansicht** — Docks · Kachelgitter · Trigger-Zonen · Gruppen-Bereiche · Zoom 1:1 (Strg+0) · Karte einpassen (Strg+F)
 - **Sprache** — Automatisch (System) · Deutsch · English (greift beim nächsten Start)
+- **Mission** — Einstellungen · Spieler · Sieg & Niederlage
 
 ---
 
@@ -186,23 +178,39 @@ Die Aktionsliste des ausgewählten Triggers. Aktionen können hinzugefügt, bear
 
 ## Panel: Objekte
 
-Linke Seitenleiste → Tab **Objects**. Flache Liste jeder platzierten Einheit, jedes Gebäudes, jedes Beacons und jeder Wand/Rohres. Praktisch für Massenbearbeitung / Aufräumen.
+Erreichbar aus der Gliederung. Flache Liste jeder platzierten Einheit, jedes Gebäudes, jedes Beacons und jeder Wand/Rohres. Praktisch für Massenbearbeitung / Aufräumen.
 
 ---
 
 ## Missions-Übersicht & Validierung
 
-Rechte Seitenleiste, immer sichtbar:
+- **Missionsgliederung** (links, Missionsmodus) — die ganze Mission als Baum: Spieler, Objekte, Gruppen, Trigger in Ausführungsreihenfolge, Sieg und Niederlage. Einträge mit einem Problem tragen ⚠.
+- **Validierung** (Dock, über den Zähler in der Statusleiste) — Fehler, Warnungen und Hinweise, bei jeder Änderung aktuell. Beispiele: unbenutzte Variable, referenzierte Gruppe existiert nicht, keine Sieg-/Niederlagebedingung gesetzt.
+- **Verlauf** (Dock) — jeder Rückgängig-Schritt; ein Klick springt dorthin.
 
-- **Validierung** *(oben)* — Live-Fehler-/Warnungs-Bericht. Aktualisiert sich bei jeder Änderung. Beispiele: unbenutzte Variable, referenzierte Gruppe existiert nicht, keine Sieg-/Niederlagebedingung gesetzt. Zählung am unteren Rand (`0 errors, 3 warnings`).
-- **Missions-Übersicht** *(unten)* — dynamischer Baum mit der ganzen Mission auf einen Blick:
-  - **Flow / Trigger** — Ausführungsreihenfolge der Trigger mit Flusspfeilen (⟶) und Zykluserkennung
-  - **Spieler** — eine Zeile pro Spieler
-  - **Gruppen** — alle BuildingGroups / ReinforceGroups / FightGroups / MiningGroups
-  - **Sieg / Niederlage**
-  - **Objekte** — Gesamtanzahl platzierter Objekte
+---
 
-Doppelklick auf einen Eintrag öffnet den passenden Editor.
+## Map Editor
+
+Umschalter → **Map Editor**.
+
+- **Malen** — Pinsel für Erde, Fels, Sand, Bewuchs und Schnee (die Übergänge wählt der Editor), Tiefland, Vulkan, Lava möglich, Bauland und **Klippe zeichnen**. Rechtsklick übernimmt den Boden als Pinsel, Strg+Mausrad ändert die Pinselgröße.
+- **Klippe zeichnen** — Punkte setzen, Hochseite und Wandhöhe wählen; die Wand ist live zu sehen, bevor sie gesetzt wird. *Tiefland* quer über eine Wand gemalt ergibt eine Rampe.
+- **Kacheln & Gruppen** — einzelne Kacheln und Stempel nach Boden und Art, Detail-Pakete, *Bereich als Paket speichern*.
+- **Overlay** — Befahrbarkeit nach Tempo oder nur Hindernisse. **Übergänge aufräumen** rechnet alle Übergangskacheln neu.
+
+---
+
+## Neue Karte
+
+**Datei → Neue Karte…** öffnet ein Panel neben der Karte; das Ergebnis entsteht direkt in der großen Ansicht. *Übernehmen* behält es, *Verwerfen* stellt die vorherige Karte wieder her.
+
+Gemeinsame Regler: Größe, Vorlage, Seed (*Würfeln*), Geländemischung, Symmetrie, Klippen, Berge, *Berge enger*, Schluchten, Täler, Hochebenen, Details, Startpunkte und **Merkmale** mit grober Lage (Tal, Berg, Plateau, Freifläche, Engstelle).
+
+- **Ebene, Canyon, Wüste, Inseln, Eiswelt, Trockene Landschaft** — der klassische Generator, bei jeder Änderung neu. Zusätzlich: Zerklüftung, Mindestgröße der Biome, Vulkane. Berge sind rundum geschlossen; die Statuszeile warnt, wenn einer undicht ist.
+- **Wie die Originale (gelernt)** — der gelernte Generator. Nach einer Änderung erscheint erst die Skizze, dann wird die Karte im Hintergrund gemalt (Fortschritt, *Abbrechen*). **Gut erzeugen** malt dieselbe Skizze sorgfältiger. Berge sind hier befahrbar, aber zu eng zum Bauen; *Felsen in Bergen* füllt, was die Wände offen lassen, nie auf Sand. *Klippen* sagt, wie viele Wände außerhalb der Berge stehen. Schnee und Vulkane gibt es nicht, die kommen mit den Pinseln dazu. Hochebenen sind Bauland, aber nicht sicher erhöht. Bei Symmetrie ist die Anlage gespiegelt, die Kacheln sind es nur ungefähr. Gleicher Seed ergibt auf demselben PC dieselbe Karte; eine andere CPU kann in Kleinigkeiten abweichen. Aus dem Quelltext gestartet braucht es das Python-Paket `onnxruntime`.
+
+Baken und Einheiten setzt keiner der beiden Generatoren.
 
 ---
 
@@ -420,12 +428,12 @@ Ein Projekt ist ein Ordner:
 
 ```
 MeineMission/
-├── project.json     — alle Editor-Felder
+├── mission.op2proj  — alle Editor-Felder
 ├── mission.cpp      — zuletzt generierter C++-Code (bei jedem Build überschrieben)
 └── mission.dll      — kompilierte Missions-DLL
 ```
 
-### `project.json`-Felder
+### `mission.op2proj`-Felder
 
 | Schlüssel | Inhalt |
 |---|---|

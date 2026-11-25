@@ -73,6 +73,14 @@ TEMPLATES: dict[str, dict] = {
     "newterra": {"mix": {"mud": 0.68, "san": 0.20, "roc": 0.12},
                  "roughness": 0.0, "landschaft": True, "volcanoes": 1,
                  "berge": 0.08},
+    # Gelernter Generator (mapgen_netz): Stil der Originalkarten. "netz" sagt dem
+    # Panel, dass diese Vorlage dort gerechnet wird; die uebrigen Werte sind
+    # Vorschlaege.
+    # Learned generator (mapgen_netz): style of the original maps. "netz" tells
+    # the panel to compute it there; the other values are suggestions.
+    "netz": {"mix": {"mud": 0.59, "roc": 0.19, "san": 0.20, "veg": 0.02},
+             "roughness": 0.0, "netz": True, "berge": 0.10, "berg_dichte": 0.5,
+             "hochebenen": 2, "cliffs": 0.12, "details": 0.10},
 }
 
 
@@ -171,6 +179,11 @@ class MapGenParams:
     schluchten: int = 1
     taeler: int = 1
     hochebenen: int = 0
+    # Nur gelernter Generator: Felsen und Krater in Berge und Schluchten setzen,
+    # wo die Waende allein noch Bauplatz lassen.
+    # Learned generator only: put rocks and craters into mountains and gorges
+    # where the walls alone leave building ground.
+    berg_felsen: bool = True
 
     @classmethod
     def from_template(cls, name: str, **kwargs) -> "MapGenParams":

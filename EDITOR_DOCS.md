@@ -11,14 +11,16 @@ Alpha release. Documentation reflects the current editor state.
 5. [Triggers panel](#triggers-panel)
 6. [Objects panel](#objects-panel)
 7. [Mission overview & validation](#mission-overview--validation)
-8. [Dialog: Settings](#dialog-settings)
-9. [Dialog: Players](#dialog-players)
-10. [Dialog: Victory & Defeat](#dialog-victory--defeat)
-11. [Action editor](#action-editor)
-12. [Self-healing groups](#self-healing-groups)
-13. [Expression fields](#expression-fields)
-14. [Code generation](#code-generation)
-15. [Project format](#project-format)
+8. [Map editor](#map-editor)
+9. [New map](#new-map)
+10. [Dialog: Settings](#dialog-settings)
+11. [Dialog: Players](#dialog-players)
+12. [Dialog: Victory & Defeat](#dialog-victory--defeat)
+13. [Action editor](#action-editor)
+14. [Self-healing groups](#self-healing-groups)
+15. [Expression fields](#expression-fields)
+16. [Code generation](#code-generation)
+17. [Project format](#project-format)
 
 ---
 
@@ -26,30 +28,20 @@ Alpha release. Documentation reflects the current editor state.
 
 ![Main window](docs/images/Main.png)
 
-Three regions:
+- **Header bar** — mission and map name, the mode switch **Mission | Map Editor**, the tools **Select** and **Place** (mission mode), then **Show code**, **Test in OP2** and **Build**.
+- **Left** — in mission mode the **mission outline**: settings, players, objects, groups, the flow of triggers, victory & defeat. Search on top, **+ New** adds things, a click shows the entry on the map, a double-click opens its editor right there (Confirm / Cancel / Delete). In map mode the **map editor**.
+- **Centre** — the map. Buttons at the bottom toggle objects, groups, trigger areas and the timeline; the timeline on top shows the time triggers in marks.
+- **Status bar** — last action, number of errors and warnings (click toggles the validation list), zoom, tile under the cursor.
 
-- **Left sidebar** — the currently active side panel: Place / Triggers / Groups / Objects. Switch tabs at the top.
-- **Centre** — the map view.
-- **Right sidebar** — the live validation report (top) and the mission overview (bottom).
-
-### Toolbar
-
-| Button | What it does |
-|---|---|
-| **Settings** | Mission name, mission type, tech tree, difficulty multipliers, custom variables |
-| **Players** | Colonies, human/AI, tech levels, resources, pre-researched techs |
-| **Victory / Defeat** | Win/lose conditions |
-| **Show code** | Preview the generated C++ with syntax highlighting |
-| **Build → DLL** | Compile and copy the DLL to the OP2 folder |
-| **Test in OP2** | Launch OP2 with this mission via `op2launcher.exe` |
-| **Clear objects** | Remove all placed units and buildings |
+The validation list, the overview and the history are docks that can be shown from the View menu.
 
 ### Menus
 
-- **File** — Open / Save / Save as project · Choose map · Set output directory · Quit
-- **Edit** — Undo / Redo of placement steps
-- **View** — Toggle tile grid · Zoom 1:1 · Fit map to window
+- **File** — New map · Open / Save / Save as project · DLL output location · Quit
+- **Edit** — Undo (Ctrl+Z) · Redo (Ctrl+Y) · Action designer · Edit lava fields · Delete all objects and groups
+- **View** — docks · tile grid · trigger zones · group areas · zoom 1:1 (Ctrl+0) · fit map (Ctrl+F)
 - **Language** — Automatic (system) · Deutsch · English (applies on next launch)
+- **Mission** — Settings · Players · Victory & Defeat
 
 ---
 
@@ -78,7 +70,7 @@ Three regions:
 
 ## Place panel
 
-Left sidebar → **Place** tab.
+Tool **Place** in the header bar.
 
 - **Category** — Buildings · Vehicles · Beacons & Walls
 - **Unit list** — every placeable type with its tile footprint
@@ -186,23 +178,39 @@ The action list of the selected trigger. Actions can be added, edited, removed a
 
 ## Objects panel
 
-Left sidebar → **Objects** tab. Flat list of every placed unit, building, beacon, wall and tube. Handy for bulk editing / cleanup.
+Reached from the outline. Flat list of every placed unit, building, beacon, wall and tube. Handy for bulk editing / cleanup.
 
 ---
 
 ## Mission overview & validation
 
-Right sidebar, always visible:
+- **Mission outline** (left, mission mode) — the whole mission as a tree: players, objects, groups, triggers in execution order, victory and defeat. Entries with a problem carry ⚠.
+- **Validation** (dock, toggled by the counter in the status bar) — live errors, warnings and hints, updated on every edit. Examples: unused variable, undeclared group referenced by an action, no victory/defeat condition set.
+- **History** (dock) — every undo step; clicking an entry undoes or redoes up to there.
 
-- **Validation** *(top)* — live error/warning report. Updates on every edit. Examples: unused variable, undeclared group referenced by an action, no victory/defeat condition set. Warnings show a count at the bottom (`0 errors, 3 warnings`).
-- **Mission overview** *(bottom)* — dynamic tree with the whole mission at a glance:
-  - **Flow / Triggers** — trigger execution order with flow arrows (⟶) and cycle detection
-  - **Players** — one line per player
-  - **Groups** — every BuildingGroup / ReinforceGroup / FightGroup / MiningGroup
-  - **Victory / Defeat**
-  - **Objects** — total object count
+---
 
-Double-clicking any entry opens the corresponding editor.
+## Map editor
+
+Mode switch → **Map Editor**.
+
+- **Paint** — brushes for dirt, rock, sand, vegetation and snow (transitions are chosen automatically), lowland, volcano, lava possible, building ground, and **Draw cliff**. Right-click picks the ground as the brush, Ctrl+wheel changes the brush size.
+- **Draw cliff** — set points, choose the high side and the wall height; the wall is previewed live before you place it. Painting *Lowland* across a wall makes a ramp.
+- **Tiles & groups** — single tiles and stamps by ground and kind, detail packages, *Save area as package*.
+- **Overlay** — passability by speed or obstacles only. **Clean up transitions** recomputes all transition tiles.
+
+---
+
+## New map
+
+**File → New map…** opens a panel beside the map; the result is built straight into the main view. *Keep* accepts it, *Discard* restores the previous map.
+
+Common controls: size, template, seed (*Roll*), terrain mix, symmetry, cliffs, mountains, *tighter mountains*, gorges, valleys, plateaus, details, starting points, and **features** with a rough position (valley, mountain, plateau, clearing, choke point).
+
+- **Plains, canyon, desert, islands, ice, dry landscape** — the classic generator, rebuilt on every change. Extra controls: roughness, minimum biome size, volcanoes. Mountains are closed all round; the status line warns if one leaks.
+- **Like the originals (learned)** — the learned generator. After a change the sketch appears first, then the map is painted in the background (progress bar, *Cancel*). **Generate in good quality** paints the same sketch more carefully. Here mountains are passable but too tight to build in; *Rocks in mountains* fills what the walls leave open, never on sand. *Cliffs* says how many walls stand outside the mountains. There is no snow and there are no volcanoes; put them in with the brushes. Plateaus are building ground, but not necessarily raised. With symmetry the layout is mirrored, the tiles only roughly. The same seed gives the same map on the same PC; another CPU can differ in details. Needs the Python package `onnxruntime` when the editor runs from source.
+
+Neither generator places beacons or units.
 
 ---
 
@@ -420,12 +428,12 @@ A project is a folder:
 
 ```
 MyMission/
-├── project.json     — every editor field
+├── mission.op2proj  — every editor field
 ├── mission.cpp      — last-generated C++ (rebuilt on every Build)
 └── mission.dll      — compiled mission DLL
 ```
 
-### `project.json` fields
+### `mission.op2proj` fields
 
 | Key | Content |
 |---|---|

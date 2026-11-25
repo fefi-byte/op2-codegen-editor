@@ -1,3 +1,5 @@
 numpy
 Pillow
 PySide6
+# nur fuer die Vorlage "Wie die Originale (gelernt)" / only for the learned map template
+onnxruntime
