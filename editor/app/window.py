@@ -73,6 +73,7 @@ class EditorWindow(
         self._undo_stack = None
         self._view_menu = None
         self.verlauf_liste = None
+        self._techtree_win = None
         # Neues Layout / new layout (window_mission.py)
         self.outline = None
         self._titel = None

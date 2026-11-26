@@ -7,6 +7,22 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Tech tree editor** (*Mission → Tech tree…*): edits the mission's tech file
+  (e.g. `MULTITEK.TXT`) in a window of its own. The tree runs left to right,
+  one column per level of prerequisites; a click on a card shows everything
+  about the topic on the left, editable: number, name and texts with the
+  characters left, category, lab, scientists, research time per colony
+  (unchecked = locked), prerequisites as a separate list, and the value
+  changes (`UNIT_PROP`) as a table of unit, one of the 19 properties, new
+  value and the base value from the rule sheets. The small + on a card adds a
+  topic that requires it. A live check lists what the game would not load
+  (missing prerequisites, cycles, limits) and topics a colony can never reach.
+  Unchanged topics are saved byte for byte, only edited ones are reformatted;
+  originals in `OPU/base/techs` are only overwritten after asking. *Use for
+  mission* sets the file as the mission's tech tree; building copies a tech
+  file from the mission folder next to the DLL.
+
 ## [0.11.1-alpha] - 2026-11-25
 
 ### Changed

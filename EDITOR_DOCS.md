@@ -16,11 +16,12 @@ Alpha release. Documentation reflects the current editor state.
 10. [Dialog: Settings](#dialog-settings)
 11. [Dialog: Players](#dialog-players)
 12. [Dialog: Victory & Defeat](#dialog-victory--defeat)
-13. [Action editor](#action-editor)
-14. [Self-healing groups](#self-healing-groups)
-15. [Expression fields](#expression-fields)
-16. [Code generation](#code-generation)
-17. [Project format](#project-format)
+13. [Tech tree](#tech-tree)
+14. [Action editor](#action-editor)
+15. [Self-healing groups](#self-healing-groups)
+16. [Expression fields](#expression-fields)
+17. [Code generation](#code-generation)
+18. [Project format](#project-format)
 
 ---
 
@@ -41,7 +42,7 @@ The validation list, the overview and the history are docks that can be shown fr
 - **Edit** — Undo (Ctrl+Z) · Redo (Ctrl+Y) · Action designer · Edit lava fields · Delete all objects and groups
 - **View** — docks · tile grid · trigger zones · group areas · zoom 1:1 (Ctrl+0) · fit map (Ctrl+F)
 - **Language** — Automatic (system) · Deutsch · English (applies on next launch)
-- **Mission** — Settings · Players · Victory & Defeat
+- **Mission** — Settings · Players · Victory & Defeat · Tech tree
 
 ---
 
@@ -263,6 +264,59 @@ Toolbar → **Victory / Defeat**.
 Same condition types as trigger causes (survive time, last one standing, build starship, no CC, building/vehicle count, tech, resource, building operational). Each condition has a description field that becomes the in-game objective text.
 
 Any number of victory and defeat conditions can be combined.
+
+---
+
+## Tech tree
+
+Menu **Mission → Tech tree…** opens a window of its own with the mission's
+tech file (the *Tech tree file* field in the settings). It is looked up in the
+mission folder first, then in `OPU/base/techs`.
+
+**Tree (right).** Topics run from left to right: each column is a level, the
+longest chain of prerequisites up to the topic. Lines lead from a prerequisite
+to the topic. A card shows name, number, the research time for Eden (E) and
+Plymouth (P), category, lab and the number of value changes. A click selects a
+topic; its prerequisites are highlighted orange and its followers blue (also on
+hover). Ctrl+wheel zooms, dragging pans.
+
+**The small + on every card** adds a new topic that requires that card. It
+takes over category, lab and scientists, its research time is 200 higher and
+its number the next free one. **+ Tech** in the toolbar adds a topic without
+prerequisites.
+
+**Editing (left).** Everything about the selected topic can be edited directly:
+
+| Field | Description |
+|---|---|
+| Number | Five digits, thousands = tech level (at least 1). Changing it updates every prerequisite that points to it |
+| Name | At most 100 characters, with the characters left shown |
+| Category | Icon in the research menu (0–12) |
+| Lab | Basic, standard or advanced lab |
+| Max. scientists | 4–18, 1 for special topics |
+| Colonies | One check box per colony: unchecked locks the topic for it (-1). The number is the research time; 0 means "researched from the start". *Same for both* writes one COST line |
+| Prerequisites | A list of its own: search a topic, add, remove. Topics that already build on this one are not offered (no cycles). Below: which topics it leads to |
+| Texts | Description, teaser and short upgrade text, at most 800 characters each, with the characters left shown |
+| Value changes | Table of the UNIT_PROP lines: unit, one of the 19 properties, new value, next to it the base value from the game's rule sheets. At most 32 per topic |
+
+A topic sets values, it does not add to them. It applies only to the colony
+that researches it, and at once to its existing units. Some properties share a
+slot in the game and mean different things by kind: for example `Sight_Range`
+is the range for weapons and `Rate_Of_Fire` the reload time. The hint below the
+table explains the selected property.
+
+**Checking.** The bottom list always shows what the game would not load or
+what looks wrong: missing prerequisites, cycles, duplicate numbers, texts too
+long, invalid values (lab, scientists, armor class 0–5), more than 256 topics,
+and topics a colony can never reach because a prerequisite is locked for it.
+A click jumps to the topic.
+
+**Saving.** Unchanged topics are written back byte for byte as they were read
+(comments, the checksum trailer of the OPU files); only edited topics are
+reformatted. Every save makes a `.bak` copy. The originals in `OPU/base/techs`
+are only overwritten after asking; better use *Save as* into the mission folder
+and then **Use for mission**, which enters the file name as the mission's tech
+tree. Building copies a tech file from the mission folder next to the DLL.
 
 ---
 

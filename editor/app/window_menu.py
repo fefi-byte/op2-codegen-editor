@@ -114,6 +114,7 @@ class _MenuMixin:
             (tr("window.tb_setup"), self.edit_setup),
             (tr("window.tb_players"), self.edit_players),
             (tr("window.tb_conditions"), self.edit_conditions),
+            (tr("techtree.menu"), self.open_techtree),
         ]:
             act = QAction(label, self)
             act.triggered.connect(slot)
@@ -137,6 +138,35 @@ class _MenuMixin:
             self._rect_drag_cancel()
         elif self._placement_active:
             self._cancel_placement()
+
+    def _techtree_file(self) -> Path | None:
+        """Die Tech-Datei der Mission: erst im Missionsordner, dann im Spiel.
+
+        The mission's tech file: the mission folder first, then the game."""
+        name = (self.tech_tree or "MULTITEK.TXT").strip()
+        folders = [Path(self.mission_folder)] if self.mission_folder else []
+        folders.append(TECHS_DIR)
+        for folder in folders:
+            try:
+                for f in folder.iterdir():
+                    if f.name.lower() == name.lower() and f.is_file():
+                        return f
+            except OSError:
+                continue
+        return None
+
+    def open_techtree(self):
+        """Forschungsbaum-Editor in eigenem Fenster (bleibt offen neben der Karte).
+
+        Tech tree editor in its own window."""
+        from .techtree_window import TechTreeWindow
+        w = self._techtree_win
+        if w is not None and w.isVisible():
+            w.raise_(); w.activateWindow()
+            return
+        self._techtree_win = TechTreeWindow(
+            self, self._techtree_file(), TECHS_DIR, CONTENT_ROOT / "base" / "sheets")
+        self._techtree_win.show()
 
     def _set_language(self, code):
         appconfig.set_language(code)

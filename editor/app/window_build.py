@@ -350,6 +350,15 @@ class _BuildMixin:
             if op2ki_dll:
                 for t in targets:
                     shutil.copy2(op2ki_dll, t.parent / "op2ki.dll")
+            # Eigene Tech-Datei der Mission (Forschungsbaum-Editor) neben die
+            # DLL, damit das Spiel den TechtreeName dort findet. Originale aus
+            # OPU/base/techs bleiben, wo sie sind.
+            # The mission's own tech file next to the DLL; originals stay put.
+            tech = self._techtree_file()
+            if tech is not None and tech.parent.resolve() != TECHS_DIR.resolve():
+                for t in targets:
+                    if tech.parent.resolve() != t.parent.resolve():
+                        shutil.copy2(tech, t.parent / tech.name)
         except Exception as e:
             QMessageBox.warning(self, tr("window.copy_failed_title"),
                                 tr("window.copy_failed_text", target=t, e=e))

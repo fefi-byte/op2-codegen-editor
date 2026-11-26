@@ -1316,6 +1316,38 @@ def check_status_and_overview(win, app) -> None:
           win.dockWidgetArea(win.validation_dock).name)
 
 
+def check_techtree(win, app) -> None:
+    """Forschungsbaum-Fenster: oeffnen, waehlen, + anlegen, Werte-Tabelle."""
+    import techtree_model as tm
+    win.open_techtree()
+    pump(app)
+    w = win._techtree_win
+    check("Forschungsbaum oeffnet", w is not None and w.isVisible())
+    check("Forschungsbaum hat Karten", len(w.tree.cards) > 50, str(len(w.tree.cards)))
+    erste = min(w.tree.cards)
+    w.select(erste)
+    pump(app)
+    check("Auswahl fuellt das Feld links", w.form.tech is not None and w.form.tech.id == erste)
+    n = len(w.tf.techs)
+    w.tree.plusClicked.emit(erste)
+    pump(app)
+    neu = w.form.tech
+    check("+ legt ein Folgethema an", len(w.tf.techs) == n + 1 and neu.requires == [erste])
+    w.form._prop_add()
+    pump(app)
+    check("Werteaenderung angelegt", len(neu.props) == 1 and w.form.table.rowCount() == 1)
+    w.form.name_edit.setText("x" * 10)
+    pump(app)
+    check("Restzeichen angezeigt", str(tm.MAX_NAME - 10) in w.form.name_count.text())
+    # Aenderungen verwerfen, damit Schliessen nicht nachfragt.
+    w.tf.remove(neu)
+    for t in w.tf.techs:
+        t.mark_clean()
+    w.tf._removed = False
+    w.close()
+    pump(app)
+
+
 def check_languages() -> None:
     """Beide Sprachdateien muessen denselben Schluesselvorrat haben.
 
@@ -1350,6 +1382,7 @@ def run_checks(win, app) -> None:
     check_new_map(win, app)
     check_terrain_save(win, app)
     check_status_and_overview(win, app)
+    check_techtree(win, app)
     check_languages()
 
 

@@ -16,11 +16,12 @@ Alpha-Version. Die Doku bildet den aktuellen Editor-Stand ab.
 10. [Dialog: Einstellungen](#dialog-einstellungen)
 11. [Dialog: Spieler](#dialog-spieler)
 12. [Dialog: Sieg & Niederlage](#dialog-sieg--niederlage)
-13. [Aktionseditor](#aktionseditor)
-14. [Selbstheilende Gruppen](#selbstheilende-gruppen)
-15. [Ausdrucksfelder](#ausdrucksfelder)
-16. [Codegenerierung](#codegenerierung)
-17. [Projektformat](#projektformat)
+13. [Forschungsbaum](#forschungsbaum)
+14. [Aktionseditor](#aktionseditor)
+15. [Selbstheilende Gruppen](#selbstheilende-gruppen)
+16. [Ausdrucksfelder](#ausdrucksfelder)
+17. [Codegenerierung](#codegenerierung)
+18. [Projektformat](#projektformat)
 
 ---
 
@@ -41,7 +42,7 @@ Validierung, Übersicht und Verlauf sind Docks, die das Menü Ansicht einblendet
 - **Bearbeiten** — Rückgängig (Strg+Z) · Wiederholen (Strg+Y) · Aktions-Designer · Lavafelder bearbeiten · alle Objekte und Gruppen löschen
 - **Ansicht** — Docks · Kachelgitter · Trigger-Zonen · Gruppen-Bereiche · Zoom 1:1 (Strg+0) · Karte einpassen (Strg+F)
 - **Sprache** — Automatisch (System) · Deutsch · English (greift beim nächsten Start)
-- **Mission** — Einstellungen · Spieler · Sieg & Niederlage
+- **Mission** — Einstellungen · Spieler · Sieg & Niederlage · Forschungsbaum
 
 ---
 
@@ -263,6 +264,61 @@ Toolbar → **Sieg / Niederlage**.
 Dieselben Bedingungstypen wie Trigger-Auslöser (Zeit überstehen, Letzter Überlebender, Raumschiff bauen, kein CC, Gebäude-/Fahrzeug-Anzahl, Tech, Ressource, Gebäude operativ). Jede Bedingung hat ein Beschreibungsfeld — das ist der Zieltext, der im Spiel angezeigt wird.
 
 Beliebig viele Sieg- und Niederlage-Bedingungen kombinierbar.
+
+---
+
+## Forschungsbaum
+
+Menü **Mission → Forschungsbaum…** öffnet ein eigenes Fenster mit der
+Tech-Datei der Mission (Feld *Techtree-Datei* in den Einstellungen). Gesucht wird
+erst im Missionsordner, dann in `OPU/base/techs`.
+
+**Baum (rechts).** Die Themen laufen von links nach rechts: jede Spalte ist
+eine Stufe, also die längste Kette von Voraussetzungen bis zum Thema. Linien
+führen von der Voraussetzung zum Thema. Die Karte zeigt Name, Nummer, die
+Forschungszeit für Eden (E) und Plymouth (P), Kategorie, Labor und die Zahl
+der Werteänderungen. Ein Klick wählt ein Thema; seine Voraussetzungen werden
+orange, seine Folgethemen blau hervorgehoben (auch beim Überfahren).
+Strg+Mausrad zoomt, Ziehen verschiebt.
+
+**Das kleine + an jeder Karte** legt ein neues Thema an, das diese Karte
+voraussetzt. Es übernimmt Kategorie, Labor und Wissenschaftler, die
+Forschungszeit ist 200 höher, die Nummer die nächste freie. **+ Technik** in
+der Leiste legt ein Thema ohne Voraussetzung an.
+
+**Bearbeiten (links).** Alles zum gewählten Thema ist direkt editierbar:
+
+| Feld | Beschreibung |
+|---|---|
+| Nummer | Fünfstellig, Tausender = Tech-Level (mindestens 1). Ändern zieht alle Voraussetzungen darauf mit |
+| Name | Höchstens 100 Zeichen, mit Anzeige der Restzeichen |
+| Kategorie | Symbol im Forschungsmenü (0–12) |
+| Labor | Basis-, Standard- oder fortgeschrittenes Labor |
+| Max. Wissenschaftler | 4–18, 1 bei Sonderthemen |
+| Kolonien | Haken je Kolonie: ohne Haken ist das Thema für sie gesperrt (-1). Die Zahl ist die Forschungszeit; 0 heißt „von Anfang an erforscht“. *Für beide gleich* schreibt eine COST-Zeile |
+| Voraussetzungen | Eigene Liste: Thema suchen, hinzufügen, entfernen. Themen, die schon auf diesem aufbauen, stehen nicht zur Wahl (kein Kreis). Darunter: welche Themen es ermöglicht |
+| Texte | Beschreibung, Ankündigung (TEASER) und Kurztext der Verbesserung, je höchstens 800 Zeichen mit Restzeichen-Anzeige |
+| Werteänderungen | Tabelle der UNIT_PROP-Zeilen: Einheit, eine der 19 Eigenschaften, neuer Wert, daneben der Grundwert aus den Regel-Tabellen des Spiels. Höchstens 32 je Thema |
+
+Ein Thema setzt Werte, es zählt nichts dazu. Es gilt nur für die Kolonie, die
+forscht, und sofort auch für ihre vorhandenen Einheiten. Manche Eigenschaften
+teilen sich eine Stelle im Spiel und bedeuten je nach Art etwas anderes: zum
+Beispiel ist `Sight_Range` bei Waffen die Reichweite und `Rate_Of_Fire` die
+Nachladezeit. Der Hinweis unter der Tabelle erklärt die gewählte Eigenschaft.
+
+**Prüfen.** Unten steht laufend, was das Spiel nicht laden würde oder
+auffällig ist: fehlende Voraussetzungen, Kreise, doppelte Nummern, zu lange
+Texte, ungültige Werte (Labor, Wissenschaftler, Panzerklasse 0–5), mehr als
+256 Themen, und Themen, die eine Kolonie nie erreicht, weil eine Voraussetzung
+für sie gesperrt ist. Ein Klick springt zum Thema.
+
+**Speichern.** Unveränderte Themen werden Byte für Byte so geschrieben, wie
+sie gelesen wurden (Kommentare, Prüfsummen-Anhang der OPU-Dateien); nur
+geänderte Themen werden neu formatiert. Jede Speicherung legt eine `.bak`-Kopie
+an. Die Originale in `OPU/base/techs` werden nur nach Rückfrage überschrieben;
+besser ist *Speichern unter* in den Missionsordner und dann **Für Mission
+verwenden**: das trägt den Dateinamen als Tech-Tree der Mission ein. Beim
+Bauen wird eine Tech-Datei aus dem Missionsordner neben die DLL kopiert.
 
 ---
 
