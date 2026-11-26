@@ -73,7 +73,8 @@ class EditorWindow(
         self._undo_stack = None
         self._view_menu = None
         self.verlauf_liste = None
-        self._techtree_win = None
+        self._techtree_seite = None
+        self._mitte = None
         # Neues Layout / new layout (window_mission.py)
         self.outline = None
         self._titel = None
@@ -157,7 +158,12 @@ class EditorWindow(
         self.view.zoomChanged.connect(self._on_zoom_changed)
         self.view.tileDragged.connect(self._karte_ziehen)
         self.view.tileReleased.connect(self._karte_loslassen)
-        self.setCentralWidget(self.view)
+        # Mitte: Karte, im Modus Tech Tree der Forschungsbaum.
+        # Centre: the map, or the tech tree in Tech Tree mode.
+        from PySide6.QtWidgets import QStackedWidget
+        self._mitte = QStackedWidget()
+        self._mitte.addWidget(self.view)
+        self.setCentralWidget(self._mitte)
         self._rect_pick_group = None
         self._rect_pick_start = None
         self._rect_pick_item = None
@@ -237,6 +243,11 @@ class EditorWindow(
             print(f"Fensterlayout nicht wiederhergestellt: {e}", file=sys.stderr)
 
     def closeEvent(self, event):
+        # Ungespeicherter Forschungsbaum: nachfragen.
+        # Unsaved tech tree: ask first.
+        if self._techtree_seite is not None and not self._techtree_seite.ask_discard():
+            event.ignore()
+            return
         if self._layout_merken():
             s = self._einstellungen()
             s.setValue("fenster/geometrie", self.saveGeometry())

@@ -156,17 +156,21 @@ class _MenuMixin:
         return None
 
     def open_techtree(self):
-        """Forschungsbaum-Editor in eigenem Fenster (bleibt offen neben der Karte).
+        """In den Modus Tech Tree wechseln. Switch to Tech Tree mode."""
+        self._modus_setzen("techtree")
 
-        Tech tree editor in its own window."""
-        from .techtree_window import TechTreeWindow
-        w = self._techtree_win
-        if w is not None and w.isVisible():
-            w.raise_(); w.activateWindow()
-            return
-        self._techtree_win = TechTreeWindow(
-            self, self._techtree_file(), TECHS_DIR, CONTENT_ROOT / "base" / "sheets")
-        self._techtree_win.show()
+    def _techtree_seite_holen(self):
+        """Die Forschungsbaum-Seite (beim ersten Mal anlegen und laden).
+
+        The tech tree page, created and loaded on first use."""
+        if self._techtree_seite is None:
+            from .techtree_window import TechTreePage
+            self._techtree_seite = TechTreePage(
+                self, self._techtree_file(), TECHS_DIR, CONTENT_ROOT / "base" / "sheets")
+            self._mitte.addWidget(self._techtree_seite)
+        else:
+            self._techtree_seite.load_for_mission(self._techtree_file())
+        return self._techtree_seite
 
     def _set_language(self, code):
         appconfig.set_language(code)

@@ -1,5 +1,6 @@
 """Forschungsbaum-Editor: Tech-Datei als Baum von links nach rechts.
 
+Laeuft als dritter Modus im Hauptfenster (Mission | Map Editor | Tech Tree).
 Links steht alles zum gewaehlten Thema und ist direkt editierbar (Nummer,
 Name, Kategorie, Kosten je Kolonie, Labor, Wissenschaftler, Voraussetzungen,
 Texte mit Restzeichen, Werteaenderungen als Tabelle). Rechts der Baum: jede
@@ -22,7 +23,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QCompleter, QFileDialog, QFormLayout,
     QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView,
     QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
+    QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
     QSpinBox, QSplitter, QTableWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
@@ -784,20 +785,21 @@ class TechForm(QWidget):
         self.changed.emit(self.tech.id)
 
 
-# --- Fenster / window --------------------------------------------------------
+# --- Seite im Hauptfenster / page in the main window -----------------------
 
-class TechTreeWindow(QMainWindow):
-    """`host` ist das Editorfenster (optional): fuer Missionsordner und Techtree-Name."""
+class TechTreePage(QWidget):
+    """Der Forschungsbaum als Seite im Hauptfenster (Modus "Tech Tree").
+
+    `host` ist das Editorfenster (optional): Missionsordner, Techtree-Name,
+    Statusleiste. The tech tree as a page in the main window."""
 
     def __init__(self, host=None, path: Path | None = None, techs_dir: Path | None = None,
                  sheets_dir: Path | None = None):
         super().__init__(host)
-        self.setWindowFlag(Qt.Window, True)
         self.host = host
         self.techs_dir = Path(techs_dir) if techs_dir else None
         self.sheets = tm.read_sheets(sheets_dir) if sheets_dir else {}
         self.tf: tm.TechFile = tm.new_file()
-        self.resize(1500, 900)
 
         self.form = TechForm()
         self.form.set_file(self.tf, self.sheets)
@@ -812,9 +814,11 @@ class TechTreeWindow(QMainWindow):
         split = QSplitter(Qt.Horizontal)
         split.addWidget(scroll); split.addWidget(right)
         split.setSizes([460, 1040])
-        self.setCentralWidget(split)
-
+        self._lay = QVBoxLayout(self)
+        self._lay.setContentsMargins(0, 0, 0, 0)
+        self._lay.setSpacing(0)
         self._toolbar()
+        self._lay.addWidget(split, 1)
         self.tree.techClicked.connect(self.select)
         self.tree.plusClicked.connect(self.add_after)
         self.form.changed.connect(self._changed)
@@ -830,12 +834,19 @@ class TechTreeWindow(QMainWindow):
 
     def _toolbar(self) -> None:
         tb = QToolBar(tr("techtree.title"), self); tb.setMovable(False)
-        self.addToolBar(tb)
+        self._lay.addWidget(tb)
+        self.file_label = QLabel("")
+        f = self.file_label.font(); f.setBold(True); self.file_label.setFont(f)
+        tb.addWidget(self.file_label)
+        tb.addSeparator()
 
         def act(key, slot, shortcut=None):
             a = QAction(tr(f"techtree.{key}"), self); a.triggered.connect(slot)
             if shortcut:
+                # Nur solange die Seite sichtbar ist (die Karte hat eigene Kuerzel).
                 a.setShortcut(shortcut)
+                a.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+                self.addAction(a)
             tb.addAction(a); return a
         act("new_file", self.new_file)
         act("open", self.open_dialog, "Ctrl+O")
@@ -880,7 +891,24 @@ class TechTreeWindow(QMainWindow):
     def _title(self) -> None:
         name = self.tf.path.name if self.tf.path else tr("techtree.untitled")
         star = " *" if self.tf.changed() else ""
-        self.setWindowTitle(f"{tr('techtree.title')} – {name}{star}")
+        self.file_label.setText(f" {name}{star} ")
+        self.file_label.setToolTip(str(self.tf.path) if self.tf.path else "")
+
+    def _status(self, msg: str) -> None:
+        if self.host is not None and hasattr(self.host, "statusBar"):
+            self.host.statusBar().showMessage(msg, 6000)
+
+    def load_for_mission(self, path: Path | None) -> None:
+        """Beim Wechsel in den Modus: die Tech-Datei der Mission laden, wenn
+        eine andere offen ist und nichts ungespeichert ist."""
+        if path is None or (self.tf.path and Path(self.tf.path) == Path(path)):
+            return
+        if self.tf.changed():
+            return
+        self.open_path(Path(path))
+
+    def ask_discard(self) -> bool:
+        return self._ask_discard()
 
     def _ask_discard(self) -> bool:
         if not self.tf.changed():
@@ -952,7 +980,7 @@ class TechTreeWindow(QMainWindow):
             QMessageBox.warning(self, tr("techtree.title"), tr("techtree.save_failed", e=e))
             return False
         self._title()
-        self.statusBar().showMessage(tr("techtree.saved", path=path), 6000)
+        self._status(tr("techtree.saved", path=path))
         return True
 
     def _mission_folder(self) -> Path | None:
@@ -972,13 +1000,7 @@ class TechTreeWindow(QMainWindow):
         self.host.tech_tree = self.tf.path.name
         if hasattr(self.host, "_refresh_overview"):
             self.host._refresh_overview()
-        self.statusBar().showMessage(tr("techtree.used_for_mission", name=self.tf.path.name), 6000)
-
-    def closeEvent(self, e):
-        if self._ask_discard():
-            e.accept()
-        else:
-            e.ignore()
+        self._status(tr("techtree.used_for_mission", name=self.tf.path.name))
 
     # -- Auswahl und Bearbeiten / selection and editing --
 

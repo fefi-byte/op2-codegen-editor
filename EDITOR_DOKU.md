@@ -42,7 +42,7 @@ Validierung, Übersicht und Verlauf sind Docks, die das Menü Ansicht einblendet
 - **Bearbeiten** — Rückgängig (Strg+Z) · Wiederholen (Strg+Y) · Aktions-Designer · Lavafelder bearbeiten · alle Objekte und Gruppen löschen
 - **Ansicht** — Docks · Kachelgitter · Trigger-Zonen · Gruppen-Bereiche · Zoom 1:1 (Strg+0) · Karte einpassen (Strg+F)
 - **Sprache** — Automatisch (System) · Deutsch · English (greift beim nächsten Start)
-- **Mission** — Einstellungen · Spieler · Sieg & Niederlage · Forschungsbaum
+- **Mission** — Einstellungen · Spieler · Sieg & Niederlage · Forschungsbaum (wechselt in den Modus Tech Tree)
 
 ---
 
@@ -269,8 +269,11 @@ Beliebig viele Sieg- und Niederlage-Bedingungen kombinierbar.
 
 ## Forschungsbaum
 
-Menü **Mission → Forschungsbaum…** öffnet ein eigenes Fenster mit der
-Tech-Datei der Mission (Feld *Techtree-Datei* in den Einstellungen). Gesucht wird
+Oben in der Leiste neben **Mission | Map Editor** steht **Tech Tree** (auch
+Menü **Mission → Forschungsbaum**). Der Modus ersetzt die Karte durch den
+Forschungsbaum der Mission und blendet die Missionsleiste links aus; zurück
+geht es mit *Mission* oder *Map Editor*. Geladen wird die Tech-Datei der
+Mission (Feld *Techtree-Datei* in den Einstellungen). Gesucht wird
 erst im Missionsordner, dann in `OPU/base/techs`.
 
 **Baum (rechts).** Die Themen laufen von links nach rechts: jede Spalte ist

@@ -108,14 +108,18 @@ class _MissionMixin:
 
         self._modus_gruppe = QButtonGroup(self)
         self._modus_gruppe.setExclusive(True)
+        self._modus_knoepfe = {}
         for schl, modus in (("window.mode_mission", "mission"),
-                            ("window.mode_map", "map")):
+                            ("window.mode_map", "map"),
+                            ("window.mode_techtree", "techtree")):
             b = QPushButton(tr(schl))
             b.setCheckable(True)
             apply_role(b, "navtab")
             b.setChecked(modus == "mission")
             b.clicked.connect(lambda _=False, m=modus: self._modus_setzen(m))
             self._modus_gruppe.addButton(b)
+            self._modus_knoepfe[modus] = b
+            b.setMinimumWidth(b.sizeHint().width() + 12)
             tb.addWidget(b)
         tb.addSeparator()
 
@@ -161,11 +165,25 @@ class _MissionMixin:
     def _modus_setzen(self, modus: str):
         if self._bearbeitung is not None:
             self._bearbeiten_bestaetigen()
+        vorher = self._modus
         self._modus = modus
-        for b in self._modus_gruppe.buttons():
-            b.setChecked((b.text() == tr("window.mode_map")) == (modus == "map"))
+        self._modus_knoepfe[modus].setChecked(True)
         for act in self._werkzeug_aktionen:
             act.setVisible(modus == "mission")
+        if modus == "techtree":
+            # Der Forschungsbaum ersetzt die Karte; die linke Missionsleiste
+            # braucht er nicht (er hat sein eigenes Bearbeitungsfeld).
+            # The tech tree replaces the map and has its own editing panel.
+            if vorher == "map":
+                self._sidebar_tabs.setCurrentIndex(0)      # Gelaendemodus aus
+            if self._placement_active:
+                self._cancel_placement()
+            self._linke_seite.setCurrentIndex(0)
+            self._mitte.setCurrentWidget(self._techtree_seite_holen())
+            self._mission_dock.hide()
+            return
+        self._mitte.setCurrentWidget(self.view)
+        self._mission_dock.show()
         if modus == "map":
             ziel = self.newmap_panel if self.newmap_panel is not None else self.terrain_panel
             self._sidebar_tabs.setCurrentWidget(ziel)

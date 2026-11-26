@@ -8,8 +8,9 @@ and the project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- **Tech tree editor** (*Mission → Tech tree…*): edits the mission's tech file
-  (e.g. `MULTITEK.TXT`) in a window of its own. The tree runs left to right,
+- **Tech tree editor**, a third mode next to *Mission | Map Editor* (also
+  *Mission → Tech tree*): edits the mission's tech file (e.g. `MULTITEK.TXT`)
+  in place of the map. The tree runs left to right,
   one column per level of prerequisites; a click on a card shows everything
   about the topic on the left, editable: number, name and texts with the
   characters left, category, lab, scientists, research time per colony

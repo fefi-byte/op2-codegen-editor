@@ -42,7 +42,7 @@ The validation list, the overview and the history are docks that can be shown fr
 - **Edit** — Undo (Ctrl+Z) · Redo (Ctrl+Y) · Action designer · Edit lava fields · Delete all objects and groups
 - **View** — docks · tile grid · trigger zones · group areas · zoom 1:1 (Ctrl+0) · fit map (Ctrl+F)
 - **Language** — Automatic (system) · Deutsch · English (applies on next launch)
-- **Mission** — Settings · Players · Victory & Defeat · Tech tree
+- **Mission** — Settings · Players · Victory & Defeat · Tech tree (switches to Tech Tree mode)
 
 ---
 
@@ -269,8 +269,10 @@ Any number of victory and defeat conditions can be combined.
 
 ## Tech tree
 
-Menu **Mission → Tech tree…** opens a window of its own with the mission's
-tech file (the *Tech tree file* field in the settings). It is looked up in the
+Next to **Mission | Map Editor** in the top bar sits **Tech Tree** (also
+menu **Mission → Tech tree**). The mode replaces the map with the mission's
+tech tree and hides the mission panel on the left; *Mission* or *Map Editor*
+switch back. It loads the mission's tech file (the *Tech tree file* field in the settings). It is looked up in the
 mission folder first, then in `OPU/base/techs`.
 
 **Tree (right).** Topics run from left to right: each column is a level, the

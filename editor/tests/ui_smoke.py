@@ -1317,12 +1317,13 @@ def check_status_and_overview(win, app) -> None:
 
 
 def check_techtree(win, app) -> None:
-    """Forschungsbaum-Fenster: oeffnen, waehlen, + anlegen, Werte-Tabelle."""
+    """Modus Tech Tree: Baum statt Karte, waehlen, + anlegen, Werte-Tabelle."""
     import techtree_model as tm
-    win.open_techtree()
+    win._modus_setzen("techtree")
     pump(app)
-    w = win._techtree_win
-    check("Forschungsbaum oeffnet", w is not None and w.isVisible())
+    w = win._techtree_seite
+    check("Tech Tree ersetzt die Karte", w is not None and w.isVisible()
+          and not win.view.isVisible() and not win._mission_dock.isVisible())
     check("Forschungsbaum hat Karten", len(w.tree.cards) > 50, str(len(w.tree.cards)))
     erste = min(w.tree.cards)
     w.select(erste)
@@ -1344,9 +1345,10 @@ def check_techtree(win, app) -> None:
     for t in w.tf.techs:
         t.mark_clean()
     w.tf._removed = False
-    w.close()
+    win._modus_setzen("mission")
     pump(app)
-
+    check("Zurueck zur Mission zeigt die Karte", win.view.isVisible()
+          and win._mission_dock.isVisible() and not w.isVisible())
 
 def check_languages() -> None:
     """Beide Sprachdateien muessen denselben Schluesselvorrat haben.
