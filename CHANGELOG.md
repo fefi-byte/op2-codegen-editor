@@ -20,9 +20,11 @@ and the project follows [Semantic Versioning](https://semver.org/).
   topic that requires it. A live check lists what the game would not load
   (missing prerequisites, cycles, limits) and topics a colony can never reach.
   Unchanged topics are saved byte for byte, only edited ones are reformatted;
-  originals in `OPU/base/techs` are only overwritten after asking. *Use for
-  mission* sets the file as the mission's tech tree; building copies a tech
-  file from the mission folder next to the DLL.
+  the tree belongs to the project: saving the project gives the mission its
+  own copy in the project folder under its own 8.3 name (e.g. `MEINETEK.TXT`),
+  which code and project file refer to and building copies next to the DLL.
+  The game's trees are never overwritten or shadowed. *Take from file…* uses
+  another tree (e.g. `edentek.txt`) as the base.
 
 ## [0.11.1-alpha] - 2026-11-25
 

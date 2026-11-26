@@ -293,9 +293,15 @@ class _BuildMixin:
         self._progress.setCancelButton(None)
         self._progress.show()
         self.statusBar().showMessage(tr("window.status_build_running"))
-        self._worker = BuildWorker(
-            self.build_mission(), self.mission_folder, self._mission_write_kwargs()
-        )
+        # Argumente zuerst: sie vergeben ggf. den eigenen Tech-Tree-Namen, den
+        # build_mission() dann exportiert. Offene Aenderungen am Forschungsbaum
+        # kommen vorher ins Projekt.
+        # Arguments first (own tech tree name), then the mission; unsaved tech
+        # tree edits go into the project before building.
+        kwargs = self._mission_write_kwargs()
+        mission = self.build_mission()
+        self._techtree_nach_speichern(self.mission_folder)
+        self._worker = BuildWorker(mission, self.mission_folder, kwargs)
         self._worker.ok.connect(self._build_ok)
         self._worker.err.connect(self._build_err)
         self._worker.start()

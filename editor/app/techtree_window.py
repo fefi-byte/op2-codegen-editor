@@ -969,14 +969,19 @@ class TechTreePage(QWidget):
                 a.setShortcutContext(Qt.WidgetWithChildrenShortcut)
                 self.addAction(a)
             tb.addAction(a); return a
-        act("new_file", self.new_file)
-        act("open", self.open_dialog, "Ctrl+O")
-        act("save", self.save, "Ctrl+S")
-        act("save_as", self.save_as, "Ctrl+Shift+S")
+        if self.host is not None:
+            # Im Editor gehoert der Baum zum Projekt: Speichern = Projekt
+            # speichern; eine andere Datei dient nur als Grundlage.
+            # In the editor the tree belongs to the project.
+            act("save_project", self.save, "Ctrl+S")
+            act("import_file", self.import_dialog, "Ctrl+O")
+        else:
+            act("new_file", self.new_file)
+            act("open", self.open_dialog, "Ctrl+O")
+            act("save", self.save, "Ctrl+S")
+            act("save_as", self.save_as, "Ctrl+Shift+S")
         tb.addSeparator()
         act("add_root", lambda: self.add_after(None), "Ctrl+N")
-        self.use_act = act("use_for_mission", self.use_for_mission)
-        self.use_act.setEnabled(self.host is not None)
         tb.addSeparator()
         tb.addWidget(QLabel(" " + tr("techtree.view_faction") + " "))
         self.fac_combo = QComboBox()
@@ -1013,7 +1018,10 @@ class TechTreePage(QWidget):
         name = self.tf.path.name if self.tf.path else tr("techtree.untitled")
         star = " *" if self.tf.changed() else ""
         self.file_label.setText(f" {name}{star} ")
-        self.file_label.setToolTip(str(self.tf.path) if self.tf.path else "")
+        tip = str(self.tf.path) if self.tf.path else ""
+        if self.host is not None and (self.tf.path is None or self._is_original(Path(self.tf.path))):
+            tip = tr("techtree.from_original", path=tip)
+        self.file_label.setToolTip(tip)
 
     def _status(self, msg: str) -> None:
         if self.host is not None and hasattr(self.host, "statusBar"):
@@ -1030,6 +1038,35 @@ class TechTreePage(QWidget):
 
     def ask_discard(self) -> bool:
         return self._ask_discard()
+
+    def write_to(self, path: Path) -> None:
+        """Ohne Rueckfrage schreiben (das Projekt speichert hierueber).
+        Write without asking; used by the project save."""
+        self.tf.save(Path(path))
+        self._title()
+
+    def import_dialog(self) -> None:
+        """Eine andere Tech-Datei als Grundlage uebernehmen; gespeichert wird
+        sie mit dem Projekt unter dessen eigenem Namen.
+        Take another tech file as the base; it is saved with the project."""
+        if self.tf.changed() and QMessageBox.question(
+                self, tr("techtree.title"), tr("techtree.import_confirm")) != QMessageBox.Yes:
+            return
+        start = str(self.techs_dir or "")
+        fn, _ = QFileDialog.getOpenFileName(self, tr("techtree.import_file"), start,
+                                            tr("techtree.file_filter"))
+        if not fn:
+            return
+        try:
+            tf = tm.load(Path(fn))
+        except OSError as e:
+            QMessageBox.warning(self, tr("techtree.title"), tr("techtree.open_failed", e=e))
+            return
+        ziel = self.tf.path if (self.tf.path and not self._is_original(Path(self.tf.path))) else None
+        tf.path = ziel
+        tf._removed = True        # gilt als geaendert, bis das Projekt gespeichert ist
+        self._set_file(tf)
+        self._status(tr("techtree.imported", name=Path(fn).name))
 
     def _ask_discard(self) -> bool:
         if not self.tf.changed():
@@ -1069,6 +1106,8 @@ class TechTreePage(QWidget):
             return False
 
     def save(self) -> bool:
+        if self.host is not None and hasattr(self.host, "techtree_projekt_speichern"):
+            return self.host.techtree_projekt_speichern()
         if not self.tf.path:
             return self.save_as()
         if self._is_original(self.tf.path):

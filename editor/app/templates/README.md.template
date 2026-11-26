@@ -11,7 +11,9 @@ An Outpost 2 mission built on the classic **[OP2MissionSDK](https://github.com/O
 - `CMakeLists.txt` — CMake project definition
 - `build.bat` — one-click build script
 - `__MAP_FILENAME__` — the map this mission runs on
-- `MULTITEK.TXT` *(optional)* — custom tech tree, if this mission uses one
+- `__TECHTREE_FILENAME__` — this mission's own tech tree (a copy of one of the game's trees,
+  edited in the editor's Tech Tree mode); the DLL exports this name as `TechtreeName`, and the
+  game loads it from the folder next to the DLL
 
 ## Build requirements
 

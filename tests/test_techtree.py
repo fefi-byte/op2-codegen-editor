@@ -165,3 +165,24 @@ def test_eigenschaften_passen_zur_art():
 def test_art_ohne_tabelle_bietet_alle_an():
     assert len(tm.props_for(None)) == len(tm.PROPERTY_NAMES)
     assert tm.prop_fits("weapon", "Sight_Range") and not tm.prop_fits("weapon", "Hit_Points")
+
+
+def test_projekt_bekommt_eigenen_forschungsbaum(tmp_path):
+    """Projektordner: eigener 8.3-Name, nie einer der Spiel-Baeume; die Datei
+    wird nur angelegt, wenn sie fehlt (danach gehoert sie dem Projekt)."""
+    sys.path.insert(0, str(WURZEL / "editor"))
+    from app import mission_project as mp
+    name = mp.project_techtree_name("Meine Mission")
+    assert name == "MEINETEK.TXT"
+    assert mp.project_techtree_name("Multi-Spaß").lower() not in mp.STOCK_TECHTREES
+    assert mp.project_techtree_name("multi").lower() != "multitek.txt"
+    quelle = tmp_path / "multitek.txt"
+    quelle.write_text(BEISPIEL)
+    ordner = tmp_path / "Meine_Mission"
+    kw = dict(mission_name="Meine Mission", map_name="", project_data={}, level_main_cpp="",
+              map_source=None, techtree_source=quelle, techtree_name=name)
+    mp.write_mission_folder(ordner, **kw)
+    assert (ordner / name).read_text() == BEISPIEL
+    (ordner / name).write_text("geaendert")
+    mp.write_mission_folder(ordner, **kw)
+    assert (ordner / name).read_text() == "geaendert"

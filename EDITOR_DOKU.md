@@ -273,8 +273,9 @@ Oben in der Leiste neben **Mission | Map Editor** steht **Tech Tree** (auch
 Menü **Mission → Forschungsbaum**). Der Modus ersetzt die Karte durch den
 Forschungsbaum der Mission und blendet die Missionsleiste links aus; zurück
 geht es mit *Mission* oder *Map Editor*. Geladen wird die Tech-Datei der
-Mission (Feld *Techtree-Datei* in den Einstellungen). Gesucht wird
-erst im Missionsordner, dann in `OPU/base/techs`.
+Mission (Feld *Techtree-Datei* in den Einstellungen): die eigene Datei im
+Projektordner, solange es noch keine gibt der gewählte Baum des Spiels aus
+`OPU/base/techs` als Grundlage.
 
 **Baum (rechts).** Die Themen laufen von links nach rechts: jede Spalte ist
 eine Stufe, also die längste Kette von Voraussetzungen bis zum Thema. Linien
@@ -317,11 +318,18 @@ für sie gesperrt ist. Ein Klick springt zum Thema.
 
 **Speichern.** Unveränderte Themen werden Byte für Byte so geschrieben, wie
 sie gelesen wurden (Kommentare, Prüfsummen-Anhang der OPU-Dateien); nur
-geänderte Themen werden neu formatiert. Jede Speicherung legt eine `.bak`-Kopie
-an. Die Originale in `OPU/base/techs` werden nur nach Rückfrage überschrieben;
-besser ist *Speichern unter* in den Missionsordner und dann **Für Mission
-verwenden**: das trägt den Dateinamen als Tech-Tree der Mission ein. Beim
-Bauen wird eine Tech-Datei aus dem Missionsordner neben die DLL kopiert.
+geänderte Themen werden neu formatiert.
+
+Der Forschungsbaum gehört zum Projekt. **Speichern (Projekt)** (Strg+S)
+speichert das ganze Projekt samt Baum. Beim ersten Speichern bekommt die
+Mission eine eigene Kopie im Projektordner mit eigenem 8.3-Namen, z. B.
+`MEINETEK.TXT` für „Meine Mission“; Code und Projektdatei verweisen darauf.
+Die Bäume des Spiels (`multitek.txt`, `edentek.txt`, …) werden nie
+überschrieben, und die Mission nutzt nie deren Namen: das Spiel lädt den Baum
+neben der Missions-DLL, eine zweite `multitek.txt` dort könnte das Original
+überdecken. **Aus Datei übernehmen…** lädt einen anderen Baum als Grundlage,
+z. B. `edentek.txt` für eine Eden-Mission. Beim Bauen wird die Datei neben die
+DLL kopiert.
 
 ---
 
@@ -489,6 +497,9 @@ Ein Projekt ist ein Ordner:
 MeineMission/
 ├── mission.op2proj  — alle Editor-Felder
 ├── mission.cpp      — zuletzt generierter C++-Code (bei jedem Build überschrieben)
+├── MEINETEK.TXT     — eigener Forschungsbaum der Mission (Modus Tech Tree)
+├── <karte>.map      — die Karte der Mission
+├── CMakeLists.txt, build.bat, op2_log.hpp, op2_crash.hpp, version.rc.in
 └── mission.dll      — kompilierte Missions-DLL
 ```
 

@@ -153,7 +153,11 @@ class _MenuMixin:
                         return f
             except OSError:
                 continue
-        return None
+        # Projektdatei fehlt (Ordner verschoben/geloescht): Grundbaum zeigen;
+        # beim Speichern legt das Projekt seine Datei daraus neu an.
+        # Project file missing: show the base tree instead.
+        grund = TECHS_DIR / "multitek.txt"
+        return grund if grund.is_file() else None
 
     def open_techtree(self):
         """In den Modus Tech Tree wechseln. Switch to Tech Tree mode."""

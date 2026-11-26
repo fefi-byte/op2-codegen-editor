@@ -183,8 +183,43 @@ class _ProjectMixin:
         if getattr(self, "map_edited", False) and self.map_name != self._custom_map_name():
             self.map_name = self._custom_map_name()
 
+    def _techtree_vorbereiten(self) -> Path | None:
+        """Der Mission einen eigenen Forschungsbaum geben und die Quelle dafuer
+        liefern. Steht noch ein Baum des Spiels drin (MULTITEK.TXT ...), bekommt
+        die Mission einen eigenen Dateinamen; die Quelle ist dann das Original.
+        Muss VOR build_mission() laufen, sonst exportiert die DLL den alten Namen.
+
+        Give the mission its own tech tree file name and return the file to
+        copy it from. Must run before build_mission()."""
+        quelle = self._techtree_file()
+        if (self.tech_tree or "MULTITEK.TXT").strip().lower() in mission_project.STOCK_TECHTREES:
+            self.tech_tree = mission_project.project_techtree_name(self.mission_name)
+        elif quelle is None:
+            quelle = TECHS_DIR / "multitek.txt"      # eigener Name, Datei fehlt: Grundbaum
+        return quelle
+
+    def _techtree_nach_speichern(self, folder: Path) -> None:
+        """Den offenen Forschungsbaum in den Projektordner schreiben (geaendert
+        oder noch auf eine andere Datei zeigend). Write the open tech tree into
+        the project folder."""
+        seite = self._techtree_seite
+        if seite is None:
+            return
+        ziel = Path(folder) / self.tech_tree
+        pfad = seite.tf.path
+        if seite.tf.changed() or pfad is None or Path(pfad).resolve() != ziel.resolve():
+            seite.write_to(ziel)
+
+    def techtree_projekt_speichern(self) -> bool:
+        """"Speichern" im Modus Tech Tree: das ganze Projekt speichern.
+        Save from Tech Tree mode: saves the whole project."""
+        self.save_project()
+        return bool(self.mission_folder and Path(self.mission_folder).is_dir()
+                    and not (self._techtree_seite and self._techtree_seite.tf.changed()))
+
     def _mission_write_kwargs(self) -> dict:
         """Argumente fuer mission_project.write_mission_folder() (ohne LevelMain)."""
+        techtree_quelle = self._techtree_vorbereiten()
         self._ensure_custom_map_name()
         map_source = None
         if self.map_name:
@@ -204,7 +239,8 @@ class _ProjectMixin:
             map_name=self.map_name,
             project_data=self._collect_project_data(),
             map_source=Path(map_source) if map_source else None,
-            techtree_source=None,
+            techtree_source=techtree_quelle,
+            techtree_name=self.tech_tree,
             dll_basename=mission_project.default_dll_basename(self.dll_name),
             briefing=self.briefing,
         )
@@ -212,10 +248,13 @@ class _ProjectMixin:
     def _save_to_folder(self, folder: Path) -> bool:
         """Schreibt die Mission als self-contained Ordner. Gibt True bei Erfolg zurueck."""
         try:
+            # Erst die Argumente (vergibt ggf. den eigenen Tech-Tree-Namen),
+            # dann der Code, der diesen Namen exportiert.
+            # Arguments first (may assign the own tech tree name), then the code.
+            kwargs = self._mission_write_kwargs()
             cpp = generate_levelmain(self.build_mission())
-            mission_project.write_mission_folder(
-                folder, level_main_cpp=cpp, **self._mission_write_kwargs()
-            )
+            mission_project.write_mission_folder(folder, level_main_cpp=cpp, **kwargs)
+            self._techtree_nach_speichern(folder)
             # Bearbeitete Karte NACH write_mission_folder schreiben -- dort
             # wuerde sonst die (nicht gefundene) Originalkarte kopiert.
             # Write the edited map AFTER write_mission_folder -- otherwise the
@@ -276,6 +315,10 @@ class _ProjectMixin:
                 f"OP2 Mission (*.op2proj);;JSON (*.json);;{tr('window.filter_all')} (*.*)")
             if not path:
                 return
+        # Ungespeicherter Forschungsbaum gehoert zum bisherigen Projekt.
+        # An unsaved tech tree belongs to the current project.
+        if self._techtree_seite is not None and not self._techtree_seite.ask_discard():
+            return
         proj_path = mission_project.find_op2proj(Path(path))
         if proj_path is None:
             QMessageBox.critical(self, tr("window.open_failed_title"), "mission.op2proj nicht gefunden")
@@ -415,6 +458,10 @@ class _ProjectMixin:
         self.trigger_panel.load()
         self.groups_panel.load()
         self.conditions_panel.load()
+        if self._techtree_seite is not None:
+            baum = self._techtree_file()
+            if baum is not None:
+                self._techtree_seite.open_path(baum)
         self._redraw_planned_actions()
         self._refresh_overview()
         self.statusBar().showMessage(

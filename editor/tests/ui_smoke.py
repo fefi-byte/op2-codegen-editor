@@ -1340,11 +1340,34 @@ def check_techtree(win, app) -> None:
     w.form.name_edit.setText("x" * 10)
     pump(app)
     check("Restzeichen angezeigt", str(tm.MAX_NAME - 10) in w.form.name_count.text())
-    # Aenderungen verwerfen, damit Schliessen nicht nachfragt.
-    w.tf.remove(neu)
-    for t in w.tf.techs:
-        t.mark_clean()
-    w.tf._removed = False
+    # Projekt speichern: eigener Forschungsbaum im Projektordner, Mission
+    # verweist darauf, das Original bleibt unveraendert.
+    import json
+    import tempfile
+    from app.common import TECHS_DIR
+    original = (TECHS_DIR / "multitek.txt").read_bytes()
+    alt_ordner, alt_baum = win.mission_folder, win.tech_tree
+    with tempfile.TemporaryDirectory() as tmp:
+        ordner = Path(tmp) / "Testprojekt"
+        check("Projekt speichern ok", win._save_to_folder(ordner))
+        name = win.tech_tree
+        datei = ordner / name
+        check("Eigener Forschungsbaum im Projekt", datei.is_file()
+              and name.lower() not in ("multitek.txt", "edentek.txt", "ply_tek.txt"), name)
+        gelesen = tm.load(datei) if datei.is_file() else None
+        check("Aenderung im Projekt-Baum", gelesen is not None and gelesen.get(neu.id) is not None)
+        check("mission.cpp nennt den eigenen Baum", name in (ordner / "mission.cpp").read_text())
+        proj = json.loads((ordner / "mission.op2proj").read_text(encoding="utf-8"))
+        check("Projektdatei nennt den eigenen Baum", proj.get("tech_tree") == name)
+        check("Original-Baum unveraendert", (TECHS_DIR / "multitek.txt").read_bytes() == original)
+        check("Seite zeigt auf die Projektdatei", w.tf.path == datei and not w.tf.changed())
+    win.mission_folder, win.tech_tree = alt_ordner, alt_baum
+    try:
+        import appconfig
+        appconfig.set_last_mission("")
+    except Exception:
+        pass
+    w.open_path(TECHS_DIR / "multitek.txt")
     win._modus_setzen("mission")
     pump(app)
     check("Zurueck zur Mission zeigt die Karte", win.view.isVisible()

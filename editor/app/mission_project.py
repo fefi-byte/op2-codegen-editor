@@ -8,7 +8,7 @@ Inhalt:
   - version.rc.in     (Windows version info, von CMake befuellt)
   - CMakeLists.txt    (CMake-Projekt, SDK-Pfad einkonfiguriert)
   - <name>.map        (Karte-Kopie)
-  - MULTITEK.TXT      (optional, falls Mission custom tech tree nutzt)
+  - <NAME>TEK.TXT     (eigener Forschungsbaum der Mission, z. B. MEINETEK.TXT)
   - build.bat, README.md
 
 Ziel: jeder kann mit `git clone --recursive` + `build.bat` die Mission
@@ -54,6 +54,26 @@ def _copy_template(name: str, dest: Path, repl: dict[str, str] | None = None) ->
     dest.write_text(text, encoding="utf-8")
 
 
+# Die Forschungsbaeume des Spiels. Eine Mission bekommt immer eine eigene
+# Datei mit anderem Namen: das Spiel laedt den Baum neben der Missions-DLL, und
+# eine zweite multitek.txt dort koennte das Original fuer andere Partien
+# ueberdecken. The game's own tech trees; a mission always gets its own file.
+STOCK_TECHTREES = frozenset({"multitek.txt", "edentek.txt", "ply_tek.txt", "tutortek.txt"})
+
+
+def project_techtree_name(mission_name: str, taken: set[str] | frozenset[str] = STOCK_TECHTREES) -> str:
+    """8.3-Name fuer den Forschungsbaum einer Mission, z. B. "MEINETEK.TXT".
+
+    8.3 name for a mission's tech tree, never one of `taken` (lower case)."""
+    base = re.sub(r"[^A-Za-z0-9]", "", mission_name or "").upper()[:5] or "MISSN"
+    name = f"{base}TEK.TXT"
+    n = 1
+    while name.lower() in {t.lower() for t in taken}:
+        name = f"{base[:4]}{n}TEK.TXT"
+        n += 1
+    return name
+
+
 def find_map_source(map_name: str, search_dirs: list[Path]) -> Path | None:
     """Sucht die Originalkarte (zum Kopieren in den Mission-Ordner)."""
     if not map_name:
@@ -80,6 +100,7 @@ def write_mission_folder(
     level_main_cpp: str,
     map_source: Path | None,
     techtree_source: Path | None = None,
+    techtree_name: str = "",
     dll_basename: str = "cMission",
     briefing: str = "",
 ) -> dict[str, Path]:
@@ -97,6 +118,7 @@ def write_mission_folder(
         "__MISSION_NAME__": mission_name,
         "__DLL_BASENAME__": dll_basename,
         "__MAP_FILENAME__": map_name or "on1_01.map",
+        "__TECHTREE_FILENAME__": techtree_name or "MULTITEK.TXT",
         # Absoluter Pfad statt fixem relativen Pfad -- funktioniert im
         # Dev-Checkout genauso wie in einer aus dem Release-ZIP entpackten
         # Mission (siehe appconfig.op2sdk_dir()).
@@ -175,11 +197,16 @@ def write_mission_folder(
             shutil.copy2(map_source, target)
         written["map"] = target
 
-    # 5) Tech-Tree (optional)
-    if techtree_source and techtree_source.is_file():
-        target = folder / "MULTITEK.TXT"
-        shutil.copy2(techtree_source, target)
-        written["techtree"] = target
+    # 5) Forschungsbaum: die Datei gehoert dem Projekt. Nur anlegen, wenn sie
+    #    noch fehlt (neues Projekt, "Speichern unter"); danach aendert sie nur
+    #    der Forschungsbaum-Editor.
+    # 5) Tech tree: the file belongs to the project. Only created when missing.
+    if techtree_name:
+        target = folder / techtree_name
+        if not target.exists() and techtree_source and techtree_source.is_file():
+            shutil.copy2(techtree_source, target)
+        if target.exists():
+            written["techtree"] = target
 
     # 6) CMakeLists.txt
     _copy_template("CMakeLists.txt.template", folder / "CMakeLists.txt", repl)

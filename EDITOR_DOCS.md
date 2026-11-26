@@ -273,7 +273,8 @@ Next to **Mission | Map Editor** in the top bar sits **Tech Tree** (also
 menu **Mission → Tech tree**). The mode replaces the map with the mission's
 tech tree and hides the mission panel on the left; *Mission* or *Map Editor*
 switch back. It loads the mission's tech file (the *Tech tree file* field in the settings). It is looked up in the
-mission folder first, then in `OPU/base/techs`.
+project folder's own file, or, while there is none yet, the selected game tree
+from `OPU/base/techs` as the base.
 
 **Tree (right).** Topics run from left to right: each column is a level, the
 longest chain of prerequisites up to the topic. Lines lead from a prerequisite
@@ -315,10 +316,17 @@ A click jumps to the topic.
 
 **Saving.** Unchanged topics are written back byte for byte as they were read
 (comments, the checksum trailer of the OPU files); only edited topics are
-reformatted. Every save makes a `.bak` copy. The originals in `OPU/base/techs`
-are only overwritten after asking; better use *Save as* into the mission folder
-and then **Use for mission**, which enters the file name as the mission's tech
-tree. Building copies a tech file from the mission folder next to the DLL.
+reformatted.
+
+The tech tree belongs to the project. **Save (project)** (Ctrl+S) saves the
+whole project including the tree. On the first save the mission gets its own
+copy in the project folder under its own 8.3 name, e.g. `MEINETEK.TXT` for
+"Meine Mission"; code and project file refer to it. The game's trees
+(`multitek.txt`, `edentek.txt`, …) are never overwritten, and a mission never
+uses their names: the game loads the tree next to the mission DLL, and a second
+`multitek.txt` there could shadow the original. **Take from file…** loads
+another tree as the base, e.g. `edentek.txt` for an Eden mission. Building
+copies the file next to the DLL.
 
 ---
 
@@ -486,6 +494,9 @@ A project is a folder:
 MyMission/
 ├── mission.op2proj  — every editor field
 ├── mission.cpp      — last-generated C++ (rebuilt on every Build)
+├── MYMISTEK.TXT     — the mission's own tech tree (Tech Tree mode)
+├── <map>.map        — the mission's map
+├── CMakeLists.txt, build.bat, op2_log.hpp, op2_crash.hpp, version.rc.in
 └── mission.dll      — compiled mission DLL
 ```
 
