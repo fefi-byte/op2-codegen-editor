@@ -160,34 +160,70 @@ SHEET_COLUMNS: dict[str, dict[str, str]] = {
 SHEET_FILES = {"vehicle": "vehicles.txt", "building": "building.txt", "weapon": "weapons.txt",
                "space": "space.txt"}
 
-# Bekannte Namen der Einheiten-Codes (nur zur Anzeige).
-# Display names of the unit codes.
+# Namen der Einheiten-Codes, wie das Spiel sie zeigt (nur zur Anzeige). Die
+# Raumschiff-Teile SPACE_n sind ueber ihr Forschungsthema in space.txt
+# zugeordnet; Codes ohne sicheren Namen bleiben ohne (dann steht der Code).
+# Display names of the unit codes, as the game shows them.
 UNIT_NAMES: dict[str, str] = {
+    # Fahrzeuge / vehicles
     "LIGHT_TANK": "Lynx", "MED_TANK": "Panther", "BIG_TANK": "Tiger", "SCOUT": "Scout",
-    "CON_TRUCK": "ConVec", "BIG_TRUCK": "Cargo Truck", "MOBILE_HOME": "Evac Transport",
+    "CON_TRUCK": "ConVec", "BIG_TRUCK": "Cargo Truck", "MOBILE_HOME": "Evacuation Transport",
     "MINER": "Robo-Miner", "SURVEYOR": "Robo-Surveyor", "BULL_DOZER": "Robo-Dozer",
     "WALL_TRUCK": "Earthworker", "REPAIR_TRUCK": "Repair Vehicle", "GEO_METRO": "GeoCon",
-    "SPIDER": "Spider", "SCORPION": "Scorpion", "COMMAND": "Command Center",
-    "TOKAMAK": "Tokamak", "SOLAR": "Solar Power Array", "GEOTHERMAL": "Geothermal Plant",
-    "MINE": "Common Ore Mine", "MINE_ADV": "Rare Ore Mine", "MAGMA_WELL": "Magma Well",
-    "SMELTER": "Common Ore Smelter", "SMELTER_ADV": "Rare Ore Smelter", "GORF": "GORF",
-    "RESIDENCE": "Residence", "RESIDENCE_E": "Reinforced Residence (Eden)",
-    "RESIDENCE_P": "Advanced Residence (Plymouth)", "AGRIDOME": "Agridome",
-    "MED_CENTER": "Medical Center", "NURSERY": "Nursery", "UNIVERSITY": "University",
-    "RECREATION": "Recreation Facility", "FORUM": "Forum", "DIRT": "DIRT",
-    "LAB": "Basic Lab", "LAB_STANDARD": "Standard Lab", "LAB_ADV": "Advanced Lab",
-    "OBSERVATORY": "Observatory", "METEOR_DEF": "Meteor Defense", "TRADE": "Trade Center",
-    "FACT_STRUCTURE": "Structure Factory", "FACT_VEHICLE": "Vehicle Factory",
-    "FACT_ANDROID": "Arachnid Factory", "FACT_LUXURY": "Consumer Factory",
-    "GARAGE": "Garage", "SPACEPORT": "Spaceport", "ROBOT_COMMAND": "Robot Command Center",
-    "TOWER_GUARD": "Guard Post", "TOWER_LIGHT": "Light Tower", "STORAGE_ORE": "Common Storage",
-    "STORAGE_RARE": "Rare Storage", "TUBE": "Tube",
+    "SPIDER": "Spider", "SCORPION": "Scorpion",
+    # Gebaeude / buildings
+    "COMMAND": "Command Center", "TOKAMAK": "Tokamak", "SOLAR": "Solar Power Array",
+    "GEOTHERMAL": "Geothermal Plant", "ASE": "MHD Generator", "MINE": "Common Ore Mine",
+    "MINE_ADV": "Rare Ore Mine", "MAGMA_WELL": "Magma Well", "SMELTER": "Common Ore Smelter",
+    "SMELTER_ADV": "Rare Ore Smelter", "GORF": "GORF", "RESIDENCE": "Residence",
+    "RESIDENCE_E": "Reinforced Residence", "RESIDENCE_P": "Advanced Residence",
+    "AGRIDOME": "Agridome", "MED_CENTER": "Medical Center", "NURSERY": "Nursery",
+    "UNIVERSITY": "University", "RECREATION": "Recreation Facility", "FORUM": "Forum",
+    "DIRT": "DIRT", "LAB": "Basic Lab", "LAB_STANDARD": "Standard Lab",
+    "LAB_ADV": "Advanced Lab", "OBSERVATORY": "Observatory", "METEOR_DEF": "Meteor Defense",
+    "TRADE": "Trade Center", "FACT_STRUCTURE": "Structure Factory",
+    "FACT_VEHICLE": "Vehicle Factory", "FACT_ANDROID": "Arachnid Factory",
+    "FACT_LUXURY": "Consumer Factory", "GARAGE": "Garage", "SPACEPORT": "Spaceport",
+    "ROBOT_COMMAND": "Robot Command Center", "TOWER_GUARD": "Guard Post",
+    "TOWER_LIGHT": "Light Tower", "STORAGE_ORE": "Common Storage",
+    "STORAGE_RARE": "Rare Storage", "TUBE": "Tube", "WALL": "Wall",
+    "WALL_LAVA": "Lava Wall", "WALL_MICROBE": "Microbe Wall",
+    # Waffen / weapons
     "LASER": "Laser", "MICROWAVE": "Microwave", "RAIL_GUN": "Rail Gun", "CANNON": "RPG",
     "ACID": "Acid Cloud", "EMP": "EMP", "FOAM": "Sticky Foam", "SPAM": "ESG",
-    "THORS_HAMMER": "Thor's Hammer", "EMP_MISSILE": "EMP Missile",
-    "SCORPION_WEAPON": "Scorpion weapon", "SELF_DESTRUCT": "Starflare",
-    "SELF_DESTRUCT_ADV": "Supernova", "EDWARD": "EDWARD Satellite",
+    "THORS_HAMMER": "Thor's Hammer", "SCORPION_WEAPON": "Energy Cannon (Scorpion)",
+    "TURRET_DESTRUCT": "Starflare", "TURRET_DESTRUCT_ADV": "Supernova",
+    "SELF_DESTRUCT": "Self-Destruct", "SELF_DESTRUCT_ADV": "Self-Destruct (advanced)",
+    "SCUTTLE_DESTRUCT": "Scuttle",
+    # Effekte in der Waffen-Tabelle / effects in the weapons sheet
+    "EMP_BIG": "EMP blast (large)", "AMBIENT_ANIM": "Ambient animation", "BEACON": "Beacon",
+    "BLD_EXPL_SML": "Building explosion (small)", "BLD_EXPL_MED": "Building explosion (medium)",
+    "BLD_EXPL_BIG": "Building explosion (large)", "EARTHQUAKE": "Earthquake",
+    "ERUPTION": "Volcanic eruption", "FUMAROLE": "Fumarole", "LIGHTNING": "Electrical storm",
+    "MAGMA_VENT": "Magma vent", "METEOR": "Meteor", "TORNADO": "Vortex", "SHUTTLE": "Shuttle",
+    # Raumfahrt / space
+    "EDWARD": "EDWARD Satellite", "EMP_MISSILE": "EMP Missile", "SULV": "SULV",
+    "RLV": "RLV (Reusable Launch Vehicle)", "SOLAR_SAT": "Solar Power Satellite",
+    "SPACE_1": "Ion Drive Module", "SPACE_2": "Fusion Drive Module",
+    "SPACE_3": "Command Module", "SPACE_4": "Fueling Systems", "SPACE_5": "Habitat Ring",
+    "SPACE_6": "Sensor Package", "SPACE_7": "Skydock", "SPACE_8": "Stasis Systems",
+    "SPACE_9": "Orbital Package", "SPACE_10": "Phoenix Module",
+    "SPACE_14": "Evacuation Module", "SPACE_15": "Children's Module",
 }
+
+# Eintraege der Waffen-Tabelle, die keine Waffe sind (Katastrophen, Explosionen,
+# Anzeige). In der Auswahl stehen sie in einer eigenen Gruppe am Ende.
+# Weapons-sheet entries that are not weapons.
+EFFECT_CODES = frozenset({
+    "EMP_BIG", "AMBIENT_ANIM", "BEACON", "BLD_EXPL_SML", "BLD_EXPL_MED", "BLD_EXPL_BIG",
+    "EARTHQUAKE", "ERUPTION", "FUMAROLE", "LIGHTNING", "MAGMA_VENT", "METEOR", "TORNADO",
+    "SHUTTLE", "SCUTTLE_DESTRUCT", "SELF_DESTRUCT", "SELF_DESTRUCT_ADV",
+})
+
+
+def unit_label(code: str) -> str:
+    """Lesbarer Name, sonst der Code. Readable name, else the code."""
+    return UNIT_NAMES.get(code, code)
 
 
 # --- Datenmodell / data model ----------------------------------------------

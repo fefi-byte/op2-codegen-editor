@@ -313,6 +313,16 @@ class _PropDelegate(QStyledItemDelegate):
             option.text = f"{option.text}  ·  {code}"
 
 
+class _UnitDelegate(QStyledItemDelegate):
+    """Aufgeklappte Einheitenliste: Name, dahinter klein der Code."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        code = index.data(Qt.UserRole)
+        if code and tm.UNIT_NAMES.get(code):
+            option.text = f"{option.text}   ·  {code}"
+
+
 class _UpgradeTable(QTableWidget):
     """Werte-Tabelle: Wert, Grundwert und Loeschknopf fest rechts; Einheit und
     Eigenschaft teilen sich den Rest (je mit Mindestbreite, sonst waagerecht
@@ -598,20 +608,46 @@ class TechForm(QWidget):
         codes = set(self.sheets) | {p.unit for x in self.tf.techs for p in x.props}
         return sorted(codes)
 
+    def _fill_unit_combo(self, combo: QComboBox, current: str) -> None:
+        """Auswahlliste der Einheiten, nach Art gruppiert (Ueberschriften nicht
+        waehlbar). Ein Code aus der Datei, den keine Regel-Tabelle kennt, steht
+        unter "Sonstige" mit Warnzeichen.
+        Unit list grouped by kind; headers are not selectable."""
+        model = combo.model()
+        groups: dict[str | None, list[str]] = {}
+        for code in self._unit_codes():
+            kind = tm.unit_kind(self.sheets, code)
+            if code in tm.EFFECT_CODES:
+                kind = "effect"
+            groups.setdefault(kind, []).append(code)
+        if current and current not in self._unit_codes():
+            groups.setdefault(None, []).append(current)
+        for kind in (*tm.KINDS, "effect", None):
+            codes = groups.get(kind)
+            if not codes:
+                continue
+            combo.addItem(tr(f"techtree.kinds_{kind}" if kind else "techtree.kinds_other"))
+            head = model.item(combo.count() - 1)
+            head.setEnabled(False)
+            f = head.font(); f.setBold(True); head.setFont(f)
+            for code in sorted(codes, key=lambda c: (tm.unit_label(c).lower(), c)):
+                text = tm.unit_label(code)
+                if kind is None:
+                    text = "⚠ " + text
+                combo.addItem(text, code)
+                combo.setItemData(combo.count() - 1, code, Qt.ToolTipRole)
+        i = combo.findData(current)
+        combo.setCurrentIndex(i if i >= 0 else 1)
+        combo.setToolTip(current)
+
     def _add_row(self, p: tm.UnitProp) -> None:
         r = self.table.rowCount()
         self.table.insertRow(r)
-        unit = QComboBox(); unit.setEditable(True)
-        for code in self._unit_codes():
-            name = tm.UNIT_NAMES.get(code)
-            unit.addItem(f"{code} ({name})" if name else code, code)
-        unit.completer().setFilterMode(Qt.MatchContains)
-        i = unit.findData(p.unit)
-        if i >= 0:
-            unit.setCurrentIndex(i)
-        else:
-            unit.setEditText(p.unit)
-        unit.lineEdit().setCursorPosition(0)      # Anfang zeigen, nicht das Ende
+        unit = QComboBox()
+        unit.setMaxVisibleItems(20)
+        unit.setItemDelegate(_UnitDelegate(unit))
+        unit.view().setMinimumWidth(400)
+        self._fill_unit_combo(unit, p.unit)
         prop = QComboBox()
         prop.setItemDelegate(_PropDelegate(prop))
         prop.view().setMinimumWidth(360)
@@ -632,7 +668,6 @@ class TechForm(QWidget):
         self.table.setCellWidget(r, 3, base)
         self.table.setCellWidget(r, 4, rm)
         unit.currentIndexChanged.connect(lambda *_, u=unit: self._unit_changed(u))
-        unit.lineEdit().editingFinished.connect(lambda u=unit: self._unit_changed(u))
         prop.currentIndexChanged.connect(lambda *_: self._props_from_table())
         val.valueChanged.connect(lambda *_: self._props_from_table())
         rm.clicked.connect(lambda _=False, w=rm: self._prop_remove(w))
@@ -659,6 +694,7 @@ class TechForm(QWidget):
         combo.blockSignals(False)
 
     def _unit_changed(self, unit_combo: QComboBox) -> None:
+        unit_combo.setToolTip(unit_combo.currentData() or "")
         for r in range(self.table.rowCount()):
             if self.table.cellWidget(r, 0) is unit_combo:
                 code, prop, _v = self._row_values(r)
@@ -667,9 +703,7 @@ class TechForm(QWidget):
         self._props_from_table()
 
     def _row_values(self, r: int) -> tuple[str, str, int]:
-        unit = self.table.cellWidget(r, 0)
-        # Eintraege lauten "CODE (Name)"; getippt wird oft nur der Code.
-        code = (unit.currentText().strip().split(" ") or [""])[0].upper()
+        code = self.table.cellWidget(r, 0).currentData() or ""
         prop = self.table.cellWidget(r, 1).currentData()
         val = self.table.cellWidget(r, 2).value()
         return code, prop, val
@@ -1185,6 +1219,8 @@ class TechTreePage(QWidget):
             args["faction"] = tr(f"techtree.fac_{args['faction']}")
         if "req" in args:
             args["req"] = f"{args['req']:05d}"
+        if "unit" in args and tm.UNIT_NAMES.get(args["unit"]):
+            args["unit"] = f"{tm.unit_label(args['unit'])} ({args['unit']})"
         if "kind" in args:
             args["kind"] = tr(f"techtree.kind_{args['kind']}") if args["kind"] else "?"
         return tr(f"techtree.v_{p.code}", **args)
