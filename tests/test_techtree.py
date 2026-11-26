@@ -186,3 +186,16 @@ def test_projekt_bekommt_eigenen_forschungsbaum(tmp_path):
     (ordner / name).write_text("geaendert")
     mp.write_mission_folder(ordner, **kw)
     assert (ordner / name).read_text() == "geaendert"
+
+
+def test_trennlinie_und_umbruch():
+    assert len(tm.RULE) == 39 and set(tm.RULE) == {"_"}
+    text, pos = tm.insert_rule("Kurz.   Lang", 6)
+    assert text == "Kurz.  " + tm.RULE + " Lang" and text[pos:] == "Lang"
+    text, pos = tm.insert_rule("", 0)
+    assert text == tm.RULE + " "
+    # Umbruch nur an Leerzeichen, die Linie steht allein, lange Woerter bleiben ganz.
+    fits = lambda z: len(z) <= 39
+    zeilen = tm.wrap_text("The Laser weapon is now available.  " + tm.RULE + " Industrial laser torches", fits)
+    assert tm.RULE in zeilen and all(len(z) <= 39 for z in zeilen)
+    assert tm.wrap_text("x" * 50 + " y", fits) == ["x" * 50, "y"]

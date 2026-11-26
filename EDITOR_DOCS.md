@@ -299,7 +299,7 @@ prerequisites.
 | Max. scientists | 4–18, 1 for special topics |
 | Colonies | One check box per colony: unchecked locks the topic for it (-1). The number is the research time; 0 means "researched from the start". *Same for both* writes one COST line |
 | Prerequisites | A list of its own: search a topic, add, remove. Topics that already build on this one are not offered (no cycles). Below: which topics it leads to |
-| Texts | Description, teaser and short upgrade text, at most 800 characters each, with the characters left shown |
+| Texts | Description, teaser and short upgrade text, at most 800 characters each, with the characters left shown. *Insert rule* adds the line of 39 underscores (in the game it separates summary and story); *Preview* wraps the text roughly like the lab's text box |
 | Value changes | Table of the UNIT_PROP lines: unit, one of the 19 properties, new value, next to it the base value from the game's rule sheets. At most 32 per topic |
 
 A topic sets values, it does not add to them. It applies only to the colony

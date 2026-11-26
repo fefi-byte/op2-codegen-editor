@@ -226,6 +226,48 @@ def unit_label(code: str) -> str:
     return UNIT_NAMES.get(code, code)
 
 
+# --- Trennlinie und Umbruch / rule and wrapping ------------------------------
+
+# Die Trennlinie in DESCRIPTION und TEASER: ein langes "Wort" aus Unterstrichen.
+# Das Spiel behandelt sie nicht besonders; der Umbruch setzt sie auf eine eigene
+# Zeile, und 39 Zeichen fuellen das Textfeld im Labor gerade aus (so in fast
+# allen Original-Themen). The rule: a long "word" of underscores.
+RULE = "_" * 39
+
+
+def insert_rule(text: str, pos: int) -> tuple[str, int]:
+    """Trennlinie an `pos` einfuegen, mit zwei Leerzeichen davor und einem
+    danach (wie die Originale). Gibt (neuer Text, Position hinter der Linie).
+    Insert the rule at `pos`, spaced like the originals."""
+    left = text[:pos].rstrip(" ")
+    right = text[pos:].lstrip(" ")
+    mitte = ("  " if left else "") + RULE + " "
+    return left + mitte + right, len(left) + len(mitte)
+
+
+def wrap_text(text: str, fits) -> list[str]:
+    """Text wie im Labor-Feld umbrechen: nur an Leerzeichen, Woerter werden nie
+    getrennt (eine zu lange Linie laeuft ueber den Rand). `fits(zeile)` sagt,
+    ob eine Zeile in die Breite passt. Leerzeichen am Zeilenanfang fallen weg.
+    Wrap like the lab's text box: only at spaces, words are never split."""
+    lines: list[str] = []
+    cur = ""
+    for tok in re.findall(r"\S+|\s+", text):
+        if tok.isspace():
+            if cur:
+                cur += tok
+            continue
+        cand = cur + tok
+        if not cur or fits(cand.rstrip()):
+            cur = cand
+        else:
+            lines.append(cur.rstrip())
+            cur = tok
+    if cur.strip():
+        lines.append(cur.rstrip())
+    return lines
+
+
 # --- Datenmodell / data model ----------------------------------------------
 
 @dataclass

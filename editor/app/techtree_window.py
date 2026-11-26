@@ -341,6 +341,42 @@ class _UpgradeTable(QTableWidget):
         self.setColumnWidth(0, max(self.UNIT_MIN, frei - prop))
 
 
+class _LabPreview(QWidget):
+    """Ungefaehre Vorschau des Labor-Textfelds: so breit, dass die Linie aus
+    39 Unterstrichen es gerade fuellt, umgebrochen nur an Leerzeichen. Die
+    Schrift des Spiels ist eine andere, darum ist der Umbruch nur annaehernd.
+    Approximate preview of the lab's text box."""
+
+    def __init__(self):
+        super().__init__()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 2, 0, 4)
+        lay.setSpacing(2)
+        self.box = QLabel()
+        self.box.setTextFormat(Qt.PlainText)
+        self.box.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        # Das globale Stylesheet setzt die Schriftgroesse fuer alle Widgets;
+        # darum hier im eigenen Stylesheet, und mit derselben Groesse messen.
+        # The global stylesheet sets the font size; set it here too and measure alike.
+        f = QFont(self.box.font()); f.setPointSizeF(9)
+        fm = QFontMetrics(f)
+        self._fm = fm
+        self._breite = fm.horizontalAdvance(tm.RULE) + 2
+        # Breite + Innenabstand (2 x 6) + Rahmen (2 x 2) + etwas Luft
+        self.box.setFixedWidth(self._breite + 2 * 6 + 2 * 2 + 4)
+        self.box.setStyleSheet(
+            f"background: {S.CRUST}; color: {S.GREEN}; border: 2px solid {S.SURFACE2};"
+            " padding: 4px 6px; font-size: 9pt;")
+        self.info = QLabel(""); self.info.setProperty("secondary", "true")
+        lay.addWidget(self.box)
+        lay.addWidget(self.info)
+
+    def show_text(self, text: str) -> None:
+        zeilen = tm.wrap_text(text, lambda z: self._fm.horizontalAdvance(z) <= self._breite)
+        self.box.setText("\n".join(zeilen) if zeilen else " ")
+        self.info.setText(tr("techtree.preview_lines", n=len(zeilen)))
+
+
 class _Counter(QLabel):
     """'noch 712 von 800 Zeichen' unter einem Textfeld."""
 
@@ -469,13 +505,31 @@ class TechForm(QWidget):
         g = QGroupBox(tr("techtree.grp_texts"))
         v = QVBoxLayout(g)
         self.texts: dict[str, tuple[QPlainTextEdit, _Counter]] = {}
+        self.previews: dict[str, _LabPreview] = {}
         for fld, h in (("description", 110), ("teaser", 110), ("improve_desc", 44)):
-            v.addWidget(QLabel(tr(f"techtree.lbl_{fld}")))
+            kopf = QHBoxLayout()
+            kopf.addWidget(QLabel(tr(f"techtree.lbl_{fld}")), 1)
             ed = QPlainTextEdit(); ed.setFixedHeight(h)
             ed.setToolTip(tr(f"techtree.tip_{fld}"))
             cnt = _Counter(tm.MAX_TEXT)
+            if fld != "improve_desc":
+                # Nur Beschreibung und TEASER stehen im Labor-Feld mit Linie.
+                linie = QPushButton(tr("techtree.rule_insert"))
+                linie.setToolTip(tr("techtree.rule_tip"))
+                linie.clicked.connect(lambda _=False, f=fld: self._insert_rule(f))
+                vor = QPushButton(tr("techtree.preview"))
+                vor.setCheckable(True)
+                vor.setToolTip(tr("techtree.preview_tip"))
+                kopf.addWidget(linie); kopf.addWidget(vor)
+                pv = _LabPreview()
+                pv.setVisible(False)
+                vor.toggled.connect(pv.setVisible)
+                self.previews[fld] = pv
+            v.addLayout(kopf)
             ed.textChanged.connect(lambda f=fld: self._text_changed(f))
             v.addWidget(ed); v.addWidget(cnt)
+            if fld in self.previews:
+                v.addWidget(self.previews[fld])
             self.texts[fld] = (ed, cnt)
         b.addWidget(g)
 
@@ -853,10 +907,22 @@ class TechForm(QWidget):
             self.show_tech(self.tech)
         self.changed.emit(self.tech.id)
 
+    def _insert_rule(self, fld: str) -> None:
+        ed, _cnt = self.texts[fld]
+        neu, pos = tm.insert_rule(ed.toPlainText(), ed.textCursor().position())
+        if len(neu) > tm.MAX_TEXT:
+            QMessageBox.information(self, tr("techtree.title"), tr("techtree.rule_too_long"))
+            return
+        ed.setPlainText(neu)
+        cur = ed.textCursor(); cur.setPosition(pos); ed.setTextCursor(cur)
+        ed.setFocus()
+
     def _text_changed(self, fld: str) -> None:
         ed, cnt = self.texts[fld]
         s = ed.toPlainText()
         cnt.show_len(len(s))
+        if fld in self.previews:
+            self.previews[fld].show_text(s)
         if self._loading or not self.tech:
             return
         # Das Spiel kennt keine Zeilenumbrueche und keine " im Text.

@@ -301,7 +301,7 @@ der Leiste legt ein Thema ohne Voraussetzung an.
 | Max. Wissenschaftler | 4–18, 1 bei Sonderthemen |
 | Kolonien | Haken je Kolonie: ohne Haken ist das Thema für sie gesperrt (-1). Die Zahl ist die Forschungszeit; 0 heißt „von Anfang an erforscht“. *Für beide gleich* schreibt eine COST-Zeile |
 | Voraussetzungen | Eigene Liste: Thema suchen, hinzufügen, entfernen. Themen, die schon auf diesem aufbauen, stehen nicht zur Wahl (kein Kreis). Darunter: welche Themen es ermöglicht |
-| Texte | Beschreibung, Ankündigung (TEASER) und Kurztext der Verbesserung, je höchstens 800 Zeichen mit Restzeichen-Anzeige |
+| Texte | Beschreibung, Ankündigung (TEASER) und Kurztext der Verbesserung, je höchstens 800 Zeichen mit Restzeichen-Anzeige. *Trennlinie einfügen* setzt die Linie aus 39 Unterstrichen ein (im Spiel trennt sie Kurzfassung und Geschichte); *Vorschau* bricht den Text ungefähr so um wie das Labor-Feld |
 | Werteänderungen | Tabelle der UNIT_PROP-Zeilen: Einheit, eine der 19 Eigenschaften, neuer Wert, daneben der Grundwert aus den Regel-Tabellen des Spiels. Höchstens 32 je Thema |
 
 Ein Thema setzt Werte, es zählt nichts dazu. Es gilt nur für die Kolonie, die
