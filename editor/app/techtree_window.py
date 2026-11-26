@@ -286,31 +286,49 @@ class TreeView(QGraphicsView):
 
 # --- Bearbeitungsfeld / editor panel ----------------------------------------
 
+def prop_label(kind: str | None, prop: str) -> str:
+    """Bezeichnung einer Eigenschaft fuer diese Art Einheit (Scout: Sichtweite,
+    Waffe: Reichweite ...). Label of a property for this kind of unit."""
+    for name, key in tm.props_for(kind):
+        if name == prop and key:
+            return tr(f"techtree.pl_{key}")
+    return tr(f"techtree.prop_{prop}") if prop in tm.PROPERTY_NAMES else prop
+
+
+def prop_hint(kind: str | None, prop: str) -> str:
+    for name, key in tm.props_for(kind):
+        if name == prop and key:
+            return tr(f"techtree.ph_{key}")
+    return tr(f"techtree.hint_{prop}") if prop in tm.PROPERTY_NAMES else ""
+
+
 class _PropDelegate(QStyledItemDelegate):
-    """Aufgeklappte Eigenschaften-Liste: Code und Bedeutung. Zugeklappt steht
-    nur der Code, damit die Spalte schmal bleibt.
-    Dropdown shows code and meaning; the closed box only the code."""
+    """Aufgeklappte Liste: Bezeichnung und Name in der Datei (Sight_Range ...).
+    Dropdown shows the label and the file name of the property."""
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         code = index.data(Qt.UserRole)
         if code in tm.PROPERTY_NAMES:
-            option.text = f"{code} · {tr(f'techtree.prop_{code}')}"
+            option.text = f"{option.text}  ·  {code}"
 
 
 class _UpgradeTable(QTableWidget):
-    """Werte-Tabelle: feste Spalten rechts, die Einheit bekommt den Rest,
-    aber mindestens UNIT_MIN (sonst waagerecht scrollen).
-    Fixed columns on the right; the unit column takes the rest."""
-    UNIT_MIN = 140
+    """Werte-Tabelle: Wert, Grundwert und Loeschknopf fest rechts; Einheit und
+    Eigenschaft teilen sich den Rest (je mit Mindestbreite, sonst waagerecht
+    scrollen). Fixed columns on the right; unit and property share the rest."""
+    UNIT_MIN, PROP_MIN = 130, 150
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self.fit_unit_column()
 
     def fit_unit_column(self) -> None:
-        rest = sum(self.columnWidth(c) for c in range(1, self.columnCount()))
-        self.setColumnWidth(0, max(self.UNIT_MIN, self.viewport().width() - rest))
+        fest = sum(self.columnWidth(c) for c in range(2, self.columnCount()))
+        frei = self.viewport().width() - fest
+        prop = max(self.PROP_MIN, int(frei * 0.48))
+        self.setColumnWidth(1, prop)
+        self.setColumnWidth(0, max(self.UNIT_MIN, frei - prop))
 
 
 class _Counter(QLabel):
@@ -463,7 +481,8 @@ class TechForm(QWidget):
         fm = QFontMetrics(self.table.font())
         breite_wert = max(72, fm.horizontalAdvance(tr("techtree.col_value")) + 18)
         breite_grund = max(72, fm.horizontalAdvance(tr("techtree.col_base")) + 18)
-        for c, w in ((1, 162), (2, breite_wert), (3, breite_grund), (4, 34)):
+        hh.setSectionResizeMode(1, QHeaderView.Fixed)
+        for c, w in ((2, breite_wert), (3, breite_grund), (4, 34)):
             hh.setSectionResizeMode(c, QHeaderView.Fixed); self.table.setColumnWidth(c, w)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(32)
@@ -595,18 +614,8 @@ class TechForm(QWidget):
         unit.lineEdit().setCursorPosition(0)      # Anfang zeigen, nicht das Ende
         prop = QComboBox()
         prop.setItemDelegate(_PropDelegate(prop))
-        prop.view().setMinimumWidth(340)
-        for k, name in enumerate(tm.PROPERTY_NAMES):
-            prop.addItem(name, name)
-            prop.setItemData(k, tr(f"techtree.hint_{name}"), Qt.ToolTipRole)
-        prop.currentIndexChanged.connect(
-            lambda _i, c=prop: c.setToolTip(tr(f"techtree.prop_{c.currentData()}")
-                                            if c.currentData() in tm.PROPERTY_NAMES else ""))
-        i = prop.findData(p.prop)
-        if i < 0:
-            prop.addItem(p.prop, p.prop); i = prop.count() - 1
-        prop.setCurrentIndex(i)
-        prop.setToolTip(tr(f"techtree.prop_{p.prop}") if p.prop in tm.PROPERTY_NAMES else "")
+        prop.view().setMinimumWidth(360)
+        self._fill_prop_combo(prop, p.unit, p.prop)
         val = QSpinBox(); val.setRange(-1, 9999999); val.setValue(p.value)
         # Ohne Pfeile ueber das Stylesheet ("flach"), NICHT mit NoButtons:
         # das liess die Zahl unter dem Stylesheet verschwinden.
@@ -622,12 +631,40 @@ class TechForm(QWidget):
         self.table.setCellWidget(r, 2, val)
         self.table.setCellWidget(r, 3, base)
         self.table.setCellWidget(r, 4, rm)
-        unit.currentIndexChanged.connect(lambda *_: self._props_from_table())
-        unit.lineEdit().editingFinished.connect(self._props_from_table)
+        unit.currentIndexChanged.connect(lambda *_, u=unit: self._unit_changed(u))
+        unit.lineEdit().editingFinished.connect(lambda u=unit: self._unit_changed(u))
         prop.currentIndexChanged.connect(lambda *_: self._props_from_table())
         val.valueChanged.connect(lambda *_: self._props_from_table())
         rm.clicked.connect(lambda _=False, w=rm: self._prop_remove(w))
         self._row_extras(r)
+
+    def _fill_prop_combo(self, combo: QComboBox, unit: str, current: str) -> None:
+        """Nur die Eigenschaften, die zur Art der Einheit passen, mit deren
+        Bezeichnung. Passt die bisherige nicht, bleibt sie mit Warnzeichen
+        stehen (eine Datei kann das so enthalten).
+        Only the properties fitting the unit's kind, under their label."""
+        kind = tm.unit_kind(self.sheets, unit)
+        combo.blockSignals(True)
+        combo.clear()
+        for k, (name, _key) in enumerate(tm.props_for(kind)):
+            combo.addItem(prop_label(kind, name), name)
+            combo.setItemData(k, prop_hint(kind, name), Qt.ToolTipRole)
+        i = combo.findData(current)
+        if i < 0 and current:
+            combo.addItem(f"⚠ {current}", current)
+            i = combo.count() - 1
+            combo.setItemData(i, tr("techtree.prop_not_fitting"), Qt.ToolTipRole)
+        combo.setCurrentIndex(max(0, i))
+        combo.setToolTip(combo.itemData(combo.currentIndex(), Qt.ToolTipRole) or "")
+        combo.blockSignals(False)
+
+    def _unit_changed(self, unit_combo: QComboBox) -> None:
+        for r in range(self.table.rowCount()):
+            if self.table.cellWidget(r, 0) is unit_combo:
+                code, prop, _v = self._row_values(r)
+                self._fill_prop_combo(self.table.cellWidget(r, 1), code, prop)
+                break
+        self._props_from_table()
 
     def _row_values(self, r: int) -> tuple[str, str, int]:
         unit = self.table.cellWidget(r, 0)
@@ -673,14 +710,20 @@ class TechForm(QWidget):
         if not self.tech or r < 0 or r >= self.table.rowCount():
             self.prop_hint.setText(tr("techtree.prop_hint_none"))
             return
-        _c, prop, _v = self._row_values(r)
-        self.prop_hint.setText(tr(f"techtree.hint_{prop}") if prop in tm.PROPERTY_NAMES else "")
+        code, prop, _v = self._row_values(r)
+        kind = tm.unit_kind(self.sheets, code)
+        text = prop_hint(kind, prop)
+        if not tm.prop_fits(kind, prop):
+            text = tr("techtree.prop_not_fitting") + " " + text
+        self.prop_hint.setText(text)
 
     def _prop_add(self) -> None:
         if not self.tech:
             return
         last = self.tech.props[-1] if self.tech.props else None
-        p = tm.UnitProp(last.unit if last else "CON_TRUCK", "Hit_Points", 0)
+        unit = last.unit if last else "CON_TRUCK"
+        first = tm.props_for(tm.unit_kind(self.sheets, unit))[0][0]
+        p = tm.UnitProp(unit, first, 0)
         bv = tm.base_value(self.sheets, p.unit, p.prop)
         if bv and bv.lstrip("-").isdigit():
             p.value = int(bv)
@@ -1012,7 +1055,7 @@ class TechTreePage(QWidget):
         return self._write(Path(fn))
 
     def _write(self, path: Path) -> bool:
-        errors = [p for p in tm.validate(self.tf, set(self.sheets) or None) if p.level == "error"]
+        errors = [p for p in tm.validate(self.tf, {c: k for c, (k, _row) in self.sheets.items()} or None) if p.level == "error"]
         if errors:
             r = QMessageBox.warning(self, tr("techtree.title"), tr("techtree.save_with_errors", n=len(errors)),
                                     QMessageBox.Save | QMessageBox.Cancel, QMessageBox.Cancel)
@@ -1142,10 +1185,12 @@ class TechTreePage(QWidget):
             args["faction"] = tr(f"techtree.fac_{args['faction']}")
         if "req" in args:
             args["req"] = f"{args['req']:05d}"
+        if "kind" in args:
+            args["kind"] = tr(f"techtree.kind_{args['kind']}") if args["kind"] else "?"
         return tr(f"techtree.v_{p.code}", **args)
 
     def check(self) -> None:
-        probs = tm.validate(self.tf, set(self.sheets) or None)
+        probs = tm.validate(self.tf, {c: k for c, (k, _row) in self.sheets.items()} or None)
         self._probs = probs
         self.problem_list.clear()
         errs = sum(1 for p in probs if p.level == "error")

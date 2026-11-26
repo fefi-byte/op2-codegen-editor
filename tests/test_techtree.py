@@ -143,3 +143,25 @@ def test_grundwerte_aus_den_tabellen():
     assert tm.base_value(sheets, "CON_TRUCK", "Hit_Points") is not None
     assert tm.base_value(sheets, "LASER", "Rate_Of_Fire") is not None
     assert "EMP_MISSILE" in sheets
+
+
+@pytest.mark.skipif(_techs_dir() is None, reason="keine Spielinstallation")
+def test_eigenschaften_passen_zur_art():
+    """Jede UNIT_PROP-Zeile der Originale passt zur Art ihrer Einheit; die
+    Auswahl im Editor bietet also alles an, was das Spiel selbst nutzt."""
+    d = _techs_dir()
+    sheets = tm.read_sheets(d.parent / "sheets")
+    kinds = {c: k for c, (k, _r) in sheets.items()}
+    for name in ("multitek.txt", "edentek.txt", "ply_tek.txt", "tutortek.txt"):
+        tf = tm.load(d / name)
+        falsch = [(t.id, p.unit, p.prop) for t in tf.techs for p in t.props
+                  if not tm.prop_fits(kinds.get(p.unit), p.prop)]
+        assert not falsch, (name, falsch[:5])
+        assert not [p for p in tm.validate(tf, kinds) if p.code == "prop_kind"]
+    assert kinds["SCOUT"] == "vehicle" and kinds["LASER"] == "weapon"
+    assert kinds["TOWER_GUARD"] == "building" and kinds["EMP_MISSILE"] == "space"
+
+
+def test_art_ohne_tabelle_bietet_alle_an():
+    assert len(tm.props_for(None)) == len(tm.PROPERTY_NAMES)
+    assert tm.prop_fits("weapon", "Sight_Range") and not tm.prop_fits("weapon", "Hit_Points")

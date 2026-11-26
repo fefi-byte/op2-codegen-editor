@@ -76,6 +76,55 @@ PROPERTIES: tuple[tuple[str, int, str], ...] = (
 PROPERTY_NAMES = tuple(p[0] for p in PROPERTIES)
 ARMOR_RANGE = (0, 5)
 
+# Welche Eigenschaften zu welcher Art Einheit passen, und wie sie dort heissen
+# (Schluessel fuer tr("techtree.pl_<name>")). Die Art kommt aus der
+# Regel-Tabelle, in der die Einheit steht. Grundlage: die Stelle im Wertesatz
+# (op2-rs upgrades.rs apply_unit/apply_weapon) und die Nutzung in den
+# OPU-Baeumen. Bei Waffen ist Sight_Range die Reichweite, Rate_Of_Fire die
+# Nachladezeit und Move_Speed das Drehtempo des Turms.
+# Which properties fit which kind of unit, and what they are called there.
+KIND_PROPERTIES: dict[str, tuple[tuple[str, str], ...]] = {
+    "vehicle": (
+        ("Hit_Points", "hp"), ("Armor", "armor"), ("Move_Speed", "speed"),
+        ("Turn_Rate", "turn"), ("Sight_Range", "sight"), ("Production_Rate", "workrate"),
+        ("Common_Required", "common"), ("Rare_Required", "rare"), ("Build_Time", "buildtime"),
+    ),
+    "building": (
+        ("Hit_Points", "hp"), ("Armor", "armor"), ("Sight_Range", "sight"),
+        ("Production_Capacity", "output"), ("Power_Required", "power"),
+        ("Workers_Required", "workers"), ("Storage_Capacity", "storage"),
+        ("Storage_Bays", "bays"), ("Improved", "improved"),
+        ("Common_Required", "common"), ("Rare_Required", "rare"), ("Build_Points", "buildtime"),
+    ),
+    "weapon": (
+        ("Concussion_Damage", "concussion"), ("Penetration_Damage", "penetration"),
+        ("Sight_Range", "range"), ("Rate_Of_Fire", "reload"), ("Move_Speed", "turret"),
+        ("Common_Required", "common"), ("Rare_Required", "rare"),
+    ),
+    "space": (
+        ("Common_Required", "common"), ("Rare_Required", "rare"), ("Build_Time", "buildtime"),
+    ),
+}
+KINDS = tuple(KIND_PROPERTIES)
+
+
+def unit_kind(sheets: dict, code: str) -> str | None:
+    """'vehicle' | 'building' | 'weapon' | 'space' oder None (unbekannt)."""
+    entry = sheets.get(code) if sheets else None
+    return entry[0] if entry else None
+
+
+def props_for(kind: str | None) -> tuple[tuple[str, str | None], ...]:
+    """Passende Eigenschaften (Name, Bezeichnungs-Schluessel) einer Art;
+    unbekannte Art: alle 19 ohne eigene Bezeichnung."""
+    if kind in KIND_PROPERTIES:
+        return KIND_PROPERTIES[kind]
+    return tuple((name, None) for name in PROPERTY_NAMES)
+
+
+def prop_fits(kind: str | None, prop: str) -> bool:
+    return kind is None or any(p == prop for p, _ in props_for(kind))
+
 # Spalte der Regel-Tabelle (OPU/base/sheets), aus der der Grundwert einer
 # Eigenschaft kommt -- je Art. Die Kopfzeilen der Tabellen sind zweizeilig;
 # hier steht beides mit Leerzeichen verbunden.
@@ -507,7 +556,9 @@ class Problem:
     args: dict = field(default_factory=dict)
 
 
-def validate_tech(tf: TechFile, t: Tech, units: set[str] | None = None) -> list[Problem]:
+def validate_tech(tf: TechFile, t: Tech, units=None) -> list[Problem]:
+    """`units`: bekannte Einheiten-Codes (Menge) oder {Code: Art} -- dann wird
+    auch geprueft, ob die Eigenschaft zur Art passt."""
     P = []
     ids = {x.id for x in tf.techs}
 
@@ -560,6 +611,8 @@ def validate_tech(tf: TechFile, t: Tech, units: set[str] | None = None) -> list[
             add("error", "armor", v=p.value)
         if units and p.unit not in units:
             add("warning", "unit_unknown", unit=p.unit)
+        elif isinstance(units, dict) and p.prop in PROPERTY_NAMES and not prop_fits(units.get(p.unit), p.prop):
+            add("warning", "prop_kind", unit=p.unit, prop=p.prop, kind=units.get(p.unit))
     seen: dict[tuple[str, str], int] = {}
     for p in t.props:
         seen[(p.unit, p.prop)] = seen.get((p.unit, p.prop), 0) + 1
@@ -592,7 +645,7 @@ def find_cycles(tf: TechFile) -> list[list[int]]:
     return cycles
 
 
-def validate(tf: TechFile, units: set[str] | None = None) -> list[Problem]:
+def validate(tf: TechFile, units=None) -> list[Problem]:
     out: list[Problem] = []
     if len(tf.techs) > MAX_TECHS:
         out.append(Problem("error", None, "too_many", {"n": len(tf.techs), "max": MAX_TECHS}))
