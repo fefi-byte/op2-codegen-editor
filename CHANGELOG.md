@@ -7,6 +7,38 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- *New map*, template *like the originals (learned)*: slider **calmer biomes**
+  merges the grounds into larger areas with tongues and bays; walls act as
+  barriers, so grounds prefer to change at cliffs. Default 50 %.
+- Slider **coherence** for the same template: a height plan of the whole map
+  (uplands and basins with long, stepped cliffs) is made first, the networks draw
+  the details into it. Default 60 %. Mountains get nested terraces, small closed
+  hills appear, holes in thin north cliffs are repainted.
+- Learned generator: the number of **compute threads** can be set (0 = automatic),
+  stored as `[ui] netz_threads` in `config.ini`.
+- Slider **calmer terrain** (same template, default 50 %): fewer, longer cliffs,
+  larger uplands, fewer mountain terraces and hills.
+- With coherence on, mountains are spread over the whole world (also partly off
+  the map) with varied size and direction instead of one long chain in the middle.
+- **Volcanoes in three sizes** (small, medium, large) for the learned template;
+  the sketch reserves rock or a lava core for each, so even large ones fit.
+- Sliders **craters**, **cracks** and **debris** for the learned template, using
+  the game's own tile groups on matching ground; debris comes as crash sites.
+- **Gradient** for the learned template: ground and terrain change across the
+  map (north to south, west to east, diagonal, centre to edge), e.g. flat sand in
+  the north and rugged rock in the south. Start and end each get a ground and a
+  flat-to-rugged slider; mountains, uplands and the network's cliffs follow it.
+- The learned template hides the **features** and is the default template
+  when its runtime is available.
+- The same template now knows **lava rock**: rock areas get closed dark lava
+  cores with proper transition tiles instead of scattered lava tiles, calm 4x4
+  tile patterns, and **volcanoes** inside the cores. Slider *lava rock*, 50 = as
+  in the original maps; the volcano count is no longer hidden.
+
+### Changed
+- `Editor (modular) starten.bat` also works from a network share.
+
 ## [0.11.1-alpha] - 2026-11-25
 
 ### Changed

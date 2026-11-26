@@ -80,7 +80,9 @@ TEMPLATES: dict[str, dict] = {
     # the panel to compute it there; the other values are suggestions.
     "netz": {"mix": {"mud": 0.59, "roc": 0.19, "san": 0.20, "veg": 0.02},
              "roughness": 0.0, "netz": True, "berge": 0.10, "berg_dichte": 0.5,
-             "hochebenen": 2, "cliffs": 0.12, "details": 0.10},
+             "hochebenen": 2, "cliffs": 0.12, "details": 0.10,
+             "biom_ruhe": 0.5, "grossform": 0.6, "gelaende_ruhe": 0.5, "lavafels": 0.5, "volcanoes": 1,
+             "vulkane": (1, 1, 0), "krater": 0.3, "risse": 0.3, "truemmer": 0.15},
 }
 
 
@@ -119,6 +121,19 @@ class MapGenParams:
     cliffs: float = 0.0              # Flaechenanteil Hochflaechen (0 = keine)
     ramps: int = 2                   # Auffahrten je Karte (Luecken im Kantenring)
     volcanoes: int = 0               # Vulkane (jeder mit lavaPossible-Zone)
+    # Gelernter Generator: Vulkane je Groesse (klein, mittel, gross).
+    # Learned generator: volcanoes per size (small, medium, large).
+    vulkane: tuple = (0, 0, 0)
+    # Gelernter Generator: Krater, Risse, Truemmer 0..1. Learned: decorations.
+    krater: float = 0.0
+    risse: float = 0.0
+    truemmer: float = 0.0
+    # Gelernter Generator: Verlauf ueber die Karte. Richtung (VERLAEUFE, leer =
+    # aus), Boden an Anfang und Ende ("" = Mischung) und Gelaende 0 flach ..
+    # 1 bergig (0.5 = wie sonst). Learned: a gradient across the map.
+    verlauf: str = ""
+    verlauf_boden: tuple = ("", "")
+    verlauf_gelaende: tuple = (0.5, 0.5)
     lava_zone_tiles: int = 300       # Groesse der lavaPossible-Zone je Vulkan
     smooth: int = 2                  # Glaettungsdurchgaenge gegen Kleinstflecken
     # Wie weit Bewuchs von Fels, Sand und Schnee wegbleibt. Gemessen ueber
@@ -137,6 +152,18 @@ class MapGenParams:
     # patches dissolve into the surrounding biome instead of staying as
     # speckles.
     min_biome: float = 0.006
+    # Gelernter Generator: Biome zu groesseren Flaechen zusammenfassen. 0 = wie
+    # das Netz sie zieht, 0.3 etwa wie die Originalkarten, 1 = wenige grosse.
+    # Learned generator: merge biomes into larger areas. 0 = as drawn by the
+    # network, 0.3 about like the original maps, 1 = few large ones.
+    grossform: float = 0.0
+    gelaende_ruhe: float = 0.0
+    biom_ruhe: float = 0.0
+    # Gelernter Generator: Lavakerne im Fels. 0 = keine, 0.5 = wie die
+    # Originalkarten, 1 = haeufiger und groesser.
+    # Learned generator: lava cores in rock. 0 = none, 0.5 = like the originals,
+    # 1 = more often and larger.
+    lavafels: float = 0.5
     # Streugut (Steine, Risse, Krater): 0.5 entspricht ungefaehr der Dichte
     # der Originalkarten (rund 3 % der Flaeche).
     # Scatter (stones, cracks, craters): 0.5 is about the density of the
@@ -194,6 +221,42 @@ class MapGenParams:
         for key, value in kwargs.items():
             setattr(params, key, value)
         return params
+
+
+VERLAEUFE = ("n-s", "s-n", "w-o", "o-w", "nw-so", "so-nw", "no-sw", "sw-no",
+             "mitte-rand", "rand-mitte")
+
+
+def verlauf_feld(params: "MapGenParams", h: int, w: int, rand: int = 0):
+    """0 am Anfang des Verlaufs, 1 am Ende, auf einer Welt mit `rand` Kacheln
+    um die Karte -> (h, w) oder None ohne Verlauf.
+    0 at the start of the gradient, 1 at its end, on a world with `rand` tiles
+    around the map; None without a gradient."""
+    if params.verlauf not in VERLAEUFE:
+        return None
+    yy, xx = np.mgrid[0:h, 0:w].astype(float)
+    y = (yy - rand + .5) / max(1, h - 2 * rand)
+    x = (xx - rand + .5) / max(1, w - 2 * rand)
+    a, _s, b = params.verlauf.partition("-")
+    if params.verlauf in ("mitte-rand", "rand-mitte"):
+        u = np.hypot(x - .5, y - .5) / .6
+        u = u if a == "mitte" else 1 - u
+    else:
+        richtung = {"n": (0, -1), "s": (0, 1), "w": (-1, 0), "o": (1, 0)}
+        dx = sum(richtung[c][0] for c in b) - sum(richtung[c][0] for c in a)
+        dy = sum(richtung[c][1] for c in b) - sum(richtung[c][1] for c in a)
+        n = max(1, abs(dx) + abs(dy))
+        u = (x - .5) * dx / n + (y - .5) * dy / n + .5
+    return np.clip(u, 0, 1)
+
+
+def verlauf_gelaende(params: "MapGenParams", h: int, w: int, rand: int = 0):
+    """Gelaende je Ort, 0 flach .. 1 bergig, oder None."""
+    u = verlauf_feld(params, h, w, rand)
+    if u is None:
+        return None
+    a, b = (float(np.clip(v, 0, 1)) for v in params.verlauf_gelaende)
+    return (1 - u) * a + u * b
 
 
 @dataclass

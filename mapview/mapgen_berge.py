@@ -27,6 +27,7 @@ import numpy as np
 import celltypes
 import shapegen
 from mapgen_basis import (
+    verlauf_gelaende,
     SYM_MIRROR_X,
     SYM_MIRROR_Y,
     SYM_NONE,
@@ -213,9 +214,12 @@ def _spiegeln(m: np.ndarray, sym: str) -> np.ndarray:
     return _apply_symmetry(m.astype(np.int8), sym) > 0
 
 
-def _ketten(h: int, w: int, rng: np.random.Generator, sym: str) -> list[dict]:
+def _ketten(h: int, w: int, rng: np.random.Generator, sym: str,
+            verteilt: bool = False) -> list[dict]:
     """Mittelpunkte, Richtungen und Groessen der Bergketten in der Welt -- eine je
     128er-Flaeche. / One mountain chain per 128x128 of world area."""
+    if verteilt:
+        return _ketten_verteilt(h, w, rng, sym)
     anzahl = max(1, int(round(w * h / (128 * 128))))
     lang = 0.45 * min(min(w, h), 128)
     kurz = 0.38 * lang
@@ -243,6 +247,32 @@ def _ketten(h: int, w: int, rng: np.random.Generator, sym: str) -> list[dict]:
         ketten.append({"cx": bester[1], "cy": bester[2], "winkel": winkel,
                        "lang": lang if min(w, h) >= 128 else lang * 1.6,
                        "kurz": kurz, "kipp": float(rng.uniform(0, 2 * np.pi))})
+    return ketten
+
+
+def _ketten_verteilt(h: int, w: int, rng: np.random.Generator, sym: str) -> list[dict]:
+    """Wie `_ketten`, aber mehr und verschiedenere Berge, ueber die ganze Welt
+    samt Rand verteilt: sonst liegt der Berg fast immer laenglich in der Mitte.
+    More and more varied mountains spread over the whole world including the
+    margin; otherwise the mountain nearly always lies lengthwise in the middle."""
+    anzahl = max(2, int(round(1.4 * w * h / (128 * 128))))
+    ketten: list[dict] = []
+    for _ in range(anzahl):
+        bester = None
+        for _v in range(4):
+            cx, cy = float(rng.uniform(8, w - 8)), float(rng.uniform(8, h - 8))
+            if sym in (SYM_MIRROR_X, SYM_QUAD) and cx >= w / 2:
+                cx = w - 1 - cx
+            if sym in (SYM_MIRROR_Y, SYM_ROT180, SYM_QUAD) and cy >= h / 2:
+                cy = h - 1 - cy
+            ab = min([np.hypot(cx - k["cx"], cy - k["cy"]) for k in ketten] or [1e9])
+            if bester is None or ab > bester[0]:
+                bester = (ab, cx, cy)
+        lang = float(rng.uniform(.22, .45)) * min(min(w, h), 160)
+        ketten.append({"cx": bester[1], "cy": bester[2],
+                       "winkel": float(rng.uniform(0, np.pi)), "lang": lang,
+                       "kurz": lang * float(rng.uniform(.45, .95)),
+                       "kipp": float(rng.uniform(0, 2 * np.pi))})
     return ketten
 
 
@@ -287,7 +317,7 @@ def _plane_berge(plan, params, rng, frei, xs, ys) -> None:
     sym = params.symmetry
     X = xs + (_rauschen(h, w, rng, 16) - .5) * 22 + (_rauschen(h, w, rng, 8) - .5) * 9
     Y = ys + (_rauschen(h, w, rng, 16) - .5) * 22 + (_rauschen(h, w, rng, 8) - .5) * 9
-    ketten = _ketten(h, w, rng, sym)
+    ketten = _ketten(h, w, rng, sym, getattr(params, "grossform", 0) > 0)
     felder = []
     for k in ketten:
         c, s = np.cos(k["winkel"]), np.sin(k["winkel"])
@@ -303,6 +333,11 @@ def _plane_berge(plan, params, rng, frei, xs, ys) -> None:
         k = ketten[nr]
         kipp = np.where(naechste == nr, (np.cos(k["kipp"]) * (xs - k["cx"])
                                          + np.sin(k["kipp"]) * (ys - k["cy"])) / 60., kipp)
+    # Verlauf: die Berge rutschen auf die bergige Seite. Gradient: mountains
+    # move towards the rugged side.
+    rau = verlauf_gelaende(params, h, w, WELT_RAND)
+    if rau is not None:
+        f = f + 1.6 * (rau - .5)
     if sym != SYM_NONE:
         f, kipp = _apply_symmetry(f, sym), _apply_symmetry(kipp, sym)
     dichte = float(np.clip(params.berg_dichte, 0, 1))

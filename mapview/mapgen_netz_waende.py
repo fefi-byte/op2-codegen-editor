@@ -325,3 +325,29 @@ def ein_boden_je_wand(w: np.ndarray, boden: np.ndarray) -> np.ndarray:
         for y, x in np.argwhere(gleich == 0).tolist():
             grob[y, x] = np.bincount([v[y, x] for v in nachbarn], minlength=5).argmax()
     return np.kron(grob, np.ones((2, 2), np.int64))
+
+
+def schmaler_saum(w: np.ndarray, boden: np.ndarray) -> np.ndarray:
+    """Waende samt ihrer 4x4-Bloecke auf Erde oder Sand stellen, sonst nichts.
+
+    Anders als `ein_boden_je_wand` kein breiter Saum: in den Originalen liegt
+    fast ein Drittel der Biomgrenzen an einer Klippe.
+    Put walls and their 4x4 blocks on dirt or sand, nothing more: in the
+    originals almost a third of the biome borders run along a cliff."""
+    h, q = boden.shape
+    k = w > 0
+    breit = k.copy()
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            breit[max(0, dy):h + min(0, dy), max(0, dx):q + min(0, dx)] |= \
+                k[max(0, -dy):h - max(0, dy), max(0, -dx):q - max(0, dx)]
+    nummern, n = label(breit)
+    b = boden.copy()
+    for i in range(1, n + 1):
+        um = np.bincount(boden[nummern == i], minlength=5)
+        g = SAND if um[SAND] > um[ERDE] else ERDE
+        bloecke = np.zeros((h // 2, q // 2), bool)
+        z = np.argwhere((nummern == i) & k)
+        bloecke[z[:, 0] // 2, z[:, 1] // 2] = True
+        b[np.kron(bloecke, np.ones((2, 2), bool))] = g
+    return b

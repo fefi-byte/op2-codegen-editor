@@ -51,6 +51,7 @@ from mapgen_basis import (  # noqa: E402,F401
     SYMMETRIES,
     FAMILY_VEGETATION,
     TEMPLATES,
+    VERLAEUFE,
     PASSABLE_CLASSES,
     MapGenParams,
     GeneratedMap,
