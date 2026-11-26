@@ -12,6 +12,7 @@ Abschnitte:
             dll_name   -> Dateiname der Mission-DLL
   [ui]      language   -> Sprache der Oberflaeche: auto (Systemsprache), de, en, ...
             show_grid  -> Kachelgitter ueber der Karte (true/false)
+            netz_threads -> Threads des gelernten Kartengenerators, 0 = automatisch
 
 Central INI configuration of the editor (machine-specific paths).
 
@@ -27,6 +28,7 @@ Sections:
             dll_name   -> file name of the mission DLL
   [ui]      language   -> language of the UI: auto (system language), de, en, ...
             show_grid  -> tile grid over the map (true/false)
+            netz_threads -> threads of the learned map generator, 0 = automatic
 """
 from __future__ import annotations
 
@@ -461,6 +463,26 @@ def set_show_grid(on: bool) -> None:
     if not cp.has_section("ui"):
         cp.add_section("ui")
     cp.set("ui", "show_grid", "true" if on else "false")
+    _save(cp)
+
+
+def netz_threads() -> int:
+    """Threads des gelernten Kartengenerators ([ui] netz_threads), 0 = automatisch.
+
+    Threads of the learned map generator, 0 = automatic.
+    """
+    try:
+        return max(0, _load().getint("ui", "netz_threads", fallback=0))
+    except ValueError:
+        return 0
+
+
+def set_netz_threads(n: int) -> None:
+    """Speichert die Threadzahl zurueck in die config.ini. / Saves the thread count."""
+    cp = _load()
+    if not cp.has_section("ui"):
+        cp.add_section("ui")
+    cp.set("ui", "netz_threads", str(int(n)))
     _save(cp)
 
 

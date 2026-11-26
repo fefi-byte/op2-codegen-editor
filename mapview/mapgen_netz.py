@@ -22,21 +22,20 @@ occur in the training maps. Runs on ONNX Runtime (CPU); without the package
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
 import celltypes
 import mapgen
+import mapgen_netz_deko as deko
+import mapgen_netz_fels as felsen
+import mapgen_netz_gross as grossbild
 import mapgen_netz_waende as waende
-import shapegen
 from mapgen_basis import (
-    FEAT_BERG,
-    FEAT_ENGE,
-    FEAT_FREI,
-    FEAT_PLATEAU,
-    FEAT_TAL,
+    verlauf_feld,
+    verlauf_gelaende,
     SYM_MIRROR_X,
     SYM_MIRROR_Y,
     SYM_NONE,
@@ -53,8 +52,7 @@ from mapgen_berge import (
     welt_plan,
     zonen_bericht,
 )
-from mapgen_felder import _components, _naht_passt, _scatter_details
-from mapgen_relief import _feature_layout, _feature_maske
+from mapgen_felder import _components, _lava_zone, _naht_passt, _scatter_details
 from mapgen_wege import _connected, _groesstes_gebiet, _passable_mask, _pick_spawns
 
 HIER = Path(__file__).resolve().parent
@@ -67,7 +65,8 @@ BOEDEN = ("mud", "roc", "san", "veg")
 BODEN_ANTEIL = np.array([.59, .19, .20, .02, .004])
 BERG_AUF_SAND = .06              # Originale: 94 % Erde, 6 % Sand
 WAND_VERSTAERKUNG = 30.0         # Skizze sagt Wand -> Wandkacheln bevorzugen
-NORD_VERSTAERKUNG = 2.0          # Nordkanten sind nur eine Zelle dick
+VERBIEGEN = (8.0, 4.5)           # Felder, grob und fein / cells, coarse and fine
+NORD_VERSTAERKUNG = 6.0          # Nordkanten sind nur eine Zelle dick
 
 # Runden beim Malen je Guetestufe. / Painting rounds per quality level.
 STUFEN = {"schnell": 6, "gut": 24}
@@ -83,13 +82,31 @@ class Abgebrochen(Exception):
 _geladen: dict = {}
 
 
+_threads = 0
+
+
+def threads_vorgabe() -> int:
+    """Rechenthreads ohne eigene Einstellung. / Threads without a setting."""
+    return max(1, min(8, (os.cpu_count() or 4) // 2))
+
+
+def setze_threads(n: int) -> None:
+    """Threads fuer die Netze, 0 = automatisch; eine laufende Rechnung behaelt
+    ihre. Threads for the networks, 0 = automatic; a running one keeps its own."""
+    global _threads
+    n = max(0, min(int(n), os.cpu_count() or 4))
+    if n != _threads:
+        _threads = n
+        _geladen.pop("m", None)
+
+
 def _modell():
     """Netze und Tabellen einmal laden -> Namensraum oder Ausnahme."""
     if "m" in _geladen:
         return _geladen["m"]
     import onnxruntime as ort
     opt = ort.SessionOptions()
-    opt.intra_op_num_threads = max(1, min(8, (os.cpu_count() or 4) // 2))
+    opt.intra_op_num_threads = _threads or threads_vorgabe()
     opt.log_severity_level = 3
 
     def netz(name):
@@ -103,6 +120,9 @@ def _modell():
     m.maske = m.n + 1
     m.rechts = np.unpackbits(d["rechts"], axis=1)[:, :m.n].astype(bool)
     m.unten = np.unpackbits(d["unten"], axis=1)[:, :m.n].astype(bool)
+    art = felsen.kachelart()[m.vok]
+    m.rechts = felsen.ohne_kante(m.rechts, art)
+    m.unten = felsen.ohne_kante(m.unten, art)
     m.links, m.oben = m.rechts.T.copy(), m.unten.T.copy()
     zt = np.array([celltypes.default_cell_type(int(t)) for t in m.vok], np.uint8)
     m.wand = np.isin(zt, _KLIPPEN)
@@ -179,11 +199,13 @@ class Skizze:
     boden: np.ndarray                # (h/2, w/2), 0..4
     zonen: np.ndarray                # (h, w): 1 Berg 2 Hochebene 3 Tal 4 Schlucht
     plan: BergPlan
+    lava: np.ndarray                 # (h/2, w/2): Lavakerne im Fels / lava cores
+    vulkane: list = field(default_factory=list)   # (y, x, Groesse, Lava?, r)
 
 
 def _zonen(params: MapGenParams) -> tuple[np.ndarray, BergPlan]:
-    """Zonen aus den Reglern (Berge, Schluchten, ...) und den Merkmalen, auf der
-    groesseren Welt; der Plan ist schon der Ausschnitt der Karte.
+    """Zonen aus den Reglern (Berge, Schluchten, ...) auf der groesseren Welt; der
+    Plan ist schon der Ausschnitt der Karte. Merkmale kennt diese Vorlage nicht.
     Zones on the larger world; the plan is already the map's cutout."""
     plan = welt_plan(params)
     z = np.zeros((params.height + 2 * WELT_RAND, params.width + 2 * WELT_RAND), np.int8)
@@ -195,25 +217,6 @@ def _zonen(params: MapGenParams) -> tuple[np.ndarray, BergPlan]:
         z[m] = 2
     if plan.stufen:
         z[plan.stufen[0]] = 1
-    rng = np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 61])
-    for eintrag in _feature_layout(params, rng):
-        art = eintrag["feat"].kind
-        eintrag["x"] += WELT_RAND
-        eintrag["y"] += WELT_RAND
-        if "pfad" in eintrag:
-            eintrag["pfad"] = [(x + WELT_RAND, y + WELT_RAND) for x, y in eintrag["pfad"]]
-        maske = _feature_maske(eintrag, z.shape)
-        if art == FEAT_BERG:
-            z[maske] = 1
-        elif art in (FEAT_PLATEAU, FEAT_FREI):
-            z[maske] = 2
-        elif art == FEAT_TAL:
-            z[_feature_maske(eintrag, z.shape, rand=5)] = 1
-            z[maske] = 3
-        elif art == FEAT_ENGE:
-            z[maske] = 4
-            z[shapegen.riegel(z.shape, eintrag["pfad"], len(eintrag["pfad"]) // 2,
-                              max(2, eintrag["breite"] // 2), rng) > 0] = 1
     if params.symmetry != SYM_NONE:
         z = _spiegel(z, params.symmetry)
     return z, plan.ausschneiden()
@@ -257,7 +260,8 @@ def _bergboden(zone: np.ndarray, rng) -> np.ndarray:
 
 
 def _skizze_ziehen(m, zone, boden0, soll, rng, runden: int, pruefe,
-                   temperatur: float = .94, zonenkraft: float = .7) -> tuple:
+                   temperatur: float = .94, zonenkraft: float = .7, wand0=None,
+                   ort=None) -> tuple:
     """Eine Skizze aus dem Netz ziehen, in zufaelliger Reihenfolge.
 
     Nicht die sichersten Felder zuerst: am sichersten ist fast ueberall "keine
@@ -265,7 +269,8 @@ def _skizze_ziehen(m, zone, boden0, soll, rng, runden: int, pruefe,
     Random order, not most-certain-first: "no wall" is the safest almost
     everywhere and the map would stay empty."""
     h, w = zone.shape
-    wand = np.full((h, w), 9, np.int64)
+    wand = np.full((h, w), 9, np.int64) if wand0 is None else wand0.copy()
+    fest = wand < 9
     boden = boden0.copy()
     leer = np.zeros_like(zone)
     pos = _rand_ebenen(h, w, 8)[None]
@@ -286,6 +291,8 @@ def _skizze_ziehen(m, zone, boden0, soll, rng, runden: int, pruefe,
         ohne = m.skizze.run(None, {**e, "zone": leer[None]})
         lw = lw + zonenkraft * (lw - ohne[0])
         lb = lb + mischung()[None, :, None, None]
+        if ort is not None:
+            lb = lb + ort[None]
         return (_softmax(lw[0].transpose(1, 2, 0) / temperatur),
                 _softmax(lb[0].transpose(1, 2, 0)))
 
@@ -314,10 +321,107 @@ def _skizze_ziehen(m, zone, boden0, soll, rng, runden: int, pruefe,
         a, b = a2, b2
     # Ein Nachzug: ein Achtel der Felder noch einmal, jetzt mit allen Nachbarn.
     # One more pass over an eighth of the cells, now with all neighbours known.
-    nochmal = rng.random((h, w)) < .12
+    nochmal = (rng.random((h, w)) < .12) & ~fest
     wand[nochmal] = 9
     setze(np.argwhere(nochmal), np.zeros((0, 2), int))
     return wand, boden
+
+
+def _weich(f: np.ndarray, r: int) -> np.ndarray:
+    """Dreifacher Kastenfilter, fast eine Glocke. Triple box filter."""
+    for _ in range(3):
+        for achse in (0, 1):
+            weite = [(r + 1, r) if a == achse else (0, 0) for a in (0, 1)]
+            p = np.pad(f, weite, mode="edge").cumsum(achse)
+            n, laenge = 2 * r + 1, f.shape[achse]
+            f = (p.take(range(n, n + laenge), achse) - p.take(range(laenge), achse)) / n
+    return f
+
+
+def _kleine_flecken_weg(boden, wand, gross: float) -> np.ndarray:
+    """Flecken unter `gross` Feldern gehen im Nachbarboden auf, kleinste zuerst.
+    Flecken mit Wand nur in Erde oder Sand: auf Fels gibt es keine Wandkacheln.
+    Small patches dissolve into the neighbouring ground; those with walls only
+    into dirt or sand, since there are no wall tiles on rock."""
+    b = boden.copy()
+    for _ in range(8):
+        flecken = []
+        for k in range(4):
+            nummern, n = waende.label(b == k)
+            groesse = np.bincount(nummern.ravel(), minlength=n + 1)
+            flecken += [(int(groesse[i]), nummern, i) for i in range(1, n + 1)
+                        if groesse[i] < gross]
+        geaendert = np.zeros(b.shape, bool)
+        for _g, nummern, i in sorted(flecken, key=lambda f: f[0]):
+            m = nummern == i
+            ring = _dehne(m, 1) & ~m
+            if not ring.any() or (geaendert & (m | ring)).any():
+                continue
+            zahl = np.bincount(b[ring], minlength=4)
+            if (wand[m] > 0).any():
+                zahl[[k for k in range(4) if k not in (waende.ERDE, waende.SAND)]] = 0
+            if zahl.any():
+                b[m] = zahl.argmax()
+                geaendert |= m
+        if not geaendert.any():
+            break
+    return b
+
+
+def _ausbreiten(ebenen: np.ndarray, sperre: np.ndarray, schritte: int) -> np.ndarray:
+    """Werte in die Umgebung laufen lassen, aber nicht ueber Waende hinweg.
+    Let values spread into their surroundings, but not across walls."""
+    durch = np.where(sperre, .02, 1.0)
+    z = ebenen.copy()
+    rechts = np.minimum(durch[:, 1:], durch[:, :-1])
+    unten = np.minimum(durch[1:], durch[:-1])
+    gewicht = np.ones(durch.shape)
+    gewicht[:, 1:] += rechts
+    gewicht[:, :-1] += rechts
+    gewicht[1:] += unten
+    gewicht[:-1] += unten
+    for _ in range(schritte):
+        n = z.copy()
+        n[:, :, 1:] += rechts * z[:, :, :-1]
+        n[:, :, :-1] += rechts * z[:, :, 1:]
+        n[:, 1:] += unten * z[:, :-1]
+        n[:, :-1] += unten * z[:, 1:]
+        z = n / gewicht
+    return z
+
+
+def _biome_beruhigen(wand, boden, ruhe: float, rng, vorzug=None) -> np.ndarray:
+    """Boeden zu grossen Flaechen zusammenfassen; Waende sind Barrieren.
+
+    Jedes Feld nimmt den Boden, der in seiner weiteren Umgebung ueberwiegt, ohne
+    ueber eine Wand zu schauen -- so rasten Grenzen an Klippen ein. Die Gewichte
+    werden nachgeregelt, bis die Bodenanteile wieder stimmen.
+    Merge the grounds into large areas, walls are barriers: borders snap to
+    cliffs. Weights are corrected to keep the ground shares."""
+    b = np.where(boden > 3, 0, boden)
+    ebenen = np.stack([(b == k).astype(float) for k in range(4)])
+    soll = ebenen.mean((1, 2))
+    z = _ausbreiten(ebenen, wand > 0, int(round(2.5 * (1 + 7 * ruhe) ** 2)))
+    if vorzug is not None:
+        # Verlauf: jeder Ort bevorzugt seinen Boden. Gradient: local preference.
+        z = z * (vorzug / (vorzug.mean((1, 2))[:, None, None] + 1e-6) + .05) ** 1.5
+    g = np.zeros(4)
+    for _ in range(40):
+        wahl = (z * np.exp(g)[:, None, None]).argmax(0)
+        ist = np.bincount(wahl.ravel(), minlength=4) / wahl.size
+        g = (g + .35 * (np.log(soll + .01) - np.log(ist + .01))).clip(-1.5, 1.5)
+    ruhig = (z * np.exp(g)[:, None, None]).argmax(0)
+    # Die Originale haben Zungen und Buchten: mit weichem Rauschen verbiegen,
+    # aber nicht an Waenden, sonst verschoeben sich die Grenzen dort wieder.
+    # Originals have tongues and bays: bend with soft noise, not near walls.
+    h, w = ruhig.shape
+    yy, xx = np.mgrid[0:h, 0:w]
+    stufen = ((7, VERBIEGEN[0]), (3, VERBIEGEN[1]))
+    weite = _weich(np.where(_dehne(wand > 0, 2), 0.0, 1.0), 2)
+    dy = weite * sum(a * felsen.rauschen((h, w), rng, ((r, 1.0),)) for r, a in stufen)
+    dx = weite * sum(a * felsen.rauschen((h, w), rng, ((r, 1.0),)) for r, a in stufen)
+    return ruhig[(yy + dy).round().astype(int).clip(0, h - 1),
+                 (xx + dx).round().astype(int).clip(0, w - 1)]
 
 
 def _mischung(params: MapGenParams) -> np.ndarray | None:
@@ -342,13 +446,75 @@ def skizze(params: MapGenParams, abbruch=None) -> Skizze:
     boden0 = _bergboden(raster, rng)
     soll = _mischung(params)
     klein = params.width * params.height <= 128 * 128
+    glatt = float(np.clip(params.gelaende_ruhe, 0, 1))
+    # Verlauf auf dem Skizzenraster. Gradient on the sketch raster.
+    hh, hw = raster.shape
+    u = verlauf_feld(params, 2 * hh, 2 * hw, WELT_RAND)
+    rau = verlauf_gelaende(params, 2 * hh, 2 * hw, WELT_RAND)
+    ort = vorzug = None
+    if u is not None:
+        u, rau = u[::2, ::2], rau[::2, ::2]
+        grund = soll[:5] if soll is not None else BODEN_ANTEIL / BODEN_ANTEIL.sum()
+        enden = []
+        for b in params.verlauf_boden:
+            p = grund.copy()
+            if b in BOEDEN:
+                p = .2 * grund + .8 * np.eye(5)[BOEDEN.index(b)]
+            enden.append(p)
+        vorzug = (1 - u)[None] * enden[0][:, None, None] + u[None] * enden[1][:, None, None]
+        soll = vorzug.mean((1, 2))
+        ort = (1.2 * np.log((vorzug + .004) / (soll[:, None, None] + .004))).astype(np.float32)
+    linien = grossbild.grossform(raster, float(np.clip(params.grossform, 0, 1)),
+                                 np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 66]),
+                                 float(np.clip(params.berg_dichte, 0, 1)), glatt, rau)
+    if rau is not None:
+        # Flache Seite: weniger Linien der Grossform und weniger eigene Klippen
+        # des Netzes. Flat side: fewer large-shape lines, fewer own cliffs.
+        flach = np.clip((.5 - rau) * 2, 0, 1)
+        los = felsen.rauschen(raster.shape, np.random.default_rng(
+            [int(params.seed) & 0xFFFFFFFF, 70]), ((5, 1.0),))
+        rang = los.ravel().argsort().argsort().reshape(los.shape) / los.size
+        linien[(rang < flach) & (linien < 9)] = 9
+        linien = grossbild.ohne_schnipsel(linien, grossbild.KURZ)
+        raster[(raster == 0) & (rang < 1.1 * flach)] = 2
+    raster[_dehne(linien < 9, 1) & (raster == 2)] = 0
+    if glatt > 0 and (linien < 9).any():
+        # Abseits der grossen Linien zeichnet das Netz sonst viele eigene kurze
+        # Klippen; ruhiges Gelaende laesst dort mehr frei.
+        # Away from the large lines the network draws many short cliffs of its
+        # own; calm terrain leaves more of that open.
+        fern = ~_dehne(linien < 9, 5) & (raster == 0)
+        wahl = felsen.rauschen(raster.shape, np.random.default_rng(
+            [int(params.seed) & 0xFFFFFFFF, 67]), ((6, 1.0),))
+        raster[fern & (wahl < np.quantile(wahl, .9 * glatt))] = 2
+        # Im Berg zeichnen die Terrassen die Form; das Netz fuellt ihn sonst mit
+        # kurzen parallelen Strichen. Inside the mountain the terraces give the
+        # shape; otherwise the network fills it with short parallel strokes.
+        innen = (raster == 1) & ~_dehne(linien < 9, 3)
+        raster[innen & (wahl < np.quantile(wahl, min(1.0, 1.2 * glatt)))] = 2
     r = WELT_RAND // 2
     karte = (slice(r, -r), slice(r, -r))
-    ziel = .035 + .20 * params.cliffs + .3 * float((raster[karte] == 1).mean())
+    ziel = .035 + .20 * params.cliffs + .3 * float((raster[karte] == 1).mean()) \
+        + .9 * float((linien[karte] < 9).mean())
+    ruhe = float(np.clip(params.biom_ruhe, 0, 1))
+    if ruhe > 0:
+        # Vom Grossen zum Kleinen: erst ein Entwurf, daraus die ruhigen
+        # Flaechen; die Waende zieht das Netz danach passend dazu.
+        # Coarse to fine: draft, calm areas from it, then walls drawn to match.
+        wand, boden = _skizze_ziehen(m, raster, boden0, soll, rng, 10, pruefe, wand0=linien, ort=ort)
+        wand = waende.putzen(wand, raster, rng)
+        landschaft = _biome_beruhigen(wand, boden, ruhe, np.random.default_rng(
+            [int(params.seed) & 0xFFFFFFFF, 63]), None if vorzug is None else vorzug[:4])
+        landschaft = np.where(boden0 < 5, boden0, landschaft)
+        landschaft = _kleine_flecken_weg(landschaft, np.zeros_like(wand),
+                                         .02 * ruhe * params.width * params.height / 4)
+        boden0 = np.kron(landschaft[::2, ::2], np.ones((2, 2), np.int64))
     bester = None
     for _ in range(2 if klein else 1):
-        wand, boden = _skizze_ziehen(m, raster, boden0, soll, rng, 16, pruefe)
+        wand, boden = _skizze_ziehen(m, raster, boden0, soll, rng, 16, pruefe, wand0=linien, ort=ort)
         wand = waende.nordkanten_ausduennen(waende.putzen(wand, raster, rng))
+        if params.grossform > 0:
+            wand = grossbild.ohne_schnipsel(wand, int(12 + 16 * glatt), 0)
         note = abs(float((wand[karte] > 0).mean()) - ziel)
         if bester is None or note < bester[0]:
             bester = (note, wand, boden)
@@ -357,11 +523,40 @@ def skizze(params: MapGenParams, abbruch=None) -> Skizze:
     if params.symmetry != SYM_NONE:
         wand = _spiegel(wand, params.symmetry, wand=True)
         boden = _spiegel(boden, params.symmetry)
-    boden = waende.ein_boden_je_wand(wand, boden)
+    if ruhe > 0:
+        boden = waende.schmaler_saum(wand, np.where(boden > 3, 0, boden))
+        boden = _kleine_flecken_weg(boden, wand,
+                                    .02 * ruhe * params.width * params.height / 4)
+        boden = waende.schmaler_saum(wand, boden)
+    else:
+        boden = waende.ein_boden_je_wand(wand, boden)
     # Erst jetzt ausschneiden: Waende laufen ueber den Rand hinaus.
     # Crop only now: walls run off the map.
     voll = (slice(WELT_RAND, -WELT_RAND), slice(WELT_RAND, -WELT_RAND))
-    return Skizze(wand[karte], boden[karte], z[voll], plan)
+    # Bei Symmetrie in der Grundhaelfte waehlen und mitspiegeln.
+    # With symmetry choose in the base half and mirror along.
+    nummer = np.arange(wand.size).reshape(wand.shape)
+    bild = _spiegel(nummer, params.symmetry) if params.symmetry != SYM_NONE else nummer
+    plaetze = felsen.vulkanplaetze(boden, wand, params.vulkane, karte,
+                                   np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 68]),
+                                   _dehne(bild != nummer, 8) == 0)
+    if params.symmetry != SYM_NONE:
+        boden = _spiegel(boden, params.symmetry)
+        plaetze = [(int(a), int(b), g, l, rad) for y, x, g, l, rad in plaetze
+                   for a, b in np.argwhere(bild == nummer[y, x])]
+    lava = felsen.lavaplan(boden, wand, float(np.clip(params.lavafels, 0, 1)),
+                           np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 64]))
+    yy, xx = np.mgrid[0:lava.shape[0], 0:lava.shape[1]]
+    for y, x, _g, mit_lava, rad in plaetze:
+        kreis = (yy - y) ** 2 + (xx - x) ** 2
+        lava[kreis <= (rad + 2) ** 2] = False
+        if mit_lava:
+            lava[kreis <= rad ** 2] = True
+    if params.symmetry != SYM_NONE:
+        lava = _spiegel(lava.astype(np.int64), params.symmetry) > 0
+    r0, s0 = karte[0].start, karte[1].start
+    return Skizze(wand[karte], boden[karte], z[voll], plan, lava[karte],
+                  [(y - r0, x - s0, g, l, rad) for y, x, g, l, rad in plaetze])
 
 
 _FARBEN = np.array([(118, 110, 92), (74, 80, 84), (196, 110, 20), (96, 104, 74),
@@ -371,6 +566,7 @@ _FARBEN = np.array([(118, 110, 92), (74, 80, 84), (196, 110, 20), (96, 104, 74),
 def skizzenbild(sk: Skizze) -> np.ndarray:
     """Vorschaubild der Skizze (h/2, w/2, 3), fuer die Sofortvorschau."""
     bild = _FARBEN[sk.boden].copy()
+    bild[sk.lava] = (48, 50, 56)
     bild[sk.wand > 0] = (34, 28, 20)
     bild[np.isin(sk.wand, waende.NORD)] = (66, 58, 46)
     return bild
@@ -382,13 +578,16 @@ def skizzenbild(sk: Skizze) -> np.ndarray:
 class _Maler:
     """Malt Kacheln nach der Skizze. Gitter: Nummern im Vokabular."""
 
-    def __init__(self, sk: Skizze, pruefe):
+    def __init__(self, sk: Skizze, pruefe, rng=None):
         self.m = _modell()
+        self.fels = felsen.Felsmaler(self.m.vok, felsen.zellplan(sk.lava, sk.boden),
+                                     rng or np.random.default_rng(0))
         self.sw = np.kron(sk.wand, np.ones((2, 2), np.int64))
         self.sb = np.kron(sk.boden, np.ones((2, 2), np.int64))
         self.h, self.w = self.sw.shape
         self.pos = _rand_ebenen(self.h, self.w, 12)
         self.pruefe = pruefe
+        self.kraft = 1.0
         self._masken()
 
     def _masken(self):
@@ -412,8 +611,10 @@ class _Maler:
         y, x = offen.T
         f = np.where(self.nah[y, x], 1.0, .01)
         f = f * np.where(self.muss[y, x], WAND_VERSTAERKUNG, 1.0)
-        f = f * np.where(self.nord[y, x], NORD_VERSTAERKUNG, 1.0)
+        f = f * np.where(self.nord[y, x], NORD_VERSTAERKUNG * self.kraft,
+                         np.where(self.muss[y, x], self.kraft, 1.0))
         p[:, self.m.wand_idx] *= f.astype(np.float32)[:, None]
+        self.fels.gewichte(p, y, x)
         p /= p.sum(-1, keepdims=True)
         return p
 
@@ -501,6 +702,48 @@ class _Maler:
                 neu = self.fuelle(neu, rng, 4, 1.0, ~m, rand=10)
                 if self.falsch(neu[s]).sum() <= self.falsch(g[s]).sum():
                     g = neu
+        return g
+
+    def loecher(self, g) -> np.ndarray:
+        """Skizzenfelder mit Wand, in denen keine Wandkachel liegt (volle Groesse).
+        Sketch wall cells without any wall tile, at full size."""
+        hh, hw = self.h // 2, self.w // 2
+        k = self.m.wand[g].reshape(hh, 2, hw, 2).any((1, 3))
+        leer = (self.sw[::2, ::2] > 0) & ~k
+        return np.kron(leer, np.ones((2, 2), bool)) > 0
+
+    def luecken_zu(self, g, rng, mal=4):
+        """Loecher in den Waenden der Skizze neu malen, Stelle fuer Stelle.
+
+        Das Kachelnetz laesst vor allem duenne Nordkanten aus; eine lange Klippe
+        zerfaellt dann in Stuecke. Holes in the sketched walls are repainted spot
+        by spot: the network tends to skip thin north edges."""
+        for k in range(mal):
+            b = self.loecher(g)
+            if not b.any():
+                break
+            self.pruefe()
+            nummern, n = waende.label(_dehne(b, 2))
+            nummern = np.where(b, nummern, 0)
+            self.kraft = 3.0 * 2 ** k
+            for i in range(1, n + 1):
+                z = np.argwhere(nummern == i)
+                if not len(z):
+                    continue
+                m = np.zeros_like(b)
+                m[z[:, 0], z[:, 1]] = True
+                m = _dehne(m, 2)
+                neu = g.copy()
+                neu[m] = self.m.maske
+                neu = self.fuelle(neu, rng, 4, .9, ~m, rand=10)
+                y0, x0 = np.maximum(z.min(0) - 8, 0)
+                y1, x1 = z.max(0) + 9
+                f = (slice(int(y0) // 2 * 2, int(y1)), slice(int(x0) // 2 * 2, int(x1)))
+                if self.loecher(neu)[f].sum() < b[f].sum() \
+                        and self.falsch(neu)[f].sum() <= self.falsch(g)[f].sum():
+                    g = neu
+                    b = self.loecher(g)
+            self.kraft = 1.0
         return g
 
     def reste_weg(self, g, rng, mindest=10):
@@ -633,6 +876,8 @@ class _Nacharbeit:
         self.fuell = {f: np.flatnonzero(fuell & (tm.family_of == f) & ~self.wand & ~ueb
                                         & ~self.objekt)
                       for f in range(len(tm.families))}
+        self.felsart = felsen.kachelart()
+        self.roc = tm.families.index("roc") if "roc" in tm.families else -2
 
     def _passt(self, t, y, x, k) -> bool:
         tm = self.tm
@@ -650,6 +895,11 @@ class _Nacharbeit:
         liste = self.fuell.get(int(familie))
         if liste is None or not len(liste):
             return
+        if int(familie) == self.roc:             # Fels und Lavafels nicht mischen
+            um = self.felsart[t[max(0, y - 2):y + 3, max(0, x - 2):x + 3]]
+            lava = (um == felsen.LAVA).sum() > (um == felsen.FELS).sum()
+            art = felsen.LAVA if lava else felsen.FELS
+            liste = liste[self.felsart[liste] == art]
         probe = self.rng.permutation(liste)[:40]
         t[y, x] = next((k for k in probe.tolist() if self._passt(t, y, x, k)), probe[0])
 
@@ -765,20 +1015,28 @@ def karte(params: MapGenParams, sk: Skizze, stufe: str = "schnell",
         if abbruch is not None and abbruch():
             raise Abgebrochen
     rng = np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 62])
-    maler = _Maler(sk, pruefe)
+    maler = _Maler(sk, pruefe, np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 65]))
     m = maler.m
     g = np.full((maler.h, maler.w), m.maske, np.int64)
     g = maler.fuelle(g, rng, STUFEN.get(stufe, 6), .95, np.zeros(g.shape, bool),
                      melde=lambda t: melde(.6 * t))
     melde(.6)
     g = maler.flicke(g, rng)
+    if params.grossform > 0:
+        g = maler.luecken_zu(g, rng)
     melde(.75)
-    g = maler.reste_weg(g, rng)
     dichte = float(np.clip(params.berg_dichte, 0, 1))
-    g = maler.bergstufen(g, sk.zonen == 1, dichte, rng)
+    rest = 24 if params.grossform > 0 else 10
+    g = maler.reste_weg(g, rng, rest)
+    # Mit Grossform hat der Berg schon Terrassen; Einzelstufen nur, wenn er
+    # ganz dicht werden soll. With the large shape the mountain already has
+    # terraces; single steps only if it is to become fully tight.
+    if params.grossform <= 0 or dichte >= .8:
+        g = maler.bergstufen(g, sk.zonen == 1, dichte, rng)
     melde(.88)
-    g = maler.reste_weg(g, rng)
+    g = maler.reste_weg(g, rng, rest)
     g = maler.flicke(g, rng, 8)
+    g = maler.fels.grundmuster(g, m.rechts, m.unten, rng)
     melde(.95)
     pruefe()
 
@@ -795,7 +1053,17 @@ def karte(params: MapGenParams, sk: Skizze, stufe: str = "schnell",
     if mehr > 0 and ziel > anteil:
         _scatter_details(t, tm.family_of[t], tm, rng, mehr,
                          _dehne(nach.wand[t], 1) | np.isin(sk.zonen, (3, 4)))
+    vulkane = felsen.vulkane(t, 0, tm, rng, nach.wand[t], sk.vulkane)
+    gesperrt = _dehne(nach.wand[t], 1) | nach.objekt[t]
+    for x, y in vulkane:
+        gesperrt[max(0, y - 8):y + 9, max(0, x - 8):x + 9] = True
+    deko.verzieren(t, tm, {"krater": params.krater, "risse": params.risse,
+                           "truemmer": params.truemmer}, gesperrt,
+                   np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 69]))
     cells = nach.zt[t]
+    frei = ~nach.wand[t]
+    zonen = [[(x, y) for x, y in _lava_zone(v, t.shape, params.lava_zone_tiles, rng)
+              if frei[y, x]] for v in vulkane]
     bericht = _bericht(cells, sk)
     spawns = _startplaetze(cells, params, rng)
     anteile = {n: float((tm.family_of[t] == i).mean()) for i, n in enumerate(tm.families)}
@@ -806,7 +1074,8 @@ def karte(params: MapGenParams, sk: Skizze, stufe: str = "schnell",
         family_share={n: s for n, s in anteile.items() if s > 0},
         connected=_connected(cells, spawns),
         plateau_share=float(np.isin(cells, _KLIPPEN).mean()),
-        detail_share=float(nach.objekt[t].mean()), zonen=bericht)
+        detail_share=float(nach.objekt[t].mean()), zonen=bericht,
+        volcanoes=vulkane, lava_zones=[z for z in zonen if z])
 
 
 def _bericht(cells, sk: Skizze) -> dict:

@@ -1070,6 +1070,56 @@ def check_netz():
         check("Netz: Abbruch", True)
 
 
+def check_netz_fels():
+    """Ruheregler, Lavakerne und Vulkane des gelernten Generators."""
+    import mapgen_netz
+    import mapgen_netz_fels as felsen
+    import mapgen_netz_waende as waende
+    if not mapgen_netz.verfuegbar():
+        return
+    tpl = mapgen.TEMPLATES["netz"]
+
+    def par(seed, **kw):
+        d = dict(width=128, height=128, seed=seed, mix=dict(tpl["mix"]), berge=.1,
+                 berg_dichte=.5, hochebenen=2, cliffs=.12, details=.1, biom_ruhe=.5)
+        d.update(kw)
+        return mapgen.MapGenParams(**d)
+
+    def grenze(b):
+        return int((b[1:] != b[:-1]).sum() + (b[:, 1:] != b[:, :-1]).sum())
+    laut, leise = 0, 0
+    for seed in (3, 4):
+        a = mapgen_netz.skizze(par(seed, biom_ruhe=0.0))
+        b = mapgen_netz.skizze(par(seed, biom_ruhe=1.0))
+        laut, leise = laut + grenze(a.boden), leise + grenze(b.boden)
+        check(f"keine Wand auf Fels (Seed {seed})",
+              not np.isin(b.boden[b.wand > 0], (waende.FELS, waende.BEWUCHS)).any())
+    check("ruhig hat weniger Biomgrenze", leise < .7 * laut, f"{laut} -> {leise}")
+    flach = mapgen_netz.skizze(par(7, grossform=0.0)).wand
+    hoch = mapgen_netz.skizze(par(7, grossform=.6)).wand
+    check("Grossform bringt lange Klippen", (hoch > 0).sum() > 1.2 * (flach > 0).sum(),
+          f"{(flach > 0).sum()} -> {(hoch > 0).sum()}")
+    art = felsen.kachelart()
+    vulkane = 0
+    for seed in (101, 104, 112):
+        p = par(seed, vulkane=(1, 1, 1))
+        sk = mapgen_netz.skizze(p)
+        g = mapgen_netz.karte(p, sk)
+        t = art[g.tiles]
+        hart = sum(int((((x == felsen.FELS) & (y == felsen.LAVA))
+                        | ((x == felsen.LAVA) & (y == felsen.FELS))).sum())
+                   for x, y in ((t[:, :-1], t[:, 1:]), (t[:-1], t[1:])))
+        check(f"Fels und Lava fast nie ohne Uebergang (Seed {seed})",
+              hart <= .05 * max(40, int((t == felsen.LAVA).sum())), str(hart))
+        check(f"Lava nur im Felsgebiet der Skizze (Seed {seed})",
+              not (sk.lava & (sk.boden != waende.FELS)).any())
+        vulkane += len(g.volcanoes)
+        check(f"Vulkan mit Lavazone (Seed {seed})", len(g.volcanoes) == len(g.lava_zones))
+    check("Vulkane in allen Groessen entstehen", vulkane >= 7, str(vulkane))
+    ohne = mapgen_netz.skizze(par(101, lavafels=0.0))
+    check("Regler 0: keine Lavakerne", not ohne.lava.any())
+
+
 def check_schnitt():
     """Boden quer ueber eine Wand: beide Enden muessen sauber schliessen.
 
@@ -1134,6 +1184,7 @@ def main() -> int:
     check_schnitt()
     check_berge()
     check_netz()
+    check_netz_fels()
     check_cliffs()
     check_min_biome()
     check_details()

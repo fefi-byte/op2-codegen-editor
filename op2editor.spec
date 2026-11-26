@@ -121,6 +121,9 @@ hiddenimports = [
     # gelernter Kartengenerator / learned map generator
     "onnxruntime",
     "mapgen_netz",
+    "mapgen_netz_fels",
+    "mapgen_netz_gross",
+    "mapgen_netz_deko",
     "mapgen_netz_waende",
     # codegen modules (added to sys.path at runtime, not a proper package import)
     "mission_model",
