@@ -1185,6 +1185,10 @@ def check_new_map(win, app) -> None:
     if not check("Karten-Panel in der Seitenleiste", panel is not None):
         return
     check("Panel als Bereich eingehaengt", win._sidebar_tabs.indexOf(panel) >= 0)
+    # Standard ist die gelernte Vorlage (rechnet im Hintergrund); hier wird der
+    # klassische Generator geprueft, der sofort fertig ist.
+    # The learned template is the default; this checks the classic generator.
+    panel.template.setCurrentIndex(panel.template.findData("plains"))
     panel.size_combo.setCurrentIndex(0)          # 64 x 64 -- schnell
     panel.spawns.setValue(2)
     panel._regenerate()
@@ -1213,6 +1217,7 @@ def check_new_map(win, app) -> None:
     win.new_generated_map()
     pump(app, 20)
     panel2 = win.newmap_panel
+    panel2.template.setCurrentIndex(panel2.template.findData("plains"))
     panel2.size_combo.setCurrentIndex(0)
     panel2.volcanoes.setValue(1)
     panel2._regenerate()
