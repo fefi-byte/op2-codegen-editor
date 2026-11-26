@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView,
     QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
-    QSpinBox, QSplitter, QTableWidget, QToolBar, QVBoxLayout, QWidget,
+    QSpinBox, QSplitter, QStyledItemDelegate, QTableWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
 from . import common as _common  # noqa: F401  (Suchpfad fuer techtree_model / sys.path)
@@ -286,6 +286,33 @@ class TreeView(QGraphicsView):
 
 # --- Bearbeitungsfeld / editor panel ----------------------------------------
 
+class _PropDelegate(QStyledItemDelegate):
+    """Aufgeklappte Eigenschaften-Liste: Code und Bedeutung. Zugeklappt steht
+    nur der Code, damit die Spalte schmal bleibt.
+    Dropdown shows code and meaning; the closed box only the code."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        code = index.data(Qt.UserRole)
+        if code in tm.PROPERTY_NAMES:
+            option.text = f"{code} · {tr(f'techtree.prop_{code}')}"
+
+
+class _UpgradeTable(QTableWidget):
+    """Werte-Tabelle: feste Spalten rechts, die Einheit bekommt den Rest,
+    aber mindestens UNIT_MIN (sonst waagerecht scrollen).
+    Fixed columns on the right; the unit column takes the rest."""
+    UNIT_MIN = 140
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.fit_unit_column()
+
+    def fit_unit_column(self) -> None:
+        rest = sum(self.columnWidth(c) for c in range(1, self.columnCount()))
+        self.setColumnWidth(0, max(self.UNIT_MIN, self.viewport().width() - rest))
+
+
 class _Counter(QLabel):
     """'noch 712 von 800 Zeichen' unter einem Textfeld."""
 
@@ -427,19 +454,22 @@ class TechForm(QWidget):
         # Werteaenderungen / upgrades
         g = QGroupBox(tr("techtree.grp_upgrades"))
         v = QVBoxLayout(g)
-        self.table = QTableWidget(0, 5)
+        self.table = _UpgradeTable(0, 5)
         self.table.setHorizontalHeaderLabels([
             tr("techtree.col_unit"), tr("techtree.col_prop"), tr("techtree.col_value"),
             tr("techtree.col_base"), ""])
         hh = self.table.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.Stretch)
-        hh.setSectionResizeMode(1, QHeaderView.Stretch)
-        for c, w in ((2, 80), (3, 70), (4, 28)):
+        hh.setSectionResizeMode(0, QHeaderView.Fixed)
+        fm = QFontMetrics(self.table.font())
+        breite_wert = max(72, fm.horizontalAdvance(tr("techtree.col_value")) + 18)
+        breite_grund = max(72, fm.horizontalAdvance(tr("techtree.col_base")) + 18)
+        for c, w in ((1, 162), (2, breite_wert), (3, breite_grund), (4, 34)):
             hh.setSectionResizeMode(c, QHeaderView.Fixed); self.table.setColumnWidth(c, w)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setMinimumHeight(150)
+        self.table.setMinimumHeight(190)
         self.table.currentCellChanged.connect(lambda r, *_: self._prop_hint(r))
         v.addWidget(self.table)
         row = QHBoxLayout()
@@ -562,17 +592,31 @@ class TechForm(QWidget):
             unit.setCurrentIndex(i)
         else:
             unit.setEditText(p.unit)
+        unit.lineEdit().setCursorPosition(0)      # Anfang zeigen, nicht das Ende
         prop = QComboBox()
-        for name in tm.PROPERTY_NAMES:
-            prop.addItem(f"{name} · {tr(f'techtree.prop_{name}')}", name)
+        prop.setItemDelegate(_PropDelegate(prop))
+        prop.view().setMinimumWidth(340)
+        for k, name in enumerate(tm.PROPERTY_NAMES):
+            prop.addItem(name, name)
+            prop.setItemData(k, tr(f"techtree.hint_{name}"), Qt.ToolTipRole)
+        prop.currentIndexChanged.connect(
+            lambda _i, c=prop: c.setToolTip(tr(f"techtree.prop_{c.currentData()}")
+                                            if c.currentData() in tm.PROPERTY_NAMES else ""))
         i = prop.findData(p.prop)
         if i < 0:
             prop.addItem(p.prop, p.prop); i = prop.count() - 1
         prop.setCurrentIndex(i)
+        prop.setToolTip(tr(f"techtree.prop_{p.prop}") if p.prop in tm.PROPERTY_NAMES else "")
         val = QSpinBox(); val.setRange(-1, 9999999); val.setValue(p.value)
+        # Ohne Pfeile ueber das Stylesheet ("flach"), NICHT mit NoButtons:
+        # das liess die Zahl unter dem Stylesheet verschwinden.
+        val.setProperty("flach", "true")
+        val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         base = QLabel(""); base.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        base.setContentsMargins(0, 0, 8, 0)
         base.setToolTip(tr("techtree.base_tip"))
-        rm = QPushButton("×"); rm.setFixedWidth(26); rm.setToolTip(tr("techtree.prop_remove"))
+        rm = QPushButton("✕"); rm.setFixedSize(28, 24); rm.setToolTip(tr("techtree.prop_remove"))
+        rm.setStyleSheet("padding: 0px;")
         self.table.setCellWidget(r, 0, unit)
         self.table.setCellWidget(r, 1, prop)
         self.table.setCellWidget(r, 2, val)
@@ -804,7 +848,7 @@ class TechTreePage(QWidget):
         self.form = TechForm()
         self.form.set_file(self.tf, self.sheets)
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(self.form)
-        scroll.setMinimumWidth(430)
+        scroll.setMinimumWidth(470)
         self.tree = TreeView()
         self.problem_list = QListWidget()
         self.problem_list.itemClicked.connect(self._problem_clicked)
@@ -813,7 +857,7 @@ class TechTreePage(QWidget):
         right.setSizes([760, 140])
         split = QSplitter(Qt.Horizontal)
         split.addWidget(scroll); split.addWidget(right)
-        split.setSizes([460, 1040])
+        split.setSizes([580, 1020])
         self._lay = QVBoxLayout(self)
         self._lay.setContentsMargins(0, 0, 0, 0)
         self._lay.setSpacing(0)
