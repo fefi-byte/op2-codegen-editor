@@ -7,6 +7,8 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0-alpha] - 2026-11-26
+
 ### Added
 - **Tech tree editor**, a third mode next to *Mission | Map Editor* (also
   *Mission → Tech tree*): edits the mission's tech file (e.g. `MULTITEK.TXT`)
