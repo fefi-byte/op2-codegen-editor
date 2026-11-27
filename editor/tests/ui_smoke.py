@@ -320,8 +320,8 @@ def unbrauchbarer_boden(win) -> int:
     no brush painted it there -- measured, it came in through the cliff painter,
     which laid a band of 28 snow tiles across a sand map while painting dirt.
     """
-    from mapgen import model as _mm
-    tm = _mm()
+    from app.boeden import boeden
+    tm = boeden()
     schlecht = {f for f in range(len(tm.families)) if not tm.familie_nutzbar(f)}
     return sum(1 for y in range(win.map.height) for x in range(win.map.width)
                if int(tm.family_of[win.map.tile_mapping_index(x, y)]) in schlecht)
@@ -746,8 +746,8 @@ def check_terrain(win, app) -> None:
     panel.set_brush("san")
     win._terrain_stamp(70, 40)
     pump(app)
-    from mapgen import model as _model
-    tm = _model()
+    from app.boeden import boeden
+    tm = boeden()
     fam = tm.family_of[win.map.tile_mapping_index(70, 40)]
     check("Sandpinsel setzt Sandboden",
           fam == tm.families.index("san"),
@@ -774,8 +774,8 @@ def check_terrain(win, app) -> None:
     # Painting large areas: while dragging only the layers are collected, the
     # tiles are computed once on release. Otherwise the editor would stall for
     # over a second on every mouse step.
-    from mapgen import model as _m2
-    tm2 = _m2()
+    from app.boeden import boeden
+    tm2 = boeden()
     panel.set_brush("san")
 
     # Kleiner Pinsel: waehrend des Ziehens wird live gerechnet.
@@ -938,7 +938,7 @@ def check_terrain(win, app) -> None:
     # dorthin, wohin gebaut wuerde.
     import math
 
-    import mapgen as _mg
+    from app import maplib as _ml
     win._klippen_verwerfen()
     win._terrain_strich_beginnen()
     win._terrain_stamp(40, 60)
@@ -957,8 +957,13 @@ def check_terrain(win, app) -> None:
     zweiter = win._klippen_punkte[-1]
     dx, dy = zweiter[0] - 40, zweiter[1] - 60
     teiler = math.gcd(abs(dx), abs(dy)) or 1
+    # Erlaubt sind waagrecht, senkrecht, 45 Grad, 2:1, 3:1, 4:1 (OP2MappingLib,
+    # `snap_cliff_point`); ein erlaubter Punkt rastet nicht weiter.
+    # Allowed: flat, vertical, 45 degrees, 2:1, 3:1, 4:1; an allowed point stays.
+    neigung = sorted((abs(dx) // teiler, abs(dy) // teiler))
     check("der zweite Punkt rastet auf eine erlaubte Richtung",
-          (dx // teiler, dy // teiler) in _mg.klippen_richtungen(),
+          neigung in ([0, 1], [1, 1], [1, 2], [1, 3], [1, 4])
+          and _ml.modul().snap_cliff_point(40, 60, *zweiter) == tuple(zweiter),
           f"{win._klippen_punkte} -> dx={dx}, dy={dy}")
     win._klippen_verwerfen()
     win._clear_terrain_preview()
@@ -1263,6 +1268,81 @@ def check_new_map(win, app) -> None:
     check("Objekte der Mission ueberlebten den Kartenwechsel", isinstance(win.objects, list))
 
 
+def check_new_map_vorlagen(win, app) -> None:
+    """Jede Vorlage in 64, 128 und 256 ueber das Panel; gelernt mit Fortschritt und Abbruch.
+
+    Every template in 64, 128 and 256 through the panel; learned with progress
+    and cancel."""
+    import time
+    from app import maplib
+    from app.i18n import tr as _tr
+    win.new_generated_map()
+    pump(app, 20)
+    panel = win.newmap_panel
+    if not check("Karten-Panel fuer die Vorlagen", panel is not None):
+        return
+    groessen = {(64, 64): None, (128, 128): None, (256, 256): None}
+    for i in range(panel.size_combo.count()):
+        if panel.size_combo.itemData(i) in groessen:
+            groessen[panel.size_combo.itemData(i)] = i
+
+    def warten(sekunden=120):
+        ende = time.time() + sekunden
+        while panel._worker is not None and time.time() < ende:
+            pump(app, 5)
+            time.sleep(0.02)
+        pump(app, 10)
+        return panel._worker is None
+
+    for k in range(panel.template.count()):
+        vorlage = panel.template.itemData(k)
+        panel.template.setCurrentIndex(k)
+        pump(app, 5)
+        for (w, h), idx in groessen.items():
+            panel._timer.stop()
+            panel.size_combo.setCurrentIndex(idx)
+            panel._timer.stop()
+            panel._result = None
+            warten()                    # eine geplante Rechnung zu Ende laufen lassen
+            panel._timer.stop()
+            panel._result = None
+            stand = []
+            if panel._ist_netz():
+                panel.netz_balken.valueChanged.connect(stand.append)
+            panel._regenerate()
+            fertig = warten()
+            if panel._ist_netz():
+                panel.netz_balken.valueChanged.disconnect(stand.append)
+            gen = panel.generated()
+            check(f"Panel: {vorlage} {w}x{h}", fertig and gen is not None
+                  and gen.tiles.shape == (h, w) and win.map.width == w,
+                  repr(panel.stats.text())[:120])
+            if panel._ist_netz():
+                check(f"Panel: {vorlage} {w}x{h} Fortschrittsbalken bis 100",
+                      stand and max(stand) == 100, f"{len(stand)} Stufen")
+    # Abbruch: gelernte Vorlage starten und gleich stoppen.
+    # Cancel: start the learned template and stop it right away.
+    if maplib.gelernt_verfuegbar():
+        panel.template.setCurrentIndex(panel.template.findData("netz"))
+        panel._timer.stop()
+        panel.size_combo.setCurrentIndex(groessen[(256, 256)])
+        panel._timer.stop()
+        panel._result = None
+        warten()
+        panel._timer.stop()
+        panel._regenerate()
+        pump(app, 5)
+        check("Panel: Stopp-Knopf waehrend der Rechnung frei", panel.netz_stop.isEnabled())
+        panel._netz_abbrechen()
+        warten(30)
+        check("Panel: Abbruch beendet die Rechnung ohne Karte",
+              panel._worker is None and panel._result is None
+              and panel.stats.text() == _tr("newmap.netz_abgebrochen"),
+              repr(panel.stats.text()))
+    panel.discard()
+    pump(app, 20)
+
+
 def check_terrain_save(win, app) -> None:
     """Bearbeitete Karte speichern, Mission neu oeffnen, Aenderung pruefen."""
     import shutil
@@ -1410,6 +1490,7 @@ def run_checks(win, app) -> None:
     win._modus_setzen("mission")
     check_mission_layout(win, app)
     check_new_map(win, app)
+    check_new_map_vorlagen(win, app)
     check_terrain_save(win, app)
     check_status_and_overview(win, app)
     check_techtree(win, app)

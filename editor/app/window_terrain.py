@@ -23,7 +23,7 @@ from celltypes import (
     speed_class,
 )
 from tileset import TILE, load_tileset
-import mapgen
+from .boeden import boeden
 from .paint_layers import PaintLayers, B_ERDE, B_VULKAN, B_KLIPPE
 from .panels.terrain_panel import PUNKT_PINSEL, MODUS_KACHELN
 
@@ -266,7 +266,17 @@ class _TerrainMixin:
         ebenen = self._layers
         if (ebenen is None or ebenen.map is not self.map
                 or self._layers_marke != marke):
-            ebenen = PaintLayers(self.map)
+            # Ohne OP2MappingLib gibt es keine Malebenen: melden statt malen.
+            # Without OP2MappingLib there are no paint layers: report it.
+            try:
+                ebenen = PaintLayers(self.map)
+            except RuntimeError as e:
+                self._layers = None
+                self.statusBar().showMessage(str(e))
+                if not getattr(self, "_maplib_fehlt_gemeldet", False):
+                    self._maplib_fehlt_gemeldet = True
+                    QMessageBox.warning(self, tr("terrain.maplib_fehlt_titel"), str(e))
+                return None
             self._layers = ebenen
             self._layers_marke = marke
         return ebenen
@@ -310,9 +320,6 @@ class _TerrainMixin:
             if getattr(self, "_paket_rahmen_an", False):
                 self._paket_rahmen_start = None
             return
-        ebenen = self._paint_layers()
-        if ebenen is not None:
-            ebenen.strich_beginnen()
         # Nur der erste Aufruf eines Strichs zaehlt als Klick. Der
         # Klippenpinsel setzt sonst bei jeder Mausbewegung einen Punkt.
         # Only a stroke's first call counts as a click, otherwise the cliff
@@ -380,17 +387,6 @@ class _TerrainMixin:
         bereich = ebenen.strich_beenden()
         if bereich is None:
             return gesammelt
-        # Hat der Strich eine Klippe durchschnitten, die Enden schliessen,
-        # BEVOR der Rand nachgerechnet wird -- der richtet dann den Boden an den
-        # neuen Enden mit aus.
-        # If the stroke cut through a cliff, close the ends BEFORE recomputing
-        # the rim, which then also fixes the ground at the new ends.
-        schnitt, schnitt_bereich = ebenen.klippen_schnitte_schliessen()
-        if schnitt:
-            gesammelt = self._aenderungen_schreiben(schnitt, gesammelt)
-            bx0, by0, bx1, by1 = bereich
-            sx0, sy0, sx1, sy1 = schnitt_bereich
-            bereich = (min(bx0, sx0), min(by0, sy0), max(bx1, sx1), max(by1, sy1))
         aenderungen = ebenen.synth_region(bereich)
         if not aenderungen:
             return gesammelt
@@ -571,14 +567,23 @@ class _TerrainMixin:
         import numpy as np
         mx = (rechteck[0] + rechteck[2]) // 2
         my = (rechteck[1] + rechteck[3]) // 2
-        gitter = np.array([[self.map.tile_mapping_index(x, y)
-                            for x in range(self.map.width)]
-                           for y in range(self.map.height)], dtype=np.int32)
-        mapgen._stamp_volcanoes(gitter, [(mx, my)], ebenen.tm, ebenen.rng)
-        for y in range(max(0, my - 14), min(self.map.height, my + 15)):
-            for x in range(max(0, mx - 14), min(self.map.width, mx + 15)):
-                self.map.set_tile(x, y, int(gitter[y, x]),
-                                  default_cell_type(int(gitter[y, x])))
+        # Der groesste Stempel des Profils, der auf die Karte passt. Die
+        # Bibliothek setzt Vulkane nur beim Erzeugen; einen Stempel-Aufruf hat
+        # sie nicht, also legt der Editor den Block aus ihren Profildaten.
+        # The largest profile stamp that fits. The library only places
+        # volcanoes while generating and has no stamp call, so the editor lays
+        # the block from its profile data.
+        w, h = self.map.width, self.map.height
+        passend = [v for v in ebenen.tm.volcanoes if v.breite <= w and v.hoehe <= h]
+        if not passend:
+            return
+        v = max(passend, key=lambda v: v.breite * v.hoehe)
+        x0 = int(np.clip(mx - v.breite // 2, 0, w - v.breite))
+        y0 = int(np.clip(my - v.hoehe // 2, 0, h - v.hoehe))
+        for dy in range(v.hoehe):
+            for dx in range(v.breite):
+                self.map.set_tile(x0 + dx, y0 + dy, int(v.kacheln[dy, dx]),
+                                  int(v.zelltypen[dy, dx]))
 
     def _terrain_pick(self, tx: int, ty: int):
         """Rechtsklick: Pinsel auf das umschalten, was dort schon liegt.
@@ -866,8 +871,7 @@ class _TerrainMixin:
         """Liegt ein Paket ueberwiegend auf einem anderen Boden als seinem?"""
         if getattr(s, "paket", None) is None or self.map is None:
             return False
-        import mapgen
-        tm = mapgen.model()
+        tm = boeden()
         soll = next(iter(s.familien))
         anders = gesamt = 0
         for dy in range(s.hoehe):
@@ -918,7 +922,6 @@ class _TerrainMixin:
 
     def _paket_rahmen_fertig(self, tx: int, ty: int):
         """Details im Rahmen einsammeln, nach dem Namen fragen, speichern."""
-        import mapgen
         import pakete
         from PySide6.QtWidgets import QInputDialog
         sx, sy = self._paket_rahmen_start
@@ -929,11 +932,10 @@ class _TerrainMixin:
         y1 = min(self.map.height - 1, max(sy, ty))
         kacheln = np.array([[self.map.tile_mapping_index(x, y) for x in range(x0, x1 + 1)]
                             for y in range(y0, y1 + 1)], dtype=np.int32)
-        tm = mapgen.model()
+        tm = boeden()
 
         def familie_von(k):
-            f = int(tm.family_of[k]) if 0 <= k < len(tm.family_of) else -1
-            name = tm.families[f] if 0 <= f < len(tm.families) else ""
+            name = tm.familie(int(k))
             return "roc" if name == "lav" else name
         paket = pakete.aus_bereich(kacheln, familie_von, quelle=f"{self.map_name} ({x0},{y0})")
         if paket is None:

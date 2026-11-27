@@ -1,12 +1,12 @@
-"""Gelernter Kartengenerator im eigenen Thread (siehe `mapview/mapgen_netz.py`).
+"""Gelernter Kartengenerator im eigenen Thread: OP2MappingLib (maplib.skizze,
+maplib.generieren_gelernt).
 
-The learned map generator in its own thread.
+The learned map generator in its own thread, computed by OP2MappingLib.
 """
 from __future__ import annotations
 
 from .common import *
-
-import mapgen_netz
+from . import maplib
 
 
 class NetzWorker(QThread):
@@ -18,11 +18,12 @@ class NetzWorker(QThread):
     ok = Signal(object)
     err = Signal(str)
 
-    def __init__(self, params, stufe: str, skizze=None):
+    def __init__(self, params, stufe: str, skizze=None, threads: int = 0):
         super().__init__()
         self.params = params
         self.stufe = stufe
         self.skizze = skizze
+        self.threads = threads
         self.abgebrochen = False
         self._stop = False
 
@@ -34,13 +35,13 @@ class NetzWorker(QThread):
             halt = lambda: self._stop
             sk = self.skizze
             if sk is None:
-                sk = mapgen_netz.skizze(self.params, halt)
+                sk = maplib.skizze(self.params, self.threads, halt)
             self.skizze_fertig.emit(sk)
-            gen = mapgen_netz.karte(
-                self.params, sk, self.stufe,
+            gen = maplib.generieren_gelernt(
+                self.params, self.stufe, self.threads,
                 lambda a: self.fortschritt.emit(int(100 * a)), halt)
             self.ok.emit(gen)
-        except mapgen_netz.Abgebrochen:
+        except maplib.Abgebrochen:
             self.abgebrochen = True
         except Exception as e:
             self.err.emit(f"{type(e).__name__}: {e}")

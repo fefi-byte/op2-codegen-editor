@@ -200,7 +200,10 @@ def aus_bereich(kacheln: np.ndarray, familie_von, name: str = "",
 # Aus den Originalkarten / from the stock maps
 
 def auslesen(spielordner, tm, max_je_art: int = 10) -> list[Paket]:
-    """Zusammenhaengende Detailgruppen der Originale als Pakete."""
+    """Zusammenhaengende Detailgruppen der Originale als Pakete.
+
+    `tm` ordnet Kacheln Boeden zu (`families`, `family_of`), im Editor die
+    Boeden aus dem Profil von OP2MappingLib (`app.boeden`)."""
     from collections import Counter, defaultdict
     from scipy import ndimage as ndi
     from op2map import Op2Map
@@ -276,8 +279,11 @@ def auslesen(spielordner, tm, max_je_art: int = 10) -> list[Paket]:
 if __name__ == "__main__":
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import mapgen
-    pakete = auslesen(sys.argv[1], mapgen.model())
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "editor"))
+    # Boeden aus dem Profil von OP2MappingLib (wie im Editor).
+    # Grounds from OP2MappingLib's profile, as in the editor.
+    from app.boeden import boeden
+    pakete = auslesen(sys.argv[1], boeden())
     PFAD.write_text(json.dumps([p.als_dict() for p in pakete], indent=1), "utf-8")
     from collections import Counter
     print(len(pakete), "Pakete:", dict(Counter((p.boden, p.art) for p in pakete)))

@@ -9,7 +9,7 @@ import numpy as np
 from .common import *
 from PySide6.QtWidgets import QGraphicsLineItem, QGraphicsEllipseItem
 from tileset import TILE
-import mapgen
+from . import maplib
 from .paint_layers import B_KLIPPE, KLIPPEN_ERSATZ
 from .window_terrain import (  # noqa: F401
     KLIPPEN_LIVE_DECKKRAFT,
@@ -62,13 +62,14 @@ class _KlippenMixin:
         # Ab dem zweiten Punkt auf eine erlaubte Baurichtung rasten. Gemessen
         # kommen in den Originalkarten nur Neigungen bis vier Spalten je Zeile
         # vor, ueber die Haelfte der Kantenschritte ist senkrecht -- eine frei
-        # gezogene Schraege gibt es dort nicht (siehe `KLIPPEN_NEIGUNGEN`).
+        # gezogene Schraege gibt es dort nicht. Gerastet wird mit OP2MappingLib
+        # (`snap_cliff_point`: waagrecht, senkrecht, 45 Grad, 2:1, 3:1, 4:1).
         # From the second point on, snap to a permitted build direction: the
         # originals only use slopes up to four columns per row.
         if punkte:
             ax, ay = punkte[-1]
             if (tx, ty) != (ax, ay):
-                tx, ty = mapgen.klippe_winkel_rasten(ax, ay, tx, ty)
+                tx, ty = maplib.modul().snap_cliff_point(ax, ay, tx, ty)
                 tx = max(0, min(self.map.width - 1, tx))
                 ty = max(0, min(self.map.height - 1, ty))
         # Auf denselben Punkt noch einmal zu klicken schliesst die Figur.
@@ -98,8 +99,10 @@ class _KlippenMixin:
     def _klippe_setzen(self):
         """Aus den Stuetzpunkten eine Klippe machen."""
         ebenen = self._paint_layers()
+        if ebenen is None:
+            return                  # Meldung kam von `_paint_layers`
         punkte = self._klippen_punkte or []
-        if ebenen is None or len(punkte) < 2:
+        if len(punkte) < 2:
             self.statusBar().showMessage(tr("terrain.klippe_zu_kurz"))
             return
         seite = self.terrain_panel.klippen_seite()
@@ -298,40 +301,6 @@ class _KlippenMixin:
                 self.scene.removeItem(item)
         self._klippen_live_items = []
 
-    def _klippen_vorwaermen(self):
-        """Die Klippenmodelle im Hintergrund laden.
-
-        Die erste Klippe braucht sonst rund zwei Sekunden, bis Kantentabelle,
-        Paartabelle und Kachelbilder geladen sind -- bei der Live-Vorschau
-        hiesse das: die erste Mausbewegung friert ein. Ein Probelauf auf einem
-        kleinen Feld fuellt alle Zwischenspeicher, waehrend man noch den
-        ersten Punkt setzt.
-        Warm the cliff models up in a background thread so the first live
-        preview does not freeze for two seconds.
-        """
-        if self._klippen_warm:
-            return
-        ebenen = self._paint_layers()
-        if ebenen is None:
-            return
-        self._klippen_warm = True
-        import threading
-
-        def probe():
-            try:
-                import klippe_algo
-                for fam in ("mud", "san"):
-                    if not klippe_algo.verfuegbar(ebenen.tm, fam):
-                        continue
-                    g = np.zeros((24, 32), dtype=np.int32)
-                    klippe_algo.klippe_aus_linie(
-                        g, [(4, 12), (27, 12)], "oben", ebenen.tm,
-                        np.random.default_rng(0), fam)
-            except Exception as e:      # nur Vorwaermen -- darf scheitern
-                print("Klippen vorwaermen:", e)
-
-        threading.Thread(target=probe, daemon=True).start()
-
     def _klippen_zielring(self, tx: int, ty: int):
         """Ein Ring unter dem Zeiger: dorthin wuerde der Klick einrasten.
 
@@ -359,7 +328,7 @@ class _KlippenMixin:
         if punkte:
             ax, ay = punkte[-1]
             if (tx, ty) != (ax, ay):
-                bx, by = mapgen.klippe_winkel_rasten(ax, ay, tx, ty)
+                bx, by = maplib.modul().snap_cliff_point(ax, ay, tx, ty)
                 bx = max(0, min(self.map.width - 1, bx))
                 by = max(0, min(self.map.height - 1, by))
                 anker = ebenen.klippen_anker(bx, by, ausser=punkte)

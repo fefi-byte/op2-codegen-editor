@@ -111,7 +111,7 @@ def katalog(karte, tm) -> list[Stempel]:
     paar_von: dict[int, tuple[str, str]] = {}
     if tm is not None:
         for (a, b), eintraege in tm.trans.items():
-            for kachel, _mix in eintraege:
+            for kachel in eintraege:
                 paar_von[int(kachel)] = (a, b)
     leer = set()
     for i, m in enumerate(karte.tile_mappings):
@@ -320,10 +320,13 @@ class KachelPalette(QWidget):
             return
         self._karten_marke = marke
         self._symbole = {}
+        # Boeden aus dem Profil von OP2MappingLib; ohne Bibliothek ordnet die
+        # Palette nur nach Gruppennamen.
+        # Grounds from OP2MappingLib's profile; without it only by group name.
         try:
-            import mapgen
-            tm = mapgen.model()
-        except Exception:                    # ohne Modell nur nach Namen
+            from ..boeden import boeden
+            tm = boeden()
+        except Exception:
             tm = None
         self._katalog = katalog(karte, tm)
         self._chip_symbole()

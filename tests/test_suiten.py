@@ -38,6 +38,11 @@ _GRUPPEN = [n for n in vars(_KARTEN) if n.startswith("check_")]
 
 @pytest.mark.parametrize("gruppe", _GRUPPEN)
 def test_karten(gruppe):
+    # Karten erzeugt OP2MappingLib; ohne gebaute Bibliothek (unter Linux
+    # OP2MAPLIB_PATH) gibt es nichts zu pruefen.
+    # Maps come from OP2MappingLib; without a built library nothing to test.
+    if not _KARTEN.bibliothek_da():
+        pytest.skip(_KARTEN.maplib.fehlt_text())
     vorher = len(_KARTEN._failures)
     getattr(_KARTEN, gruppe)()
     neu = _KARTEN._failures[vorher:]

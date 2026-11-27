@@ -321,8 +321,6 @@ class TerrainPanel(QWidget):
             btn.setChecked(key == brush)
         self.brush_size.setEnabled(brush not in PUNKT_PINSEL)
         self.klippen_box.setVisible(brush == B_KLIPPE)
-        if brush == B_KLIPPE and hasattr(self._window, "_klippen_vorwaermen"):
-            self._window._klippen_vorwaermen()
         if hasattr(self._window, "_gelaende_banner_aktualisieren"):
             self._window._gelaende_banner_aktualisieren()
         self._update_info()

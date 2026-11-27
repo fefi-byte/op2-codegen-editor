@@ -46,7 +46,6 @@ class EditorWindow(
         self._klippen_live_items = []
         self._klippen_live_timer = None
         self._klippen_punkte = []
-        self._klippen_warm = False
         self._lava_brush_cursor_item = None
         self._lava_field_items = []
         self._layers = None

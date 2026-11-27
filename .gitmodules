@@ -4,6 +4,14 @@
 [submodule "op2-ki"]
 	path = op2-ki
 	url = https://github.com/fefi-byte/op2-ki.git
+# OP2MappingLib zeigt vorerst auf den Fork fefi-byte/OP2MappingLib, Zweig
+# berge-und-netz (Kartengenerator mit Bergen und gelerntem Generator). Sobald
+# OutpostUniverse/OP2MappingLib PR #1 gemergt ist, die URL wieder auf
+# https://github.com/OutpostUniverse/OP2MappingLib.git stellen und den
+# Submodulstand auf den Merge-Commit setzen.
+# For now OP2MappingLib points at the fork fefi-byte/OP2MappingLib, branch
+# berge-und-netz. Once OutpostUniverse/OP2MappingLib PR #1 is merged, switch
+# the URL back to OutpostUniverse and move the submodule to the merge commit.
 [submodule "OP2MappingLib"]
 	path = OP2MappingLib
-	url = https://github.com/OutpostUniverse/OP2MappingLib.git
+	url = https://github.com/fefi-byte/OP2MappingLib.git

@@ -33,6 +33,7 @@ Sections:
 from __future__ import annotations
 
 import configparser
+import os
 import sys
 from pathlib import Path
 
@@ -276,15 +277,32 @@ def op2maplib_dll() -> Path | None:
     if d is None:
         return None
     dll = d / "bindings" / "dotnet" / "native" / ("x64" if struct.calcsize("P") == 8 else "x86") / "op2maplib.dll"
-    return dll if dll.is_file() else None
+    if not dll.is_file():
+        return None
+    # Die fertige DLL des Submoduls hinkt den Quellen hinterher, bis OP2MappingLib
+    # eine neue Version veroeffentlicht. Fehlt ihr der Kartengenerator, aus den
+    # Quellen bauen (CMake noetig); geht das nicht, bleibt sie fuer Pinsel und Klippen.
+    # The submodule's prebuilt DLL lags behind its sources until a new release;
+    # without the map generator, build from source (needs CMake); else keep it
+    # for brush and cliffs. Nur unter Windows (die DLL ist eine Windows-DLL) und
+    # nicht, wenn OP2MAPLIB_PATH ohnehin eine andere Bibliothek nennt.
+    # Only on Windows, and not when OP2MAPLIB_PATH names another library anyway.
+    if (sys.platform == "win32" and not os.environ.get("OP2MAPLIB_PATH")
+            and b"om_mapgen_generate_learned" not in dll.read_bytes()):
+        try:
+            return op2maplib_dll_bauen()
+        except RuntimeError as e:
+            print("op2maplib.dll ohne Kartengenerator, Bauen gescheitert:", e)
+    return dll
 
 
 def op2maplib_aktiv() -> bool:
-    """[terrain] op2maplib: Gelaendepinsel, Klippen und Aufraeumen ueber
-    OP2MappingLib rechnen (Vorgabe) oder mit dem eingebauten Python-Weg.
+    """[terrain] op2maplib: Kartenfunktionen (Neue Karte, Gelaendepinsel,
+    Klippen, Aufraeumen) ueber OP2MappingLib (Vorgabe). false schaltet sie ab --
+    einen Python-Ersatz gibt es nicht mehr.
 
-    [terrain] op2maplib: compute the terrain brush, cliffs and clean-up with
-    OP2MappingLib (default) or with the built-in Python path.
+    [terrain] op2maplib: map functions via OP2MappingLib (default); false
+    switches them off, there is no Python fallback any more.
     """
     val = _load().get("terrain", "op2maplib", fallback="true").strip().lower()
     return val not in ("0", "false", "nein", "no")

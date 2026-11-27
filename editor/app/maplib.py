@@ -1,25 +1,28 @@
 """Anbindung an OP2MappingLib (op2maplib).
 
-OP2MappingLib ist die C++-Portierung des Gelaendepinsels und des
-Klippenwerkzeugs dieses Editors (github.com/OutpostUniverse/OP2MappingLib).
+OP2MappingLib ist die C++-Portierung des Gelaendepinsels, des
+Klippenwerkzeugs und des Kartengenerators dieses Editors
+(github.com/OutpostUniverse/OP2MappingLib). Karten erzeugt nur noch sie.
 Hier wird sie geladen und fuer `PaintLayers` aufbereitet: Profil einmal laden,
 pro Rechnung eine frische Mischkarte (`BlendMap`) aus der aktuellen Karte.
 
 Frisch statt mitgefuehrt, weil der Editor Kacheln auf vielen Wegen aendert
-(Rueckgaengig, Kachelstempel, Vulkan, Generator, Klippenschnitte). Eine
+(Rueckgaengig, Kachelstempel, Vulkan, Generator). Eine
 mitgefuehrte Kopie muesste jeden davon melden; eine frische ist immer im
 Stand der Karte und kostet auf 512x256 nur wenige Millisekunden.
 
 Fehlt die Bibliothek oder ist sie in config.ini abgeschaltet ([terrain]
-op2maplib = false), liefert `verfuegbar()` False und `PaintLayers` nimmt den
-eingebauten Python-Weg.
+op2maplib = false), liefert `verfuegbar()` False. Einen Python-Ersatz gibt es
+nicht mehr: Generator und Malwerkzeuge melden dann, dass sie nicht verfuegbar
+sind (`fehlt_text()`).
 
-Bridge to OP2MappingLib, the C++ port of this editor's terrain brush and cliff
-tool. Loads the profile once and builds a fresh BlendMap from the current map
-for every computation -- fresh rather than kept in sync, because the editor
-changes tiles in many ways (undo, tile stamps, volcano, generator, cliff
-cuts). If the library is missing or switched off, `verfuegbar()` is False and
-`PaintLayers` uses the built-in Python path.
+Bridge to OP2MappingLib, the C++ port of this editor's terrain brush, cliff
+tool and map generator; maps are generated and painted only there. Loads the
+profile once and builds a fresh BlendMap from the current map for every
+computation -- fresh rather than kept in sync, because the editor changes
+tiles in many ways (undo, tile stamps, volcano, generator). If the library is
+missing or switched off, `verfuegbar()` is False; there is no Python fallback
+any more, the generator and paint tools report themselves unavailable.
 """
 from __future__ import annotations
 
@@ -66,13 +69,15 @@ def _laden():
                 if binding not in sys.path:
                     sys.path.insert(0, binding)
                 import op2maplib
-                profil = op2maplib.Profile.from_file(d / "profiles" / "op2.json")
-                ergebnis = (op2maplib, profil)
+                pfad = d / "profiles" / "op2.json"
+                profil = op2maplib.Profile.from_file(pfad)
+                ergebnis = (op2maplib, profil, pfad)
     except Exception as e:          # fehlende DLL, falsche Architektur, ...
         grund = f"{type(e).__name__}: {e}"
         ergebnis = None
     if ergebnis is None:
-        print("OP2MappingLib nicht aktiv, Python-Weg:", grund)
+        print("OP2MappingLib nicht aktiv, Kartenfunktionen aus:", grund)
+        _zustand["grund"] = grund
     else:
         print(f"OP2MappingLib {ergebnis[0].version()} aktiv")
     _zustand["ergebnis"] = ergebnis
@@ -92,6 +97,20 @@ def modul():
 def profil():
     """Das geladene Outpost-2-Profil (nur aufrufen, wenn `verfuegbar()`)."""
     return _laden()[1]
+
+
+def profil_pfad() -> Path:
+    """Pfad der Profildatei (nur aufrufen, wenn `verfuegbar()`)."""
+    return _laden()[2]
+
+
+def fehlt_text() -> str:
+    """Meldung, wenn die Kartenfunktionen ohne OP2MappingLib nicht gehen."""
+    _laden()
+    grund = _zustand.get("grund", "")
+    return ("OP2MappingLib nicht verfuegbar, Kartenfunktionen (Neue Karte, Gelaende "
+            "malen, Klippen) sind aus / OP2MappingLib unavailable, map functions are off"
+            + (f" ({grund})" if grund else ""))
 
 
 def boden(familie: str) -> int:
@@ -129,142 +148,186 @@ _SYMMETRIEN = {"none": 0, "mirror_x": 1, "mirror_y": 2, "rot180": 3, "quad": 4}
 
 
 def generieren(params):
-    """Karte mit dem Generator von OP2MappingLib erzeugen -> mapgen.GeneratedMap.
+    """Karte mit dem klassischen Generator von OP2MappingLib -> mapgen.GeneratedMap.
 
-    Nimmt dieselben `mapgen.MapGenParams` wie der Python-Generator und liefert
-    dasselbe Ergebnis-Objekt, damit "Neue Karte" unveraendert bleibt. Ohne
-    Bibliothek (oder ohne Generator in ihrer Version) None -- dann rechnet der
-    Aufrufer mit `mapgen.generate`.
-
-    Generate a map with OP2MappingLib's generator. Takes the same params as the
-    Python generator and returns the same result object; None if the library
-    (or its generator) is not available, so the caller falls back to Python.
+    Wirft RuntimeError, wenn die Bibliothek fehlt.
+    Generate a map with OP2MappingLib's classic generator; RuntimeError without it.
     """
     if not verfuegbar():
-        return None
+        raise RuntimeError(fehlt_text())
+    gen = _einstellungen(params, gelernt=False)
+    return _ergebnis(gen.generate(profil()), params)
+
+
+# Verlaeufe des Editors -> om_mapgen_set "gradient" (1..10 in dieser Reihenfolge).
+# The editor's gradients -> "gradient" 1..10 in this order.
+_VERLAEUFE = ("n-s", "s-n", "w-o", "o-w", "nw-so", "so-nw", "no-sw", "sw-no", "mitte-rand", "rand-mitte")
+_VERLAUF_BODEN = {"": -1, "mud": 0, "roc": 1, "san": 2}
+
+
+def _einstellungen(params, gelernt: bool):
+    """MapGenParams -> op2maplib.MapGenerator."""
     om = modul()
-    if not hasattr(om, "MapGenerator"):
-        return None
-    import mapgen
-    from dataclasses import replace
-    # Klippen: die Bibliothek haelt den Kartenrand frei. Darum eine groessere
-    # Welt erzeugen und die Karte ausschneiden -- ausser bei Vulkanen, Merkmalen
-    # und dem Landschaftsmodus, die ihre Lage auf der Karte brauchen.
-    # Cliffs: the library keeps the map border clear, so generate a larger world
-    # and crop the map, except with volcanoes, features and landscape mode,
-    # which need their position on the map.
-    if (params.cliffs > 0 and not params.volcanoes and not params.features
-            and not params.landschaft and not mapgen.berge_gewuenscht(params)
-            and not getattr(params, "_welt", False)):
-        return _aus_groesserer_welt(params)
-    # Mit Bergen: erst die Karte ohne Streugut und Startpunkte, dann die Berge
-    # hinein, dann beides.
-    # With mountains: first the map without scatter and starting points, then
-    # the mountains, then both.
-    if mapgen.berge_gewuenscht(params):
-        grund = generieren(replace(params, berge=0.0, hochebenen=0,
-                                   details=0.0, spawns=0))
-        tm = mapgen.model()
-        return mapgen.berge_nachtragen(grund, params, tm, Zeichner())
-    gen = om.MapGenerator("plains")
+    gen = om.MapGenerator("learned" if gelernt else "plains")
     werte = {
         "width": params.width, "height": params.height, "roughness": params.roughness,
         "symmetry": _SYMMETRIEN.get(params.symmetry, 0), "spawns": params.spawns,
         "spawn_clearance": params.spawn_clearance, "cliffs": params.cliffs, "ramps": params.ramps,
-        "volcanoes": params.volcanoes, "lava_zone_tiles": params.lava_zone_tiles,
+        "volcanoes": 0 if gelernt else params.volcanoes, "lava_zone_tiles": params.lava_zone_tiles,
         "smooth": params.smooth, "vegetation_spacing": params.bewuchs_abstand,
         "min_biome": params.min_biome, "details": params.details,
         "landscape": 1 if params.landschaft else 0, "rivers": params.fluesse,
+        "mountains": params.berge, "mountain_density": params.berg_dichte,
+        "gorges": params.schluchten, "valleys": params.taeler, "plateaus": params.hochebenen,
+        # Klippen laufen wie im Original ueber den Rand (die Bibliothek nimmt das
+        # nur, wo es geht: ohne Vulkane, Merkmale, Landschaftsmodus).
+        # Cliffs run off the map as in the originals where the library allows it.
+        "world_cutout": 1 if params.cliffs > 0 else 0,
+        "learned_rocks": 1 if params.berg_felsen else 0,
     }
+    if gelernt:
+        werte.update({
+            "coherence": params.grossform, "calm_terrain": params.gelaende_ruhe,
+            "biome_calm": params.biom_ruhe, "lava_rock": params.lavafels,
+            "volcanoes_small": params.vulkane[0], "volcanoes_medium": params.vulkane[1],
+            "volcanoes_large": params.vulkane[2],
+            "craters": params.krater, "cracks": params.risse, "debris": params.truemmer,
+            "gradient": _VERLAEUFE.index(params.verlauf) + 1 if params.verlauf in _VERLAEUFE else 0,
+            "gradient_ground_start": _VERLAUF_BODEN.get(params.verlauf_boden[0], -1),
+            "gradient_ground_end": _VERLAUF_BODEN.get(params.verlauf_boden[1], -1),
+            "gradient_terrain_start": params.verlauf_gelaende[0],
+            "gradient_terrain_end": params.verlauf_gelaende[1],
+        })
     for k, v in werte.items():
         gen.set(k, v)
     gen.set("seed", int(params.seed) & 0xFFFFFFFFFFFFFFFF)
     gen.set_mix({k: float(v) for k, v in params.mix.items() if v > 0} or {"mud": 1.0})
-    for f in params.features:
-        if f.kind in _MERKMALE:
-            gen.add_feature(_MERKMALE[f.kind], f.where or "", f.to or "", float(f.size), bool(f.lava))
-    r = gen.generate(profil())
+    if not gelernt:
+        for f in params.features:
+            if f.kind in _MERKMALE:
+                gen.add_feature(_MERKMALE[f.kind], f.where or "", f.to or "", float(f.size), bool(f.lava))
+    return gen
+
+
+def _ergebnis(r, params):
+    """Ergebnis der Bibliothek -> mapgen.GeneratedMap. Library result -> GeneratedMap."""
+    import mapgen
     p = profil()
     h, w = r.height, r.width
+    st = r.stats
     anteile = {p.ground_id(g): s for g, s in enumerate(r.ground_shares) if s > 0}
+    zonen = {}
+    if st["mountains"] or st["plateaus"]:
+        zonen = {"berge": int(st["mountains"]), "hochebenen": int(st["plateaus"]),
+                 "schluchten": int(st["gorges"]), "durchfahrbar": int(st["gorges_passable"]),
+                 "undicht": int(st["mountains_leaky"]), "unerreichbar": int(st["plateaus_unreachable"]),
+                 "bauplatz": float(st["build"])}
     return mapgen.GeneratedMap(
         tiles=np.array(r.tiles, dtype=np.int32).reshape(h, w),
         cells=np.array(r.cell_types, dtype=np.uint8).reshape(h, w),
         spawns=[tuple(s) for s in r.spawns],
-        passable_share=r.stats["passable"],
+        passable_share=st["passable"],
         family_share=anteile,
-        connected=bool(r.stats["connected"]),
+        connected=bool(st["connected"]),
         volcanoes=[tuple(v) for v in r.volcanoes],
         lava_zones=[[tuple(c) for c in z] for z in r.lava_zones],
-        plateau_share=r.stats["plateau"],
-        detail_share=r.stats["details"],
+        plateau_share=st["plateau"],
+        detail_share=st["details"],
         features={_MERKMAL_NAME[k]: n for k, n in enumerate(r.feature_report)},
         feature_spots=[(_MERKMAL_NAME.get(k, str(k)), x, y, s) for k, x, y, s in r.features],
-        fluss_share=r.stats["rivers"],
+        fluss_share=st["rivers"],
+        zonen=zonen,
     )
 
 
-def _aus_groesserer_welt(params):
-    """Groesser erzeugen und die Mitte nehmen; Startplaetze danach."""
-    import mapgen
-    from dataclasses import replace
-    r = mapgen.WELT_RAND
-    gross = replace(params, width=params.width + 2 * r, height=params.height + 2 * r,
-                    spawns=0)
-    gross._welt = True
-    gen = generieren(gross)
-    s = (slice(r, -r), slice(r, -r))
-    gen.tiles, gen.cells = gen.tiles[s].copy(), gen.cells[s].copy()
-    tm = mapgen.model()
-    gen.spawns = mapgen._pick_spawns(
-        gen.cells, params.spawns, params.spawn_clearance, params.symmetry,
-        np.random.default_rng([int(params.seed) & 0xFFFFFFFF, 77]))
-    gen.connected = mapgen._connected(gen.cells, gen.spawns)
-    gen.passable_share = float(mapgen._passable_mask(gen.cells).mean())
-    gen.plateau_share = float(np.isin(gen.cells, (8, 9, 10)).mean())
-    anteile = {n: float((tm.family_of[gen.tiles] == i).mean())
-               for i, n in enumerate(tm.families)}
-    gen.family_share = {n: a for n, a in anteile.items() if a > 0}
-    return gen
+# ---------------------------------------------------------------------------
+# Gelernter Generator / learned generator
+
+def modell():
+    """Die Netze des gelernten Generators (profiles/op2-net.bin) oder None. Einmalig geladen."""
+    if "modell" not in _zustand:
+        m = None
+        try:
+            if verfuegbar() and hasattr(modul(), "LearnedModel"):
+                datei = appconfig.op2maplib_dir() / "profiles" / "op2-net.bin"
+                m = modul().LearnedModel.from_file(datei)
+        except Exception as e:
+            print("Gelernter Generator nicht verfuegbar:", f"{type(e).__name__}: {e}")
+            m = None
+        _zustand["modell"] = m
+    return _zustand["modell"]
 
 
-class Zeichner:
-    """Klippenwaende der Berge mit OP2MappingLib (siehe mapgen_berge)."""
-    versuche = 4
-    laeufe = 4
-    grob = False                     # letzte Wand nur im Notweg geloest
+def gelernt_verfuegbar() -> bool:
+    """Kann der gelernte Generator laufen (Bibliothek mit Generator und Netzdatei)?"""
+    return modell() is not None
 
-    def __init__(self):
-        self._mappings = profil().standard_mapping()
 
-    def _karte(self, grid: np.ndarray):
-        h, w = grid.shape
-        return modul().BlendMap(profil(), w, h, self._mappings,
-                                grid.astype(np.int64).ravel().tolist())
+def threads_vorgabe() -> int:
+    """Rechenthreads ohne eigene Einstellung: die Haelfte der Kerne, hoechstens 8."""
+    return max(1, min(8, (os.cpu_count() or 4) // 2))
 
-    def boden_legen(self, grid, cells, maske, saat: int) -> None:
-        """Erde unter die Berge malen, mit Uebergaengen zum Rest.
-        Paint dirt under the mountains, blended into the rest."""
-        bm = self._karte(grid)
-        ys, xs = np.nonzero(maske)
-        bm.paint(profil().find_ground("mud"), list(zip(xs.tolist(), ys.tolist())))
-        for c in bm.resolve(saat):
-            grid[c.y, c.x] = c.new_mapping
-            if c.cell_type >= 0:
-                cells[c.y, c.x] = c.cell_type
 
-    def wand(self, grid, punkte, seite: str, saat: int, hoehe: float):
-        maske = np.zeros(grid.shape, bool)
-        zellen = np.full(grid.shape, -1, np.int16)
-        bm = self._karte(grid)
-        for c in bm.draw_cliff([(int(x), int(y)) for x, y in punkte],
-                               SEITEN[seite], hoehe, saat):
-            grid[c.y, c.x] = c.new_mapping
-            if c.cell_type in (8, 9, 10):
-                maske[c.y, c.x] = True
-            zellen[c.y, c.x] = c.cell_type
-        self.grob = bm.last_cliff_stage < 0
-        return maske, zellen
+class Abgebrochen(Exception):
+    """Die Rechnung wurde abgebrochen. The computation was cancelled."""
+
+
+class Skizze:
+    """Die Skizze einer gelernten Karte auf halber Aufloesung: Waende (0 keine,
+    1..8 Fallrichtung O..NO) und Boeden (0 Erde, 1 Fels, 2 Sand, 3 Bewuchs, 4 sonst).
+    The sketch of a learned map at half resolution."""
+    def __init__(self, wand: np.ndarray, boden: np.ndarray):
+        self.wand, self.boden = wand, boden
+
+
+def _gelernt(params, qualitaet: int, threads: int, fortschritt, abbruch):
+    m = modell()
+    if m is None:
+        raise RuntimeError(fehlt_text())
+    om = modul()
+
+    def melde(anteil):
+        if abbruch is not None and abbruch():
+            return False
+        if fortschritt is not None:
+            fortschritt(float(anteil))
+        return True
+    try:
+        return _einstellungen(params, gelernt=True).generate_learned(
+            profil(), m, qualitaet, int(threads), melde)
+    except om.Op2MapLibError as e:
+        if abbruch is not None and abbruch():
+            raise Abgebrochen from e
+        raise
+
+
+def skizze(params, threads: int = 0, abbruch=None) -> Skizze:
+    """Nur die Skizze (etwa eine Sekunde), fuer die Sofortvorschau."""
+    r = _gelernt(params, modul().LearnedQuality.SKETCH, threads, None, abbruch)
+    form = (r.sketch_height, r.sketch_width)
+    return Skizze(np.array(r.sketch_walls, np.uint8).reshape(form),
+                  np.array(r.sketch_grounds, np.uint8).reshape(form))
+
+
+def generieren_gelernt(params, stufe: str = "schnell", threads: int = 0,
+                       fortschritt=None, abbruch=None):
+    """Karte mit dem gelernten Generator -> mapgen.GeneratedMap.
+    `stufe`: "schnell" oder "gut"; `fortschritt(anteil)`, `abbruch()` -> True bricht ab."""
+    q = modul().LearnedQuality
+    r = _gelernt(params, q.GOOD if stufe == "gut" else q.FAST, threads, fortschritt, abbruch)
+    return _ergebnis(r, params)
+
+
+_FARBEN = np.array([(118, 110, 92), (74, 80, 84), (196, 110, 20), (96, 104, 74),
+                    (118, 110, 92)], np.uint8)
+
+
+def skizzenbild(sk: Skizze) -> np.ndarray:
+    """Vorschaubild der Skizze (h/2, w/2, 3). Preview image of the sketch."""
+    bild = _FARBEN[np.minimum(sk.boden, 4)].copy()
+    bild[sk.wand > 0] = (34, 28, 20)
+    bild[np.isin(sk.wand, (6, 7, 8))] = (66, 58, 46)
+    return bild
 
 
 def boden_feld(bm, x0: int, y0: int, x1: int, y1: int) -> np.ndarray:
