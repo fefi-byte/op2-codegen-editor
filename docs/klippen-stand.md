@@ -1,5 +1,14 @@
 # Klippen: Stand, Modell, offene Punkte
 
+> **Geschichte.** Seit 27.11.2026 setzt OP2MappingLib (C++) die Klippen
+> (`om_cliff_draw`, `om_cliff_snap_point`) und waehlt Boden und Uebergaenge
+> (`om_blend_paint`, `om_blend_resolve`). Der Python-Loeser, der hier beschrieben
+> ist (`klippe_algo.py`, `klippe_gelaende.py`, `cliff_*.py`, die Lernskripte und
+> ihre Modelldateien), ist aus dem Editor entfernt. Das Dokument bleibt als Bericht,
+> wie die Regeln entstanden sind; die Befehle unten laufen nicht mehr.
+> *History: since 27 Nov 2026 OP2MappingLib draws the cliffs; the Python solver
+> described here is gone, this stays as the record of how the rules came about.*
+
 Uebergabe nach der Sitzung vom 30.07.2026. Alles hier ist gemessen, nicht
 geschaetzt; wo eine Zahl steht, steht dabei, woran sie gemessen wurde.
 

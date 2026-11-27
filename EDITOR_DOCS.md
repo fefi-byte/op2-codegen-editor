@@ -196,7 +196,7 @@ Reached from the outline. Flat list of every placed unit, building, beacon, wall
 Mode switch → **Map Editor**.
 
 - **Paint** — brushes for dirt, rock, sand, vegetation and snow (transitions are chosen automatically), lowland, volcano, lava possible, building ground, and **Draw cliff**. Right-click picks the ground as the brush, Ctrl+wheel changes the brush size.
-- **Draw cliff** — set points, choose the high side and the wall height; the wall is previewed live before you place it. Painting *Lowland* across a wall makes a ramp.
+- **Draw cliff** — set points, choose the high side and the wall height; the wall is previewed live before you place it. Painting *Lowland* across a wall makes a ramp; the cut wall ends stay as they are (OP2MappingLib cannot close them yet).
 - **Tiles & groups** — single tiles and stamps by ground and kind, detail packages, *Save area as package*.
 - **Overlay** — passability by speed or obstacles only. **Clean up transitions** recomputes all transition tiles.
 
@@ -209,7 +209,7 @@ Mode switch → **Map Editor**.
 Common controls: size, template, seed (*Roll*), terrain mix, symmetry, cliffs, mountains, *tighter mountains*, gorges, valleys, plateaus, details, starting points, and **features** with a rough position (valley, mountain, plateau, clearing, choke point).
 
 - **Plains, canyon, desert, islands, ice, dry landscape** — the classic generator, rebuilt on every change. Extra controls: roughness, minimum biome size, volcanoes. Mountains are closed all round; the status line warns if one leaks.
-- **Like the originals (learned)** — the learned generator. After a change the sketch appears first, then the map is painted in the background (progress bar, *Cancel*). **Generate in good quality** paints the same sketch more carefully. Here mountains are passable but too tight to build in; *Rocks in mountains* fills what the walls leave open, never on sand. *Cliffs* says how many walls stand outside the mountains. There is no snow and there are no volcanoes; put them in with the brushes. Plateaus are building ground, but not necessarily raised. With symmetry the layout is mirrored, the tiles only roughly. The same seed gives the same map on the same PC; another CPU can differ in details. Needs the Python package `onnxruntime` when the editor runs from source.
+- **Like the originals (learned)** — the learned generator. After a change the sketch appears first, then the map is painted in the background (progress bar, *Cancel*). **Generate in good quality** paints the same sketch more carefully. Here mountains are passable but too tight to build in; *Rocks in mountains* fills what the walls leave open, never on sand. *Cliffs* says how many walls stand outside the mountains. There is no snow and there are no volcanoes; put them in with the brushes. Plateaus are building ground, but not necessarily raised. With symmetry the layout is mirrored, the tiles only roughly. The same seed gives the same map, whatever the number of threads. Computed by OP2MappingLib, like every template.
 
 Neither generator places beacons or units.
 

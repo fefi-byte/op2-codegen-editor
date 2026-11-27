@@ -196,7 +196,7 @@ Erreichbar aus der Gliederung. Flache Liste jeder platzierten Einheit, jedes Geb
 Umschalter → **Map Editor**.
 
 - **Malen** — Pinsel für Erde, Fels, Sand, Bewuchs und Schnee (die Übergänge wählt der Editor), Tiefland, Vulkan, Lava möglich, Bauland und **Klippe zeichnen**. Rechtsklick übernimmt den Boden als Pinsel, Strg+Mausrad ändert die Pinselgröße.
-- **Klippe zeichnen** — Punkte setzen, Hochseite und Wandhöhe wählen; die Wand ist live zu sehen, bevor sie gesetzt wird. *Tiefland* quer über eine Wand gemalt ergibt eine Rampe.
+- **Klippe zeichnen** — Punkte setzen, Hochseite und Wandhöhe wählen; die Wand ist live zu sehen, bevor sie gesetzt wird. *Tiefland* quer über eine Wand gemalt ergibt eine Rampe; die angeschnittenen Wandenden bleiben, wie sie sind (OP2MappingLib kann sie noch nicht schließen).
 - **Kacheln & Gruppen** — einzelne Kacheln und Stempel nach Boden und Art, Detail-Pakete, *Bereich als Paket speichern*.
 - **Overlay** — Befahrbarkeit nach Tempo oder nur Hindernisse. **Übergänge aufräumen** rechnet alle Übergangskacheln neu.
 
@@ -209,7 +209,7 @@ Umschalter → **Map Editor**.
 Gemeinsame Regler: Größe, Vorlage, Seed (*Würfeln*), Geländemischung, Symmetrie, Klippen, Berge, *Berge enger*, Schluchten, Täler, Hochebenen, Details, Startpunkte und **Merkmale** mit grober Lage (Tal, Berg, Plateau, Freifläche, Engstelle).
 
 - **Ebene, Canyon, Wüste, Inseln, Eiswelt, Trockene Landschaft** — der klassische Generator, bei jeder Änderung neu. Zusätzlich: Zerklüftung, Mindestgröße der Biome, Vulkane. Berge sind rundum geschlossen; die Statuszeile warnt, wenn einer undicht ist.
-- **Wie die Originale (gelernt)** — der gelernte Generator. Nach einer Änderung erscheint erst die Skizze, dann wird die Karte im Hintergrund gemalt (Fortschritt, *Abbrechen*). **Gut erzeugen** malt dieselbe Skizze sorgfältiger. Berge sind hier befahrbar, aber zu eng zum Bauen; *Felsen in Bergen* füllt, was die Wände offen lassen, nie auf Sand. *Klippen* sagt, wie viele Wände außerhalb der Berge stehen. Schnee und Vulkane gibt es nicht, die kommen mit den Pinseln dazu. Hochebenen sind Bauland, aber nicht sicher erhöht. Bei Symmetrie ist die Anlage gespiegelt, die Kacheln sind es nur ungefähr. Gleicher Seed ergibt auf demselben PC dieselbe Karte; eine andere CPU kann in Kleinigkeiten abweichen. Aus dem Quelltext gestartet braucht es das Python-Paket `onnxruntime`.
+- **Wie die Originale (gelernt)** — der gelernte Generator. Nach einer Änderung erscheint erst die Skizze, dann wird die Karte im Hintergrund gemalt (Fortschritt, *Abbrechen*). **Gut erzeugen** malt dieselbe Skizze sorgfältiger. Berge sind hier befahrbar, aber zu eng zum Bauen; *Felsen in Bergen* füllt, was die Wände offen lassen, nie auf Sand. *Klippen* sagt, wie viele Wände außerhalb der Berge stehen. Schnee und Vulkane gibt es nicht, die kommen mit den Pinseln dazu. Hochebenen sind Bauland, aber nicht sicher erhöht. Bei Symmetrie ist die Anlage gespiegelt, die Kacheln sind es nur ungefähr. Gleicher Seed ergibt dieselbe Karte, unabhängig von der Zahl der Threads. Gerechnet von OP2MappingLib wie alle Vorlagen.
 
 Baken und Einheiten setzt keiner der beiden Generatoren.
 

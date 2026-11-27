@@ -43,7 +43,7 @@ Download: [Releases](https://github.com/fefi-byte/op2-codegen-editor/releases) (
 
 ![Map editor: brushes and the whole map](docs/images/Terrain.png)
 
-The ground brush, the cliff tool and the classic generator run on OP2MappingLib (submodule `OP2MappingLib/`, no extra Python packages). Releases build `op2maplib.dll` from the submodule's sources; locally the submodule's prebuilt DLL is used, or set `[build] op2maplib_selbst_bauen = true` to build it from source with CMake. Without it, or with `[terrain] op2maplib = false` in `config.ini`, the built-in Python path is used. The learned generator needs the Python package `onnxruntime` (included in the releases); without it only that template is unavailable.
+All map functions -- ground brush, cliff tool and *New map* with every template, classic and learned -- run only on OP2MappingLib (submodule `OP2MappingLib/`, no extra Python packages; the learned generator's networks are `OP2MappingLib/profiles/op2-net.bin`). Releases build `op2maplib.dll` from the submodule's sources. Locally the submodule's prebuilt DLL is used; on Windows the editor builds it from source with CMake when that DLL lacks the map generator, or always with `[build] op2maplib_selbst_bauen = true`. On Linux point `OP2MAPLIB_PATH` at a built `libop2maplib.so`. There is no Python fallback any more: without the library (or with `[terrain] op2maplib = false` in `config.ini`) the editor says the map functions are unavailable.
 
 ### General
 
@@ -55,7 +55,7 @@ The ground brush, the cliff tool and the classic generator run on OP2MappingLib 
 ### Requirements
 
 - Python 3.11+
-- `pip install -r requirements.txt` (PySide6, numpy, Pillow, onnxruntime)
+- `pip install -r requirements.txt` (PySide6, numpy, Pillow)
 - Visual Studio Build Tools 2019+ with the **C++ x86 build tools** component (for the 32-bit DLL)
 - Outpost 2 installed (OPU 1.4.1 recommended — the editor reads its extracted `OPU\base\` and `OPU\maps` layout, no `.vol` archives needed)
 
@@ -120,14 +120,15 @@ editor/
     panels/         Sidebar panels (placement, triggers, groups, objects)
     Editor (modular) starten.bat
 codegen/            Mission model + C++ code generator
-mapview/            Map files, tile renderer, terrain tools and map generators
-                    (mapgen*.py classic, mapgen_netz*.py + netz_* learned)
+mapview/            Map files, tile renderer, cell types, tile groups/packages,
+                    map model (mapgen.py: templates, parameters, apply_to_map)
 missions/           Example mission projects
 docs/               op2-ki, cliff notes, map model, images
 tests/              The check suites under pytest
 op2-ki/             op2-ki submodule (AI opponent, MIT)
 OP2MissionSDK/      SDK submodule (OutpostUniverse/OP2MissionSDK)
-OP2MappingLib/      Terrain blending, cliff and map generator library submodule (OutpostUniverse/OP2MappingLib, MIT)
+OP2MappingLib/      Terrain blending, cliff and map generator library submodule (OutpostUniverse/OP2MappingLib, MIT;
+                    for now the fork fefi-byte/OP2MappingLib, branch berge-und-netz, see .gitmodules)
 lang.de.ini         German UI strings
 lang.en.ini         English UI strings
 ```

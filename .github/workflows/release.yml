@@ -51,7 +51,7 @@ jobs:
           python-version: "3.11"
 
       - name: Abhängigkeiten installieren
-        run: pip install PySide6 numpy Pillow onnxruntime pyinstaller
+        run: pip install PySide6 numpy Pillow pyinstaller
 
       # Versionsnummer aus dem Tag fuer den Ueber-Dialog.
       # Version number from the tag for the About dialog.

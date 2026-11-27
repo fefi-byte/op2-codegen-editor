@@ -19,6 +19,44 @@ and the project follows [Semantic Versioning](https://semver.org/).
 ### Changed
 - The name is now written **OP2MissionBuilder** everywhere (window title,
   manuals, start message of new missions), as the file names already were.
+- **All map generation now runs in OP2MappingLib (C++).** *New map* uses the
+  library for every template: the classic ones through `om_mapgen_generate`
+  (features via `om_mapgen_add_feature`, mountains, gorges, valleys and
+  plateaus in C++), *like the originals (learned)* through
+  `om_mapgen_generate_learned` with the sketch preview, progress, cancel, the
+  *threads* setting and the fast/good quality. Every slider maps to an
+  `om_mapgen_set` key. **The same seed now gives a different map than in
+  0.12.0-alpha**, and the learned map no longer depends on the number of
+  threads.
+- **The paint tools run only through OP2MappingLib as well**: ground brush and
+  transitions (`om_blend_paint`/`om_blend_resolve`, *clean up transitions*
+  via `om_blend_resolve_all`), cliffs (`om_cliff_draw`) and snapping the
+  cliff direction (`om_cliff_snap_point`). Which tile belongs to which ground
+  (layer recovery, palette, packages, volcano stamp) comes from the library's
+  profile (`profiles/op2.json`).
+- Without the library (or with `[terrain] op2maplib = false`) the editor
+  now says the map functions are unavailable instead of falling back to
+  Python.
+- On Windows the editor builds `op2maplib.dll` from the submodule sources
+  (CMake) when the submodule's prebuilt DLL lacks the map generator.
+- The OP2MappingLib submodule points to the fork `fefi-byte/OP2MappingLib`
+  (branch `berge-und-netz`) until OutpostUniverse/OP2MappingLib PR #1 is
+  merged; then `.gitmodules` goes back to OutpostUniverse.
+
+### Removed
+- The Python map generator and paint fallbacks: `mapgen_netz*.py`,
+  `mapgen_berge.py`, `mapgen_relief.py`, `mapgen_modell.py` (TileModel),
+  `mapgen_felder/kacheln/uebergaenge/klippen/wege/basis.py`, `shapegen.py`,
+  the Python cliff solver (`klippe_algo.py`, `klippe_gelaende.py`,
+  `cliff_*.py`), the learning scripts (`learn_tiles.py`, `learn_cliff_*.py`),
+  the cliff labelling tools in `editor/tools/`, and their data
+  (`tiles_model.npz`, `cliff_*_model.npz`, `cliff_kanten*.json`,
+  `netz_*.onnx`, `netz_tabellen.npz`).
+- **onnxruntime is no longer a dependency** (requirements, release build,
+  PyInstaller spec); the learned generator's networks ship as
+  `OP2MappingLib/profiles/op2-net.bin`.
+- Painting ground across a cliff no longer re-closes the cut wall ends (that
+  was the Python cliff solver; OP2MappingLib has no call for it yet).
 
 ## [0.12.0-alpha] - 2026-11-26
 

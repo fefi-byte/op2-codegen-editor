@@ -2,8 +2,18 @@
 
 *English summary at the end.*
 
-Die Vorlage „Wie die Originale (gelernt)" in *Neue Karte* (`mapview/mapgen_netz.py`,
-`mapgen_netz_waende.py`). Stand 25.11.2026.
+Die Vorlage „Wie die Originale (gelernt)" in *Neue Karte*. Stand 25.11.2026,
+Umzug 27.11.2026.
+
+> **Seit 27.11.2026 rechnet OP2MappingLib (C++).** Netze und Ablauf unten sind in
+> die Bibliothek umgezogen (`om_mapgen_generate_learned`, Vorlage `learned`,
+> Quellen `OP2MappingLib/src/mapgen/`, Gewichte `OP2MappingLib/profiles/op2-net.bin`,
+> Beschreibung `OP2MappingLib/docs/learned-generator.md`). Die Python-Module, die
+> unten noch genannt sind (`mapgen_netz*.py`, `mapgen_berge.py`, `mapgen_basis.py`),
+> und die ONNX-Dateien gibt es im Editor nicht mehr, ebenso den klassischen
+> Python-Generator; der Editor stellt nur noch die Regler ein (`editor/app/maplib.py`).
+> Gleicher Seed ergibt deshalb eine andere Karte als vor dem Umzug. Die Zahlen unten
+> sind an der Python-Fassung gemessen.
 
 ## Womit gelernt wurde
 
@@ -26,8 +36,8 @@ Kachelpaare, die vorkommen.
    8×8-Wandfenster stehen so auch in einer Lernkarte.
 
 Beide sind kleine Faltungsnetze mit drei Auflösungen, gelernt mit PyTorch auf der CPU
-(50 Minuten und 3 Stunden), gerechnet mit ONNX Runtime; die Abweichung zu PyTorch ist
-höchstens 0,0002.
+(50 Minuten und 3 Stunden), damals gerechnet mit ONNX Runtime (Abweichung zu PyTorch
+höchstens 0,0002), heute in OP2MappingLib.
 
 ## Ablauf
 
@@ -133,6 +143,12 @@ Im Originalspiel (Harness): 4 Karten, darunter eine 256×256 und eine gespiegelt
 Panzer zu Hochebenen, Tälern, Schluchten, Bergen und Startplätzen; alle kamen an.
 
 ## English summary
+
+Since 27 Nov 2026 the learned generator runs in OP2MappingLib (C++,
+`om_mapgen_generate_learned`, weights in `OP2MappingLib/profiles/op2-net.bin`);
+the Python modules and ONNX files named above are gone from the editor, and the
+same seed gives a different map than before. The numbers were measured on the
+Python version.
 
 Two small convolutional networks trained by in-filling on 61 maps (12 more held out,
 each sharing less than 15 % of its 8×8 wall windows with any other map). The first

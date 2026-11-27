@@ -8,7 +8,7 @@
 
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import (collect_data_files, collect_dynamic_libs,
+from PyInstaller.utils.hooks import (collect_data_files,
                                      collect_submodules)
 
 ROOT = Path(SPECPATH)          # repo root (op2-cpp-poc/)
@@ -63,16 +63,21 @@ datas = [
     (str(ROOT / "op2-ki" / "dll"), "op2-ki/dll"),
     (str(ROOT / "op2-ki" / "missionen" / "gemeinsam"), "op2-ki/missionen/gemeinsam"),
     (str(ROOT / "op2-ki" / "fertig" / "op2ki.dll"), "op2-ki/fertig"),
-    # OP2MappingLib (Submodul): Python-Binding und Profil fuer Gelaendepinsel,
-    # Klippen und Kartengenerator (appconfig.op2maplib_dir() ->
+    # OP2MappingLib (Submodul): Python-Binding, Profil und die Netze des
+    # gelernten Generators (op2-net.bin) fuer Gelaendepinsel, Klippen und
+    # Kartengenerator -- ohne sie gibt es keine Kartenfunktionen
+    # (appconfig.op2maplib_dir() ->
     # sys._MEIPASS/OP2MappingLib). Die DLL kommt NICHT fertig aus dem Submodul,
     # sondern aus dem eigenen Build der Quellen (OP2MAPLIB_DLL, siehe unten).
-    # OP2MappingLib (submodule): Python binding and profile. The DLL is NOT the
-    # submodule's prebuilt one but our own build of its sources (see below).
+    # OP2MappingLib (submodule): Python binding, profile and the learned
+    # generator's networks (op2-net.bin); without them there are no map
+    # functions. The DLL is NOT the submodule's prebuilt one but our own build
+    # of its sources (see below).
     (str(ROOT / "OP2MappingLib" / "bindings" / "python" / "op2maplib"),
      "OP2MappingLib/bindings/python/op2maplib"),
     (str(OP2MAPLIB_DLL), "OP2MappingLib/bin"),
     (str(ROOT / "OP2MappingLib" / "profiles" / "op2.json"), "OP2MappingLib/profiles"),
+    (str(ROOT / "OP2MappingLib" / "profiles" / "op2-net.bin"), "OP2MappingLib/profiles"),
     (str(ROOT / "OP2MappingLib" / "LICENSE"), "OP2MappingLib"),
     (str(ROOT / "OP2MappingLib" / "THIRD-PARTY-NOTICES.md"), "OP2MappingLib"),
     # mapview ohne gecachte PNG-Renders (werden zur Laufzeit aus OP2-Pfad geladen)
@@ -82,17 +87,18 @@ datas = [
         if f.is_file() and f.suffix != ".png"
     ],
     # Die mapview-Module landen im PYZ, ihr __file__ zeigt dann auf _internal/
-    # statt _internal/mapview/. Sie suchen ihre Modelle neben __file__
-    # (tiles_model.npz, celltypes.json, cliff_*.npz, ...), also die Daten
-    # zusaetzlich dorthin legen -- sonst kann kein Gelaendepinsel malen.
+    # statt _internal/mapview/. Sie suchen ihre Daten neben __file__
+    # (celltypes.json, kachelgruppen.json, pakete.json), also die Daten
+    # zusaetzlich dorthin legen. Modelle gibt es dort keine mehr, die
+    # liegen in OP2MappingLib/profiles.
     # The mapview modules end up in the PYZ, so their __file__ points to
-    # _internal/ instead of _internal/mapview/. They look for their models
-    # next to __file__, so put the data there too -- otherwise no terrain
-    # brush can paint.
+    # _internal/ instead of _internal/mapview/. They look for their data next
+    # to __file__, so put it there too. There are no models there any more;
+    # they live in OP2MappingLib/profiles.
     *[
         (str(f), ".")
         for f in (ROOT / "mapview").iterdir()
-        if f.is_file() and f.suffix in (".npz", ".json", ".pkl", ".onnx")
+        if f.is_file() and f.suffix == ".json"
     ],
 ]
 
@@ -119,13 +125,6 @@ hiddenimports = [
     "PIL.ImageQt",
     "ctypes",
     "ctypes.wintypes",
-    # gelernter Kartengenerator / learned map generator
-    "onnxruntime",
-    "mapgen_netz",
-    "mapgen_netz_fels",
-    "mapgen_netz_gross",
-    "mapgen_netz_deko",
-    "mapgen_netz_waende",
     # codegen modules (added to sys.path at runtime, not a proper package import)
     "mission_model",
     "codegen",
@@ -146,7 +145,7 @@ a = Analysis(
         str(ROOT / "mapview"),
         str(EDITOR),
     ],
-    binaries=collect_dynamic_libs("onnxruntime"),
+    binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -240,7 +239,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    # onnxruntime vertraegt kein UPX / onnxruntime does not survive UPX
-    upx_exclude=["onnxruntime.dll", "onnxruntime_pybind11_state.pyd"],
     name="OP2MissionBuilder",
 )
