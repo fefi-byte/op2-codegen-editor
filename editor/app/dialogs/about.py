@@ -21,7 +21,7 @@ class AboutDialog(QDialog):
         lay.addWidget(banner)
         lay.addSpacing(6)
 
-        name = QLabel("OP2 Mission Builder")
+        name = QLabel("OP2MissionBuilder")
         f = name.font(); f.setPointSize(f.pointSize() + 6); f.setBold(True)
         name.setFont(f)
         lay.addWidget(name)

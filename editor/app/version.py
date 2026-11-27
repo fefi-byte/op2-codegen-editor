@@ -2,4 +2,4 @@
 
 Editor version number. The release workflow writes it from the tag.
 """
-VERSION = "0.12.0-alpha"
+VERSION = "0.13.0"
