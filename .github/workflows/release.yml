@@ -53,6 +53,15 @@ jobs:
       - name: Abhängigkeiten installieren
         run: pip install PySide6 numpy Pillow onnxruntime pyinstaller
 
+      # Versionsnummer aus dem Tag fuer den Ueber-Dialog.
+      # Version number from the tag for the About dialog.
+      - name: Version aus dem Tag
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          sed -i "s/^VERSION = .*/VERSION = \"$v\"/" editor/app/version.py
+          cat editor/app/version.py
+
       - name: EXE bauen
         run: python -m PyInstaller op2editor.spec
 
