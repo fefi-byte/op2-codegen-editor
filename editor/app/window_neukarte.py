@@ -46,6 +46,11 @@ class _NeueKarteMixin:
         self.newmap_panel = None
         if index >= 0:
             self._sidebar_tabs.removeTab(index)
+        # Ohne Eltern bliebe das Panel als verwaistes Widget liegen; PySide
+        # stuerzte dann beim Beenden ab (nach einer gelernten Karte).
+        # Without a parent the panel lingered as an orphan widget and PySide
+        # crashed on exit (after a learned map).
+        panel.deleteLater()
         if self._modus == "map":
             self._sidebar_tabs.setCurrentWidget(self.terrain_panel)
         self._refresh_overview()
