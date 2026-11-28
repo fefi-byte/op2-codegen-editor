@@ -17,6 +17,10 @@ and the project follows [Semantic Versioning](https://semver.org/).
   without asking.
 
 ### Changed
+- op2-ki v1.2.0: the AI builds the structure kits lying in its factory bays at
+  the start first (vehicle factory first, lab in parallel) and gets its
+  second mine earlier when it starts with kits. Multiplayer duels without
+  kits play exactly as before.
 - The name is now written **OP2MissionBuilder** everywhere (window title,
   manuals, start message of new missions), as the file names already were.
 - **All map generation now runs in OP2MappingLib (C++).** *New map* uses the
