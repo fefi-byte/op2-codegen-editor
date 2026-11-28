@@ -196,10 +196,23 @@ def check_zoom_thresholds(win, app, obj) -> None:
     win.view.zoom_default()
     pump(app)
     px = win.view.tile_screen_px()
+    # Mit echter Spielgrafik bekommen nur benannte Einheiten eine Beschriftung.
+    # With real game graphics only named units get a label.
+    if label.data(1) == "ohne":
+        check("1:1 : ohne Namen keine Beschriftung (Grafik zeigt den Typ)",
+              not label.isVisible(), f"Kachel={px:.1f}px")
+        obj.unit_name = "Zoomtest"
+        win._redraw_object(obj)
+        pump(app)
+        label = next(i for i in obj.items if hasattr(i, "text"))
     check("1:1 : Beschriftung sichtbar", label.isVisible(), f"Kachel={px:.1f}px")
     check("1:1 : Gitter erlaubt", px >= MapView.GRID_MIN_TILE_PX, f"Kachel={px:.1f}px")
     check("Beschriftung zoomfest", bool(label.flags() & label.GraphicsItemFlag.ItemIgnoresTransformations))
     check("Zoomanzeige gefuellt", "%" in win.zoom_label.text(), repr(win.zoom_label.text()))
+    if obj.unit_name == "Zoomtest":
+        obj.unit_name = ""
+        win._redraw_object(obj)
+        pump(app)
 
 
 def check_trigger_panel(win, app) -> None:
