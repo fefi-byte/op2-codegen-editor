@@ -40,6 +40,7 @@ datas = [
     # App icon
     (str(APP / "resources" / "Structure.ico"), "app/resources"),
     (str(APP / "resources" / "unit_anims.json"), "app/resources"),
+    (str(APP / "resources" / "about_banner.png"), "app/resources"),
     # C++ mission templates (written to project folder by mission_project.py)
     (str(APP / "templates"), "app/templates"),
     # codegen + mapview Python sources

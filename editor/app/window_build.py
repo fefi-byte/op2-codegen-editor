@@ -115,7 +115,7 @@ class _BuildMixin:
             self.variables = dlg.variables
             if dlg.map_name and dlg.map_name != self.map_name:
                 self.load_map(dlg.map_name)
-            self.setWindowTitle(f"OP2 Mission Builder — {self.mission_name}"
+            self.setWindowTitle(f"OP2MissionBuilder — {self.mission_name}"
                                 + (f"  [{self.mission_folder.name}]" if self.mission_folder else ""))
 
     def edit_custom_actions(self):

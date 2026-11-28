@@ -120,6 +120,12 @@ class _MenuMixin:
             act.triggered.connect(slot)
             mission_menu.addAction(act)
 
+        # Hilfe-Menue mit dem Ueber-Dialog. Help menu with the About dialog.
+        help_menu = self.menuBar().addMenu(tr("window.menu_help"))
+        a = QAction(tr("window.menu_about"), self)
+        a.triggered.connect(self.show_about)
+        help_menu.addAction(a)
+
         # Kopfleiste: Mission | Map Editor, Werkzeuge, Bauen.
         # Header bar: Mission | Map Editor, tools, Build.
         tb = QToolBar("Mission", self)
@@ -175,6 +181,10 @@ class _MenuMixin:
         else:
             self._techtree_seite.load_for_mission(self._techtree_file())
         return self._techtree_seite
+
+    def show_about(self):
+        from .dialogs.about import AboutDialog
+        AboutDialog(self).exec()
 
     def _set_language(self, code):
         appconfig.set_language(code)
