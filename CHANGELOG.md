@@ -58,6 +58,12 @@ and the project follows [Semantic Versioning](https://semver.org/).
 - Painting ground across a cliff no longer re-closes the cut wall ends (that
   was the Python cliff solver; OP2MappingLib has no call for it yet).
 
+### Fixed
+- Quitting the editor after generating a learned map and closing the New map
+  panel crashed (the panel stayed behind as an orphan widget).
+- UI smoke test: the label check at 1:1 now uses a named unit; unnamed units
+  with real game graphics have no label by design.
+
 ## [0.12.0-alpha] - 2026-11-26
 
 ### Added
