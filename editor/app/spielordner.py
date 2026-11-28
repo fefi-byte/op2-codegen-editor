@@ -49,6 +49,12 @@ def sicherstellen() -> bool:
     aktuell = appconfig.game_path()
     if ist_op2_ordner(aktuell):
         return True
+    # Aeltere config.ini zeigen oft direkt auf den OPU-Ordner: still auf den Hauptordner umstellen.
+    # Older config.ini files often point at the OPU folder itself: switch to the main folder quietly.
+    oben = _normalisieren(aktuell)
+    if oben != aktuell and ist_op2_ordner(oben):
+        appconfig.set_game_path(str(oben))
+        return True
 
     text = tr("op2_folder.missing_text", path=aktuell)
     start = str(aktuell if aktuell.is_dir() else Path.home())

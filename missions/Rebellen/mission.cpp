@@ -105,7 +105,7 @@ static void initProc() {
         _u.SetTruckCargo(truckEmpty, 1000);
     }
 
-    AddGameMessage("Created with the OP2 Mission Builder.");
+    AddGameMessage("Created with the OP2MissionBuilder.");
 
     // --- Victory conditions ---
     Trigger _v_32680 = CreateCountTrigger(1, 1, 0, mapCargoTruck, (map_id)truckFood, 2, cmpGreaterEqual, "NoResponseToTrigger");

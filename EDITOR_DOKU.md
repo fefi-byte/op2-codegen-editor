@@ -1,4 +1,4 @@
-# OP2 Mission Builder — Funktionsdokumentation
+# OP2MissionBuilder — Funktionsdokumentation
 
 Alpha-Version. Die Doku bildet den aktuellen Editor-Stand ab.
 

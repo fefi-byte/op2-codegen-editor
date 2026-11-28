@@ -1,4 +1,4 @@
-# OP2 Mission Builder — Feature Manual
+# OP2MissionBuilder — Feature Manual
 
 Alpha release. Documentation reflects the current editor state.
 

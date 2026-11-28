@@ -1,4 +1,4 @@
-# op2editor.spec — PyInstaller build spec for the OP2 Mission Builder
+# op2editor.spec — PyInstaller build spec for the OP2MissionBuilder
 #
 # Build:
 #   pip install pyinstaller

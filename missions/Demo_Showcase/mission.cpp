@@ -292,7 +292,7 @@ static void initProc() {
     // verknuepfen (ein einziger wiederkehrender Timer). ---
     CreateTimeTrigger(1, 0, kTicksPerMark, "_repairGroups_cb");
 
-    AddGameMessage("Demo Showcase - der OP2 Mission Builder stellt sich vor.");
+    AddGameMessage("Demo Showcase - der OP2MissionBuilder stellt sich vor.");
 
     // --- Victory conditions ---
     Trigger _v_27973 = CreateBuildingCountTrigger(1, 1, 0, 5, cmpGreaterEqual, "NoResponseToTrigger");

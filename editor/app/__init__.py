@@ -1,1 +1,1 @@
-"""Modularer OP2 Mission Builder (Kopie von main.py)."""
+"""Modularer OP2MissionBuilder (Kopie von main.py)."""

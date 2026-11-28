@@ -7,6 +7,19 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Help → About** dialog with banner, version, licence and link to the
+  repository; the release workflow writes the version from the tag
+  (#8, leviathan400).
+- If `game_path` is not an Outpost 2 1.4.1 folder, the editor asks for the
+  folder at start-up instead of quitting, and saves it (#9, leviathan400). A
+  `game_path` pointing at the `OPU` folder itself is switched to its parent
+  without asking.
+
+### Changed
+- The name is now written **OP2MissionBuilder** everywhere (window title,
+  manuals, start message of new missions), as the file names already were.
+
 ## [0.12.0-alpha] - 2026-11-26
 
 ### Added

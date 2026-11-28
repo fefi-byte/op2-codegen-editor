@@ -1,4 +1,4 @@
-# OP2 Mission Builder
+# OP2MissionBuilder
 
 > **Alpha release.** Expect rough edges. Feedback and bug reports welcome.
 

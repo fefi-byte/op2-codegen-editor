@@ -99,9 +99,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "OP2 Mission Builder ${{ github.ref_name }}"
+          name: "OP2MissionBuilder ${{ github.ref_name }}"
           body: |
-            ## OP2 Mission Builder ${{ github.ref_name }}
+            ## OP2MissionBuilder ${{ github.ref_name }}
 
             ### Installation (Windows)
             1. ZIP entpacken
