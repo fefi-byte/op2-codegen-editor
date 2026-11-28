@@ -1075,6 +1075,13 @@ def check_tile_palette(win, app) -> None:
           any(s.gruppe for s in alle) and any(not s.gruppe for s in alle), pal.anzahl.text())
     check("Nur Erde in der Liste", all("mud" in s.familien for s in alle))
     check("Erd-Uebergaenge dabei", any(s.art == "uebergang" for s in alle))
+    # Roehren und Lava kennt das Profil nicht -- sie duerfen nicht als Boden
+    # erscheinen. #270 = Roehre auf Erde (well0002), #1000 = Lava (well0007).
+    from app.panels import kachel_palette as _kp
+    art_von = {s.kacheln[0]: s.art for s in _kp.katalog(win.map, win._paint_layers().tm)
+               if s.einzeln}
+    check("Roehren stehen unter Bauwerk", art_von.get(270) == "bauwerk", str(art_von.get(270)))
+    check("Lava steht unter Vulkan", art_von.get(1000) == "vulkan", str(art_von.get(1000)))
     pal.sorte.setCurrentIndex(pal.sorte.findData("gruppen"))
     pal.suche.setText("mudrock")
     pump(app)

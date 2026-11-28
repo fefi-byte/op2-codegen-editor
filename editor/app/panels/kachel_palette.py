@@ -55,6 +55,19 @@ _PRAEFIX = (("snow", "sno"), ("snw", "sno"), ("sno", "sno"),
 
 SYMBOL = 56          # Kantenlaenge der Vorschaubilder / thumbnail size
 
+# Kacheln, die weder das Profil noch die Zelltyp-Tabelle kennt, weil sie in den
+# Originalkarten nicht als Boden vorkommen: die Lava des Spiels (well0007, die
+# animierten Lavafelder) und die Roehren (je die ersten 16 Bilder der
+# Roehren-Tilesets fuer Erde, Fels und Sand). Ohne das landeten sie als Boden
+# in der Palette.
+# Tiles neither the profile nor the cell-type table knows (they never appear as
+# ground in the stock maps): the game's lava (well0007, the animated lava
+# fields) and the tubes (the first 16 images of the tube tilesets for mud, rock
+# and sand). Without this they showed up as plain ground in the palette.
+LAVA_TILESET = "well0007"
+ROEHREN_TILESETS = ("well0002", "well0005", "well0009")
+ROEHREN_BILDER = 16
+
 
 @dataclass
 class Stempel:
@@ -113,7 +126,7 @@ def katalog(karte, tm) -> list[Stempel]:
         for (a, b), eintraege in tm.trans.items():
             for kachel in eintraege:
                 paar_von[int(kachel)] = (a, b)
-    leer = set()
+    leer, lava, roehre = set(), set(), set()
     for i, m in enumerate(karte.tile_mappings):
         try:
             datei = karte.tileset_sources[m.tileset_index].filename.lower()
@@ -122,6 +135,10 @@ def katalog(karte, tm) -> list[Stempel]:
         # well0000/blue: Platzhalter ohne Grafik / placeholder, no graphic
         if datei in ("well0000", "blue", ""):
             leer.add(i)
+        elif datei == LAVA_TILESET:
+            lava.add(i)
+        elif datei in ROEHREN_TILESETS and m.tile_graphic_index < ROEHREN_BILDER:
+            roehre.add(i)
 
     def familien_von(kachel: int) -> set:
         out = set()
@@ -173,9 +190,11 @@ def katalog(karte, tm) -> list[Stempel]:
         zt = ct.default_cell_type(i, fallback=-1)
         if i in paar_von:
             art = "uebergang"
+        elif i in roehre:
+            art = "bauwerk"
         elif zt is not None and zt >= 0 and ct.speed_class(zt) == ct.CLIFF:
             art = "klippe"
-        elif tm is not None and i < len(tm.lava) and tm.lava[i]:
+        elif i in lava or (tm is not None and i < len(tm.lava) and tm.lava[i]):
             art = "vulkan"
         elif zt in (ct.NORMAL_WALL, ct.MICROBE_WALL, ct.LAVA_WALL, ct.DOZED_AREA) \
                 or (zt is not None and zt >= ct.TUBE_0):

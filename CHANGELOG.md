@@ -57,6 +57,10 @@ and the project follows [Semantic Versioning](https://semver.org/).
   `OP2MappingLib/profiles/op2-net.bin`.
 
 ### Fixed
+- Tile palette: tubes (the first 16 images of well0002, well0005 and
+  well0009) are listed under *Structures* and the game's lava (well0007)
+  under *Volcano*; since the switch to OP2MappingLib's profile both showed
+  up as plain ground.
 - Painting *Lowland* across a wall closes both new ends again (a ramp)
   instead of leaving the wall cut off. OP2MappingLib does it now
   (`om_cliff_close_cut`); with an older library the cut stays open.
