@@ -138,17 +138,35 @@ def build_folder(folder: Path) -> Path:
     print(f"[..] cmake configure fuer {folder.name} ...")
 
     if sys.platform != "win32":
-        raise BuildFehler(
-            "msvc_required",
-            "[FEHLER] OP2MissionSDK-Missionen erfordern MSVC (Windows).\n"
-            "Outpost2.lib verwendet MSVC-C++-Name-Mangling; ein MinGW-/Clang-\n"
-            "Cross-Compile kann nicht dagegen linken."
-        )
-
-    configure_cmd = [
-        cmake, "-S", str(folder), "-B", str(build_dir),
-        "-G", "Visual Studio 18 2026", "-A", "Win32",
-    ]
+        # Linux: clang-cl (MSVC-ABI, kann Outpost2.lib linken) + CRT/SDK aus
+        # "xwin splat". Die Toolchain-Datei gibt auch die neu erzeugten
+        # Import-Libs vor (OUTPOST2_LIB, ODASL_LIB); per OP2_CMAKE_TOOLCHAIN
+        # ueberschreibbar.
+        # Linux: clang-cl (MSVC ABI, can link Outpost2.lib) + CRT/SDK from
+        # "xwin splat". The toolchain file also presets the regenerated import
+        # libs (OUTPOST2_LIB, ODASL_LIB); override via OP2_CMAKE_TOOLCHAIN.
+        toolchain = Path(os.environ.get(
+            "OP2_CMAKE_TOOLCHAIN", "/opt/op2-toolchain/clang-cl-x86.cmake"))
+        if not toolchain.is_file():
+            raise BuildFehler(
+                "clang_toolchain_missing",
+                "[FEHLER] clang-cl-Toolchain nicht gefunden: {path}\n"
+                "Unter Linux braucht der Bau clang, lld, llvm, ninja und die\n"
+                "MSVC-CRT/SDK (xwin splat); unter Windows MSVC.",
+                path=toolchain)
+        configure_cmd = [
+            cmake, "-S", str(folder), "-B", str(build_dir),
+            "-G", "Ninja", f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
+            "-DCMAKE_BUILD_TYPE=Release",
+            # find_path sucht beim Cross-Compile nicht im Host -- SDK direkt nennen.
+            # find_path does not search the host when cross-compiling -- name the SDK.
+            f"-DOP2SDK_DIR={appconfig.op2sdk_dir().as_posix()}",
+        ]
+    else:
+        configure_cmd = [
+            cmake, "-S", str(folder), "-B", str(build_dir),
+            "-G", "Visual Studio 18 2026", "-A", "Win32",
+        ]
     build_cmd = [cmake, "--build", str(build_dir), "--config", "Release"]
     dll_dirs = [build_dir / "Release", build_dir]
 

@@ -19,6 +19,12 @@ static LRESULT CALLBACK BriefingDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPAR
     {
     case WM_INITDIALOG:
     {
+        // Dialog nach vorn holen: unter Wine liegt sonst das (gesperrte)
+        // Spielfenster darueber und schluckt alle Klicks.
+        // Bring the dialog to the front: under Wine the (disabled) game
+        // window otherwise stays on top and swallows all clicks.
+        SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        SetForegroundWindow(hWnd);
         HINSTANCE hInst = (HINSTANCE)g_briefing_hinst;
         HWND richEdit = GetDlgItem(hWnd, IDC_TEXTAREA);
         // Schwarzer Hintergrund im Textfeld / black background in the text area

@@ -55,8 +55,12 @@ target_include_directories(__DLL_BASENAME__ PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${OP2SDK_DIR}")
 
-target_link_libraries(__DLL_BASENAME__ PRIVATE
-  "${OP2SDK_DIR}/Outpost2DLL/Lib/Outpost2.lib")
+# OUTPOST2_LIB kann eine Toolchain vorgeben (Linux/clang-cl: neu erzeugte Import-Lib).
+# OUTPOST2_LIB may be preset by a toolchain (Linux/clang-cl: regenerated import lib).
+if(NOT OUTPOST2_LIB)
+  set(OUTPOST2_LIB "${OP2SDK_DIR}/Outpost2DLL/Lib/Outpost2.lib")
+endif()
+target_link_libraries(__DLL_BASENAME__ PRIVATE "${OUTPOST2_LIB}")
 
 # Optionales Vor-Spielstart-Briefing: Dialog-Ressource + odasl-Skinning
 # (odasl.dll liegt im Outpost-2-Ordner und wird zur Laufzeit gefunden).
@@ -64,7 +68,12 @@ target_link_libraries(__DLL_BASENAME__ PRIVATE
 # lives in the Outpost 2 folder and is found at runtime).
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/briefing_dialog.cpp")
   target_sources(__DLL_BASENAME__ PRIVATE briefing_dialog.cpp briefing.rc)
-  target_link_libraries(__DLL_BASENAME__ PRIVATE "${OP2SDK_DIR}/odasl/odasl.lib")
+  # ODASL_LIB kann eine Toolchain vorgeben (Linux/clang-cl: neu erzeugte Import-Lib).
+  # ODASL_LIB may be preset by a toolchain (Linux/clang-cl: regenerated import lib).
+  if(NOT ODASL_LIB)
+    set(ODASL_LIB "${OP2SDK_DIR}/odasl/odasl.lib")
+  endif()
+  target_link_libraries(__DLL_BASENAME__ PRIVATE "${ODASL_LIB}")
 endif()
 
 target_compile_definitions(__DLL_BASENAME__ PRIVATE
@@ -80,6 +89,13 @@ target_compile_definitions(__DLL_BASENAME__ PRIVATE
 # non-const references (LOCATION&, MAP_RECT&) -- only MSVC's non-strict mode
 # allows that.
 target_compile_options(__DLL_BASENAME__ PRIVATE /std:c++17)
+# Lokale Variablen mit Null vorbelegen (clang): ohne das hing das Verhalten der KI vom Build ab (nicht initialisierte
+# Stapelreste, gemessen 2026-11-12 im Abgleich C++/Rust). Zero-initialise locals so behaviour does not depend on the build.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(__DLL_BASENAME__ PRIVATE /clang:-ftrivial-auto-var-init=zero)
+  # Gleitkomma in SSE2 (IEEE double) statt x87-80-Bit: sonst haengen Grenzfaelle (35*0.8 >= 28) vom Build ab.
+  target_compile_options(__DLL_BASENAME__ PRIVATE /arch:SSE2)
+endif()
 set_property(TARGET __DLL_BASENAME__ PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 set_target_properties(__DLL_BASENAME__ PROPERTIES OUTPUT_NAME "__DLL_BASENAME__" PREFIX "")

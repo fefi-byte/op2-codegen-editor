@@ -59,6 +59,12 @@ and the project follows [Semantic Versioning](https://semver.org/).
   was the Python cliff solver; OP2MappingLib has no call for it yet).
 
 ### Fixed
+- Building and launching missions on Linux again: `codegen/build.py` builds
+  with clang-cl (Ninja, toolchain file `/opt/op2-toolchain/clang-cl-x86.cmake`
+  or `OP2_CMAKE_TOOLCHAIN`) instead of refusing, the CMake template takes
+  `OUTPOST2_LIB`/`ODASL_LIB` from the toolchain, and *Launch* runs the game
+  through Wine (`OP2_WINE`, default `wine`). The briefing dialog comes to
+  the front so the game window cannot swallow its clicks under Wine.
 - Quitting the editor after generating a learned map and closing the New map
   panel crashed (the panel stayed behind as an orphan widget).
 - UI smoke test: the label check at 1:1 now uses a named unit; unnamed units

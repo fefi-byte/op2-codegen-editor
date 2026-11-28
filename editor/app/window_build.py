@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 
 import numpy as np
 
@@ -404,7 +406,14 @@ class _BuildMixin:
                                 tr("window.launcher_missing_text", path=launcher))
             return
         try:
-            subprocess.Popen([str(launcher), self.dll_name], cwd=str(CONTENT_ROOT))
+            cmd = [str(launcher), self.dll_name]
+            if sys.platform != "win32":
+                # Linux: ueber Wine starten. OP2_WINE kann auf einen Wrapper zeigen
+                # (Prefix, DLL-Overrides fuer den OPU-Lader, virtueller Desktop).
+                # Linux: run via Wine. OP2_WINE may point to a wrapper script
+                # (prefix, DLL overrides for the OPU loader, virtual desktop).
+                cmd.insert(0, os.environ.get("OP2_WINE", "wine"))
+            subprocess.Popen(cmd, cwd=str(CONTENT_ROOT))
             self.statusBar().showMessage(tr("window.status_launching_op2", dll=self.dll_name))
         except Exception as e:
             QMessageBox.critical(self, tr("window.launcher_failed_title"),
