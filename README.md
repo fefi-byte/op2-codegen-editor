@@ -127,8 +127,7 @@ docs/               op2-ki, cliff notes, map model, images
 tests/              The check suites under pytest
 op2-ki/             op2-ki submodule (AI opponent, MIT)
 OP2MissionSDK/      SDK submodule (OutpostUniverse/OP2MissionSDK)
-OP2MappingLib/      Terrain blending, cliff and map generator library submodule (OutpostUniverse/OP2MappingLib, MIT;
-                    for now the fork fefi-byte/OP2MappingLib, branch berge-und-netz, see .gitmodules)
+OP2MappingLib/      Terrain blending, cliff and map generator library submodule (OutpostUniverse/OP2MappingLib, MIT)
 lang.de.ini         German UI strings
 lang.en.ini         English UI strings
 ```

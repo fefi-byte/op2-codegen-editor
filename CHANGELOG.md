@@ -39,9 +39,9 @@ and the project follows [Semantic Versioning](https://semver.org/).
   Python.
 - On Windows the editor builds `op2maplib.dll` from the submodule sources
   (CMake) when the submodule's prebuilt DLL lacks the map generator.
-- The OP2MappingLib submodule points to the fork `fefi-byte/OP2MappingLib`
-  (branch `berge-und-netz`) until OutpostUniverse/OP2MappingLib PR #1 is
-  merged; then `.gitmodules` goes back to OutpostUniverse.
+- OP2MappingLib submodule at OutpostUniverse v0.3.5 (learned generator,
+  mountains, volcanoes, craters/cracks/debris, gradient; merged as PR #1).
+  Its prebuilt DLLs now contain the map generator.
 
 ### Removed
 - The Python map generator and paint fallbacks: `mapgen_netz*.py`,
