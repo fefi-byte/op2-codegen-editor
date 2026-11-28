@@ -55,10 +55,11 @@ and the project follows [Semantic Versioning](https://semver.org/).
 - **onnxruntime is no longer a dependency** (requirements, release build,
   PyInstaller spec); the learned generator's networks ship as
   `OP2MappingLib/profiles/op2-net.bin`.
-- Painting ground across a cliff no longer re-closes the cut wall ends (that
-  was the Python cliff solver; OP2MappingLib has no call for it yet).
 
 ### Fixed
+- Painting *Lowland* across a wall closes both new ends again (a ramp)
+  instead of leaving the wall cut off. OP2MappingLib does it now
+  (`om_cliff_close_cut`); with an older library the cut stays open.
 - Building and launching missions on Linux again: `codegen/build.py` builds
   with clang-cl (Ninja, toolchain file `/opt/op2-toolchain/clang-cl-x86.cmake`
   or `OP2_CMAKE_TOOLCHAIN`) instead of refusing, the CMake template takes

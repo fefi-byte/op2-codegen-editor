@@ -983,6 +983,39 @@ def check_terrain(win, app) -> None:
     pump(app)
     win._klippen_verwerfen()
     pump(app)
+
+    # Auffahrt: Tiefland quer ueber die Wand malen schneidet sie -- OP2MappingLib
+    # (close_cliff_cut) laesst beide Enden sauber auslaufen. Die Wandzellen
+    # neben dem Schnitt bekommen neue Kacheln, die Wand weiter weg bleibt.
+    # Ramp: painting lowland across the wall cuts it; both ends are closed.
+    if hasattr(_ml.modul().BlendMap, "close_cliff_cut"):
+        vor_schnitt = list(win.map.tiles)
+        war_klippe = {(x, y) for x in range(30, 50) for y in range(96, 122)
+                      if win.map.cell_type(x, y) in KLIPPE}
+        n_undo = len(win._undo_stack)
+        panel.set_brush("tief")
+        panel.set_brush_size(3)
+        pump(app)
+        win._terrain_strich_beginnen()
+        for x in range(30, 50):
+            win._terrain_stamp(x, 109)
+        win._terrain_strich_abschliessen()
+        pump(app, 10)
+
+        def geaendert(y):
+            return sum(1 for x in range(30, 50)
+                       if win.map.tiles[win.map.tile_index(x, y)] != vor_schnitt[win.map.tile_index(x, y)])
+        nah = sum(geaendert(y) for y in (105, 106, 112, 113))
+        fern = sum(1 for x, y in war_klippe if (y <= 101 or y >= 117)
+                   and win.map.tiles[win.map.tile_index(x, y)] != vor_schnitt[win.map.tile_index(x, y)])
+        check("Schnitt durch die Wand schliesst die Enden", nah > 0, f"{nah} Zellen neben dem Schnitt")
+        check("Wand weiter weg bleibt stehen", fern == 0, f"{fern} Wandzellen")
+        while len(win._undo_stack) > n_undo:
+            win.undo()
+            pump(app, 5)
+        check("Schnitt laesst sich rueckgaengig machen", list(win.map.tiles) == vor_schnitt)
+        panel.set_brush("klippe")
+        pump(app)
     win.undo()
     pump(app, 30)
     check("Klippe laesst sich rueckgaengig machen",

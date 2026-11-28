@@ -250,6 +250,11 @@ class PaintLayers:
         # Cells of the last stroke -- they stay pure ground.
         self.gemalt = np.zeros((h, w), dtype=bool)
         self.letzter_strich = None      # Maske des zuletzt beendeten Strichs
+        # Wo vor dem Strich Klippen standen (strich_beginnen) -- daran erkennt
+        # klippen_schnitte_schliessen, ob der Strich eine Wand durchschnitten hat.
+        # Where cliffs stood before the stroke, to tell a cut from painting beside a wall.
+        self.strich_war_klippe = None
+        self.letzter_war_klippe = None
         self.letzte_klippe_ersatz = None  # Familie, fuer die mud einsprang
         # Offene Enden gesetzter Klippen -- daran kann weitergezeichnet werden.
         # Sie werden ausdruecklich gefuehrt statt aus der Karte gesucht: ein
@@ -334,6 +339,17 @@ class PaintLayers:
         self.familie = fam.astype(np.int16)
 
     # ------------------------------------------------------------------
+    def strich_beginnen(self) -> None:
+        """Vor dem Strich festhalten, wo Klippen stehen.
+
+        Am Ende kann so unterschieden werden, ob der Strich eine Wand
+        durchschnitten hat oder nur daneben gemalt -- nur im ersten Fall
+        werden die Enden neu geloest.
+        Remember where cliffs stand, to tell a cut from painting next to a wall.
+        """
+        zt = self._rohgitter() & CELL_TYPE_MASK
+        self.strich_war_klippe = np.isin(zt, CLIFF_CELLS)
+
     def strich_beenden(self) -> tuple[int, int, int, int] | None:
         """Schutz aufheben und den Bereich des Strichs zurueckgeben.
 
@@ -364,6 +380,8 @@ class PaintLayers:
         ys, xs = np.nonzero(self.gemalt)
         bereich = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
         self.letzter_strich = self.gemalt.copy()
+        self.letzter_war_klippe = self.strich_war_klippe
+        self.strich_war_klippe = None
         self.gemalt[:, :] = False
         return bereich
 
@@ -512,6 +530,46 @@ class PaintLayers:
         return [(c.x, c.y, c.new_mapping,
                  c.cell_type if c.cell_type >= 0 else self._zelltyp(c.new_mapping, c.x, c.y))
                 for c in changes]
+
+    def klippen_schnitte_schliessen(self):
+        """Wo der letzte Strich eine Klippe durchschnitten hat: Enden schliessen.
+
+        -> (aenderungen, bereich) -- bereich ist das Rechteck, das danach noch
+        einmal ohne Schutz gerechnet werden sollte, oder None. Ohne das bliebe
+        die Wand am Pinselrand offen abgeschnitten; so laufen beide Seiten
+        sauber aus -- Boden quer ueber eine Wand malen ergibt eine Auffahrt.
+        Das Loesen uebernimmt OP2MappingLib (`close_cliff_cut`); eine aeltere
+        Bibliothek ohne diese Funktion laesst den Schnitt offen.
+
+        Where the last stroke cut through a cliff, let both ends finish
+        cleanly (OP2MappingLib close_cliff_cut) -- painting ground across a
+        wall makes a ramp. An older library without it leaves the cut open.
+        """
+        strich, war = self.letzter_strich, self.letzter_war_klippe
+        self.letzter_war_klippe = None
+        if strich is None or war is None or not war.any():
+            return [], None
+        klippe = np.isin(self._rohgitter() & CELL_TYPE_MASK, CLIFF_CELLS)
+        # Nur, was der Strich tatsaechlich von Klippe zu Boden gemacht hat --
+        # ein Strich, der bloss NEBEN einer Wand malt, schneidet nichts.
+        # Only what the stroke actually turned from cliff into ground.
+        entfernt = strich & war & ~klippe
+        if not entfernt.any():
+            return [], None
+        bm = maplib.mischkarte(self.map, self._kachelgitter())
+        if not hasattr(bm, "close_cliff_cut"):
+            return [], None
+        changes = bm.close_cliff_cut(entfernt.astype(np.uint8), int(self.rng.integers(0, 2 ** 63)))
+        aenderungen = [(c.x, c.y, c.new_mapping,
+                        c.cell_type if c.cell_type >= 0 else self._zelltyp(c.new_mapping, c.x, c.y))
+                       for c in changes]
+        if not aenderungen:
+            return [], None
+        h, w = strich.shape
+        xs = [x for x, _y, _k, _z in aenderungen] + [int(v) for v in np.nonzero(strich)[1]]
+        ys = [y for _x, y, _k, _z in aenderungen] + [int(v) for v in np.nonzero(strich)[0]]
+        bereich = (max(0, min(xs) - 1), max(0, min(ys) - 1), min(w - 1, max(xs) + 1), min(h - 1, max(ys) + 1))
+        return aenderungen, bereich
 
     def uebergaenge_aufraeumen(self) -> list[tuple[int, int, int, int]]:
         """Alle Uebergangskacheln der Karte neu bestimmen -> Aenderungen.

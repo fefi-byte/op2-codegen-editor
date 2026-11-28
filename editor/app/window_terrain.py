@@ -320,6 +320,9 @@ class _TerrainMixin:
             if getattr(self, "_paket_rahmen_an", False):
                 self._paket_rahmen_start = None
             return
+        ebenen = self._paint_layers()
+        if ebenen is not None:
+            ebenen.strich_beginnen()
         # Nur der erste Aufruf eines Strichs zaehlt als Klick. Der
         # Klippenpinsel setzt sonst bei jeder Mausbewegung einen Punkt.
         # Only a stroke's first call counts as a click, otherwise the cliff
@@ -387,6 +390,17 @@ class _TerrainMixin:
         bereich = ebenen.strich_beenden()
         if bereich is None:
             return gesammelt
+        # Hat der Strich eine Klippe durchschnitten, die Enden ZUERST
+        # schliessen -- das Nachrechnen des Rands richtet dann auch den Boden an
+        # den neuen Enden mit aus.
+        # If the stroke cut through a cliff, close the ends BEFORE recomputing
+        # the rim, which then also fixes the ground at the new ends.
+        schnitt, schnitt_bereich = ebenen.klippen_schnitte_schliessen()
+        if schnitt:
+            gesammelt = self._aenderungen_schreiben(schnitt, gesammelt)
+            bx0, by0, bx1, by1 = bereich
+            sx0, sy0, sx1, sy1 = schnitt_bereich
+            bereich = (min(bx0, sx0), min(by0, sy0), max(bx1, sx1), max(by1, sy1))
         aenderungen = ebenen.synth_region(bereich)
         if not aenderungen:
             return gesammelt
