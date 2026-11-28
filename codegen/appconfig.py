@@ -434,6 +434,18 @@ def language() -> str:
     return _load().get("ui", "language", fallback=DEFAULT_LANGUAGE).strip() or DEFAULT_LANGUAGE
 
 
+def set_game_path(path: str) -> None:
+    """Speichert den Outpost-2-Ordner in die config.ini.
+
+    Saves the Outpost 2 folder into config.ini.
+    """
+    cp = _load()
+    if not cp.has_section("paths"):
+        cp.add_section("paths")
+    cp.set("paths", "game_path", path)
+    _save(cp)
+
+
 def set_language(code: str) -> None:
     """Speichert das UI-Sprachkuerzel zurueck in die config.ini.
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 import sys
-from .common import QApplication, QIcon, ICON_PATH
-from .window import EditorWindow
+from PySide6.QtWidgets import QApplication
 
 
 def main():
@@ -13,6 +12,13 @@ def main():
     ``EditorWindow`` and run the event loop.
     """
     app = QApplication(sys.argv)
+    # Erst den Spielordner klaeren: common liest game_path beim Import.
+    # Settle the game folder first: common reads game_path on import.
+    from .spielordner import sicherstellen
+    if not sicherstellen():
+        sys.exit(1)
+    from .common import QIcon, ICON_PATH
+    from .window import EditorWindow
     from .style import build_stylesheet
     app.setStyleSheet(build_stylesheet())
     try:
